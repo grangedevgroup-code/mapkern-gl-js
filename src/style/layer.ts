@@ -160,8 +160,10 @@ export class StyleLayer {
     this.visible = spec.visible !== false;
     const paint = (spec as { paint?: Record<string, unknown> }).paint ?? {};
     const layout = (spec as { layout?: Record<string, unknown> }).layout ?? {};
-    for (const [name, def] of Object.entries(PAINT[this.type])) this.setProperty(this.paint, "paint", name, def, paint[name]);
-    for (const [name, def] of Object.entries(LAYOUT[this.type])) this.setProperty(this.layout, "layout", name, def, layout[name]);
+    for (const [name, def] of Object.entries(PAINT[this.type]))
+      this.setProperty(this.paint, "paint", name, def, paint[name]);
+    for (const [name, def] of Object.entries(LAYOUT[this.type]))
+      this.setProperty(this.layout, "layout", name, def, layout[name]);
     const filter = (spec as { filter?: unknown }).filter;
     if (filter !== undefined) this.filter = compile<boolean>(filter, "boolean", false, `${this.id}.filter`);
   }
@@ -215,7 +217,8 @@ export class StyleLayer {
   }
 
   setFilter(filter: unknown): void {
-    this.filter = filter === undefined || filter === null ? null : compile<boolean>(filter, "boolean", false, `${this.id}.filter`);
+    this.filter =
+      filter === undefined || filter === null ? null : compile<boolean>(filter, "boolean", false, `${this.id}.filter`);
     const spec = this.spec as { filter?: unknown };
     if (filter === undefined || filter === null) delete spec.filter;
     else spec.filter = structuredClone(filter);
@@ -254,6 +257,9 @@ export class StyleLayer {
       this.fixedValues.set(name, structuredClone(v));
       return;
     }
-    target.set(name, compile(value === undefined ? def.default : value, def.kind, def.default, `${this.id}.${group}.${name}`));
+    target.set(
+      name,
+      compile(value === undefined ? def.default : value, def.kind, def.default, `${this.id}.${group}.${name}`),
+    );
   }
 }
