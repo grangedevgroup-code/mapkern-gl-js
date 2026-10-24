@@ -139,6 +139,8 @@ map.on("click", async (event) => {
 
 Each result has `id`, `properties`, `geometry` in longitude and latitude, `layer`, `source` and `sourceLayer`. Features from vector tiles come back cut at the tile edge; GeoJSON features come back whole.
 
+For the height of the ground, ask an elevation source: `map.getSource("dem").elevationAt(event.lngLat)` returns meters, or `null` where no elevation tile is loaded.
+
 ## Errors
 
 Errors come with a `code`, a readable `message` and a `detail` object. If you don't listen for `error`, they're logged to the console.
