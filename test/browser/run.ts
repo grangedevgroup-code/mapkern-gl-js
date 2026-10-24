@@ -739,7 +739,9 @@ const specs: Spec[] = [
       if (!red || red[2] < 20) fail(`the draped dot is missing: ${JSON.stringify(red)}`);
       const p = await page.evaluate<{ x: number; y: number }>(`window.map.project(${JSON.stringify(DOT)})`);
       if (Math.hypot(p.x - red[0], p.y - red[1]) > 2)
-        fail(`project puts the dot at ${p.x.toFixed(1)},${p.y.toFixed(1)} but it is drawn at ${red[0].toFixed(1)},${red[1].toFixed(1)}`);
+        fail(
+          `project puts the dot at ${p.x.toFixed(1)},${p.y.toFixed(1)} but it is drawn at ${red[0].toFixed(1)},${red[1].toFixed(1)}`,
+        );
       const back = await page.evaluate<[number, number]>(`window.map.unproject([${red[0]}, ${red[1]}])`);
       if (Math.hypot(back[0] - DOT[0], back[1] - DOT[1]) > 0.015)
         fail(`unproject of the drawn dot gave ${back}, want ${DOT}`);
@@ -747,11 +749,14 @@ const specs: Spec[] = [
       await idle(page);
       const flat = await page.evaluate<{ x: number; y: number }>(`window.map.project(${JSON.stringify(DOT)})`);
       if (Math.hypot(flat.x - p.x, flat.y - p.y) < 20)
-        fail(`turning terrain off should move the dot on screen, it moved ${Math.hypot(flat.x - p.x, flat.y - p.y)} px`);
+        fail(
+          `turning terrain off should move the dot on screen, it moved ${Math.hypot(flat.x - p.x, flat.y - p.y)} px`,
+        );
       const after = await page.evaluate<{ terrain: unknown; red: number[] | null }>(
         `({ terrain: window.map.getDiagnostics().terrain, red: ${RED_CENTROID} })`,
       );
-      if (after.terrain !== null) fail(`terrain diagnostics should be empty after setTerrain(null): ${JSON.stringify(after.terrain)}`);
+      if (after.terrain !== null)
+        fail(`terrain diagnostics should be empty after setTerrain(null): ${JSON.stringify(after.terrain)}`);
       if (!after.red || Math.hypot(after.red[0]! - flat.x, after.red[1]! - flat.y) > 2)
         fail(`flat map dot at ${JSON.stringify(after.red)} but project says ${JSON.stringify(flat)}`);
     },
