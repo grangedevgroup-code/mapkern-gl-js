@@ -28,12 +28,13 @@ export const CSS = `
   display: flex;
   gap: 10px;
   margin: 10px;
+  max-width: calc(100% - 20px);
   pointer-events: none;
 }
 .maplet-top-left { top: 0; left: 0; flex-direction: column; align-items: flex-start; }
 .maplet-top-right { top: 0; right: 0; flex-direction: column; align-items: flex-end; }
 .maplet-bottom-left { bottom: 0; left: 0; flex-direction: column-reverse; align-items: flex-start; }
-.maplet-bottom-right { bottom: 0; right: 0; flex-direction: column-reverse; align-items: flex-end; margin: 0; }
+.maplet-bottom-right { bottom: 0; right: 0; flex-direction: column-reverse; align-items: flex-end; margin: 0; max-width: 100%; }
 .maplet-control {
   pointer-events: auto;
   background: var(--maplet-control-bg, #ffffff);
@@ -83,7 +84,8 @@ export const CSS = `
 }
 .maplet-attribution {
   pointer-events: auto;
-  max-width: calc(100% - 20px);
+  box-sizing: border-box;
+  max-width: 100%;
   padding: 2px 8px;
   border-radius: 6px 0 0 0;
   background: rgba(255, 255, 255, 0.8);
@@ -96,6 +98,10 @@ export const CSS = `
 }
 .maplet-attribution:empty {
   display: none;
+}
+.maplet-attribution:hover,
+.maplet-attribution:focus-within {
+  white-space: normal;
 }
 .maplet-attribution a {
   color: inherit;
