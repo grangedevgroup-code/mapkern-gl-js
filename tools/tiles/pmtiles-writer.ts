@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { closeSync, openSync, writeSync } from "node:fs";
+import { closeSync, mkdtempSync, openSync, readSync, rmSync, writeSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import type { Entry, Header } from "../../src/formats/pmtiles.ts";
 import {
@@ -22,18 +24,24 @@ export interface ArchiveInfo {
   metadata: Record<string, unknown>;
 }
 
-interface Stored {
-  id: number;
-  hash: string;
-  data: Uint8Array;
-}
-
 export class PMTilesWriter {
-  private readonly tiles: Stored[] = [];
+  private readonly dir: string;
+  private readonly fd: number;
+  private spooled = 0;
   private bytes = 0;
+  private ids: number[] = [];
+  private refs: number[] = [];
+  private readonly offsets: number[] = [];
+  private readonly lengths: number[] = [];
+  private readonly byHash = new Map<string, number>();
+
+  constructor() {
+    this.dir = mkdtempSync(join(tmpdir(), "maplet-pmtiles-"));
+    this.fd = openSync(join(this.dir, "tiles.bin"), "w+");
+  }
 
   get count(): number {
-    return this.tiles.length;
+    return this.ids.length;
   }
 
   get size(): number {
@@ -42,29 +50,50 @@ export class PMTilesWriter {
 
   add(z: number, x: number, y: number, data: Uint8Array): void {
     const hash = createHash("sha256").update(data).digest("base64");
-    this.tiles.push({ id: tileId(z, x, y), hash, data });
+    let ref = this.byHash.get(hash);
+    if (ref === undefined) {
+      writeSync(this.fd, data, 0, data.length, this.spooled);
+      ref = this.offsets.length;
+      this.offsets.push(this.spooled);
+      this.lengths.push(data.length);
+      this.byHash.set(hash, ref);
+      this.spooled += data.length;
+    }
+    this.ids.push(tileId(z, x, y));
+    this.refs.push(ref);
     this.bytes += data.length;
   }
 
   write(path: string, info: ArchiveInfo): { entries: number; contents: number; bytes: number; leaves: number } {
-    const sorted = [...this.tiles].sort((a, b) => a.id - b.id);
+    try {
+      return this.finish(path, info);
+    } finally {
+      closeSync(this.fd);
+      rmSync(this.dir, { recursive: true, force: true });
+    }
+  }
+
+  private finish(path: string, info: ArchiveInfo): { entries: number; contents: number; bytes: number; leaves: number } {
+    const order = this.ids.map((_, i) => i).sort((a, b) => this.ids[a]! - this.ids[b]!);
+    const placed = new Float64Array(this.offsets.length).fill(-1);
+    const sequence: number[] = [];
     const entries: Entry[] = [];
-    const contents = new Map<string, { offset: number; length: number }>();
-    const chunks: Uint8Array[] = [];
     let dataLength = 0;
-    for (const t of sorted) {
-      let content = contents.get(t.hash);
-      if (!content) {
-        content = { offset: dataLength, length: t.data.length };
-        contents.set(t.hash, content);
-        chunks.push(t.data);
-        dataLength += t.data.length;
+    for (const i of order) {
+      const ref = this.refs[i]!;
+      if (placed[ref]! < 0) {
+        placed[ref] = dataLength;
+        dataLength += this.lengths[ref]!;
+        sequence.push(ref);
       }
+      const id = this.ids[i]!;
+      const offset = placed[ref]!;
       const last = entries[entries.length - 1];
-      if (last && last.offset === content.offset && last.tileId + last.runLength === t.id) {
+      if (last && last.tileId === id) continue;
+      if (last && last.offset === offset && last.tileId + last.runLength === id) {
         last.runLength++;
       } else {
-        entries.push({ tileId: t.id, offset: content.offset, length: content.length, runLength: 1 });
+        entries.push({ tileId: id, offset, length: this.lengths[ref]!, runLength: 1 });
       }
     }
     const { root, leaves } = buildDirectories(entries);
@@ -85,7 +114,7 @@ export class PMTilesWriter {
       dataLength,
       addressedTiles: addressed,
       tileEntries: entries.length,
-      tileContents: contents.size,
+      tileContents: sequence.length,
       clustered: true,
       internalCompression: Compression.gzip,
       tileCompression: info.tileCompression,
@@ -100,17 +129,25 @@ export class PMTilesWriter {
       centerLon: info.center[0],
       centerLat: info.center[1],
     };
-    const fd = openSync(path, "w");
+    const out = openSync(path, "w");
     try {
-      writeSync(fd, writeHeader(header));
-      writeSync(fd, root);
-      writeSync(fd, metadata);
-      if (leaves.length > 0) writeSync(fd, leaves);
-      for (const c of chunks) writeSync(fd, c);
+      writeSync(out, writeHeader(header));
+      writeSync(out, root);
+      writeSync(out, metadata);
+      if (leaves.length > 0) writeSync(out, leaves);
+      let buffer = Buffer.alloc(1 << 20);
+      for (const ref of sequence) {
+        const length = this.lengths[ref]!;
+        if (length > buffer.length) buffer = Buffer.alloc(length);
+        readSync(this.fd, buffer, 0, length, this.offsets[ref]!);
+        writeSync(out, buffer, 0, length);
+      }
     } finally {
-      closeSync(fd);
+      closeSync(out);
     }
-    return { entries: entries.length, contents: contents.size, bytes: dataOffset + dataLength, leaves: leaves.length };
+    this.ids = [];
+    this.refs = [];
+    return { entries: entries.length, contents: sequence.length, bytes: dataOffset + dataLength, leaves: leaves.length };
   }
 }
 
