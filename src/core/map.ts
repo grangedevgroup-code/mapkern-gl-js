@@ -6,6 +6,7 @@ import { latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY, toLngLat, wra
 import type { InputOptions } from "../input/handlers.ts";
 import { InputHandlers } from "../input/handlers.ts";
 import { GL } from "../render/gl.ts";
+import type { PickBox } from "../render/painter.ts";
 import { Painter } from "../render/painter.ts";
 import { GeoJSONSource } from "../sources/geojson.ts";
 import { registerMbtilesProtocol } from "../sources/mbtiles.ts";
@@ -27,6 +28,8 @@ import type { WorkerFactory } from "../worker/pool.ts";
 import { WorkerPool } from "../worker/pool.ts";
 import { errorMessage, MapletError } from "./errors.ts";
 import { Emitter } from "./events.ts";
+import type { QueriedFeature } from "./query.ts";
+import { resolveFeatures } from "./query.ts";
 
 export interface MapOptions {
   container: HTMLElement | string;
@@ -106,6 +109,14 @@ export interface FitBoundsOptions extends AnimationOptions {
 export type BoundsLike = [[number, number], [number, number]] | [number, number, number, number];
 
 export type Source = RasterSource | VectorSource | GeoJSONSource;
+
+export type PointLike = [number, number] | { x: number; y: number };
+
+export type QueryGeometry = PointLike | [PointLike, PointLike];
+
+export interface QueryOptions {
+  layers?: string[];
+}
 
 export interface MapEvent {
   readonly target: MapletMap;
@@ -622,6 +633,62 @@ export class MapletMap extends Emitter<MapEvents> {
     this.requireStyle().removeSource(id);
     this.triggerRepaint();
     return this;
+  }
+
+  async queryRenderedFeatures(geometry?: QueryGeometry, options: QueryOptions = {}): Promise<QueriedFeature[]> {
+    const style = this.style;
+    if (!style || this.removed || this.contextLost) return [];
+    const box = this.queryBox(geometry);
+    let accept: (layer: StyleLayer) => boolean = () => true;
+    if (options.layers !== undefined) {
+      if (!Array.isArray(options.layers)) throw new MapletError("invalid-option", "layers must be a list of layer ids");
+      for (const id of options.layers) {
+        if (!style.getLayer(id))
+          throw new MapletError("invalid-option", `There is no layer with id "${id}"`, { layer: id });
+      }
+      const wanted = new Set(options.layers);
+      accept = (layer) => wanted.has(layer.id);
+    }
+    const picked = this.painter.pick(
+      {
+        transform: this.transform,
+        pixelRatio: this.pixelRatioValue,
+        layers: style.layers,
+        sources: style.sources,
+        now: performance.now(),
+        cameraVersion: this.cameraVersion,
+      },
+      box,
+      accept,
+    );
+    return resolveFeatures(picked, style.sources);
+  }
+
+  private queryBox(geometry: QueryGeometry | undefined): PickBox {
+    const width = this.transform.width;
+    const height = this.transform.height;
+    if (geometry === undefined) return { x0: 0, y0: 0, x1: width, y1: height };
+    const point = (p: PointLike): [number, number] => {
+      const x = Array.isArray(p) ? p[0] : p?.x;
+      const y = Array.isArray(p) ? p[1] : p?.y;
+      if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) {
+        throw new MapletError("invalid-option", "query points must be [x, y] or { x, y } in pixels");
+      }
+      return [x, y];
+    };
+    const pair = Array.isArray(geometry) && geometry.length === 2 && typeof geometry[0] === "object";
+    if (pair) {
+      const [ax, ay] = point((geometry as [PointLike, PointLike])[0]);
+      const [bx, by] = point((geometry as [PointLike, PointLike])[1]);
+      return {
+        x0: Math.max(0, Math.min(ax, bx)),
+        y0: Math.max(0, Math.min(ay, by)),
+        x1: Math.min(width, Math.max(ax, bx)),
+        y1: Math.min(height, Math.max(ay, by)),
+      };
+    }
+    const [x, y] = point(geometry as PointLike);
+    return { x0: x - 0.5, y0: y - 0.5, x1: x + 0.5, y1: y + 0.5 };
   }
 
   getSource(id: string): Source | undefined {
