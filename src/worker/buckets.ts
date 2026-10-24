@@ -66,12 +66,17 @@ export class FillBuilder {
   readonly edges = new IndexBuilder();
   vertexCount = 0;
   private readonly scratch: number[] = [];
+  private readonly holes: number[] = [];
+  private readonly ringStarts: number[] = [];
+  private readonly tris: number[] = [];
 
   addPolygon(rings: Int32Array[], feature: number): void {
     const coords = this.scratch;
     coords.length = 0;
-    const holes: number[] = [];
-    const ringStarts: number[] = [];
+    const holes = this.holes;
+    holes.length = 0;
+    const ringStarts = this.ringStarts;
+    ringStarts.length = 0;
     for (let r = 0; r < rings.length; r++) {
       const ring = rings[r]!;
       let n = ring.length / 2;
