@@ -126,6 +126,19 @@ await map.once("idle");
 - `error` with a `MapletError` in `event.error`.
 - `contextlost` and `contextrestored` if the browser drops the GPU context. Maplet reloads what it needs on its own.
 
+## Finding features
+
+```js
+map.on("click", async (event) => {
+  const [feature] = await map.queryRenderedFeatures(event.point);
+  if (feature) console.log(feature.layer, feature.properties);
+});
+```
+
+`queryRenderedFeatures(point)` returns the features drawn under a point, top layer first. It sees exactly what's on screen, including line widths, circle sizes, labels and 3D buildings. Give it two points, `[[x1, y1], [x2, y2]]`, to search a box, or nothing to search the whole view, and pass `{ layers: ["roads"] }` to look at certain layers only. It returns a promise because some of the data lives in a worker.
+
+Each result has `id`, `properties`, `geometry` in longitude and latitude, `layer`, `source` and `sourceLayer`. Features from vector tiles come back cut at the tile edge; GeoJSON features come back whole.
+
 ## Errors
 
 Errors come with a `code`, a readable `message` and a `detail` object. If you don't listen for `error`, they're logged to the console.
