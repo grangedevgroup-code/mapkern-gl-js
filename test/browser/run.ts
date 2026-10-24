@@ -132,6 +132,46 @@ function demStyle(base: string): string {
   });
 }
 
+const DOT: [number, number] = [3.3, 2.2];
+
+function terrainStyle(base: string): string {
+  return JSON.stringify({
+    version: 1,
+    sources: {
+      dem: { type: "dem", tiles: [`${base}/fixture/dem/{z}/{x}/{y}.png`], tileSize: 256, maxZoom: 12 },
+      g: {
+        type: "geojson",
+        data: {
+          type: "FeatureCollection",
+          features: [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: DOT } }],
+        },
+      },
+    },
+    layers: [
+      { id: "bg", type: "background", paint: { color: "#ffffff" } },
+      { id: "hs", type: "hillshade", source: "dem", paint: { exaggeration: 0.3 } },
+      { id: "dot", type: "circle", source: "g", paint: { radius: 5, color: "#ff0000" } },
+    ],
+    terrain: { source: "dem" },
+  });
+}
+
+const RED_CENTROID = `(() => {
+  const gl = window.map.getCanvas().getContext("webgl2");
+  const w = gl.drawingBufferWidth;
+  const h = gl.drawingBufferHeight;
+  const px = new Uint8Array(w * h * 4);
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  let sx = 0, sy = 0, n = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      if (px[i] > 200 && px[i + 1] < 90 && px[i + 2] < 90) { sx += x; sy += y; n++; }
+    }
+  }
+  return n ? [sx / n + 0.5, h - sy / n - 0.5, n] : null;
+})()`;
+
 async function brightness(page: Page, x: number, y: number): Promise<number> {
   const c = await pixel(page, x, y);
   return (c[0] + c[1] + c[2]) / 3;
@@ -671,6 +711,81 @@ const specs: Spec[] = [
       if (missing !== null) fail(`missing tiles should have no elevation, got ${missing}`);
       const errors = await page.evaluate<unknown[]>("window.errors");
       if (errors.length > 0) fail(`missing elevation tiles should not raise errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
+    name: "terrain keeps the requested zoom over the ground",
+    async run({ page, base }) {
+      await createMap(page, terrainStyle(base), { center: HILL, zoom: 6 });
+      const state = await page.evaluate<{ zoom: number; tiles: number; center: { x: number; y: number } }>(
+        `({ zoom: window.map.getZoom(), tiles: window.map.getDiagnostics().terrain?.tiles ?? 0, center: window.map.project(${JSON.stringify(HILL)}) })`,
+      );
+      if (Math.abs(state.zoom - 6) > 1e-6) fail(`zoom should stay 6 when terrain loads, got ${state.zoom}`);
+      if (state.tiles === 0) fail("no terrain tiles were drawn");
+      if (Math.hypot(state.center.x - 400, state.center.y - 300) > 0.5)
+        fail(`the hilltop should stay in the middle, got ${JSON.stringify(state.center)}`);
+      await page.evaluate(`void window.map.flyTo({ center: [3.2, 2.1], zoom: 7.5, duration: 300 })`);
+      await idle(page);
+      const zoom = await page.evaluate<number>("window.map.getZoom()");
+      if (Math.abs(zoom - 7.5) > 1e-6) fail(`flyTo should end at zoom 7.5 over the hill, got ${zoom}`);
+    },
+  },
+  {
+    name: "drawn terrain matches project and unproject",
+    async run({ page, base, shot }) {
+      await createMap(page, terrainStyle(base), { center: [3.22, 2.12], zoom: 10, pitch: 55, bearing: 25 });
+      await shot("pitched");
+      const red = await page.evaluate<[number, number, number] | null>(RED_CENTROID);
+      if (!red || red[2] < 20) fail(`the draped dot is missing: ${JSON.stringify(red)}`);
+      const p = await page.evaluate<{ x: number; y: number }>(`window.map.project(${JSON.stringify(DOT)})`);
+      if (Math.hypot(p.x - red[0], p.y - red[1]) > 2)
+        fail(`project puts the dot at ${p.x.toFixed(1)},${p.y.toFixed(1)} but it is drawn at ${red[0].toFixed(1)},${red[1].toFixed(1)}`);
+      const back = await page.evaluate<[number, number]>(`window.map.unproject([${red[0]}, ${red[1]}])`);
+      if (Math.hypot(back[0] - DOT[0], back[1] - DOT[1]) > 0.015)
+        fail(`unproject of the drawn dot gave ${back}, want ${DOT}`);
+      await page.evaluate("void window.map.setTerrain(null)");
+      await idle(page);
+      const flat = await page.evaluate<{ x: number; y: number }>(`window.map.project(${JSON.stringify(DOT)})`);
+      if (Math.hypot(flat.x - p.x, flat.y - p.y) < 20)
+        fail(`turning terrain off should move the dot on screen, it moved ${Math.hypot(flat.x - p.x, flat.y - p.y)} px`);
+      const after = await page.evaluate<{ terrain: unknown; red: number[] | null }>(
+        `({ terrain: window.map.getDiagnostics().terrain, red: ${RED_CENTROID} })`,
+      );
+      if (after.terrain !== null) fail(`terrain diagnostics should be empty after setTerrain(null): ${JSON.stringify(after.terrain)}`);
+      if (!after.red || Math.hypot(after.red[0]! - flat.x, after.red[1]! - flat.y) > 2)
+        fail(`flat map dot at ${JSON.stringify(after.red)} but project says ${JSON.stringify(flat)}`);
+    },
+  },
+  {
+    name: "dragging on terrain keeps the grabbed ground under the pointer",
+    async run({ page, base }) {
+      await createMap(page, terrainStyle(base), { center: HILL, zoom: 7, pitch: 50 });
+      const grabbed = await page.evaluate<[number, number]>("window.map.unproject([450, 330])");
+      await page.mouse("mouseMoved", 450, 330);
+      await page.mouse("mousePressed", 450, 330, { buttons: 1 });
+      for (let i = 1; i <= 10; i++) {
+        await page.mouse("mouseMoved", 450 - i * 10, 330 - i * 5, { buttons: 1 });
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      await new Promise((r) => setTimeout(r, 250));
+      await page.mouse("mouseReleased", 350, 280, { buttons: 0 });
+      await idle(page);
+      const p = await page.evaluate<{ x: number; y: number }>(`window.map.project(${JSON.stringify(grabbed)})`);
+      if (Math.hypot(p.x - 350, p.y - 280) > 2)
+        fail(`the grabbed point ended at ${p.x.toFixed(1)},${p.y.toFixed(1)} instead of under the pointer at 350,280`);
+    },
+  },
+  {
+    name: "terrain without elevation data stays flat and quiet",
+    async run({ page, base }) {
+      await createMap(page, terrainStyle(base), { center: [100, 0], zoom: 6, pitch: 45 });
+      const result = await page.evaluate<{ errors: unknown[]; tiles: number; center: { x: number; y: number } }>(
+        `({ errors: window.errors, tiles: window.map.getDiagnostics().terrain?.tiles ?? 0, center: window.map.project([100, 0]) })`,
+      );
+      if (result.errors.length > 0) fail(`missing elevation tiles raised errors: ${JSON.stringify(result.errors)}`);
+      if (result.tiles === 0) fail("terrain should still draw flat tiles where there is no data");
+      if (Math.hypot(result.center.x - 400, result.center.y - 300) > 0.5)
+        fail(`the center should stay in the middle, got ${JSON.stringify(result.center)}`);
     },
   },
   {
