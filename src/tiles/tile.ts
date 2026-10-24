@@ -60,7 +60,9 @@ export class Tile<D> implements TileCoord {
   }
 
   get isLoading(): boolean {
-    return this.state === "queued" || this.state === "fetching" || this.state === "decoding" || this.state === "prepared";
+    return (
+      this.state === "queued" || this.state === "fetching" || this.state === "decoding" || this.state === "prepared"
+    );
   }
 
   get isInFlight(): boolean {
