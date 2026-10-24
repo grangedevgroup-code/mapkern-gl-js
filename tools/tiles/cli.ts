@@ -3,6 +3,7 @@ import { availableParallelism } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { gzipSync } from "node:zlib";
+import { convertMbtiles } from "./convert.ts";
 import { extractRegion } from "./extract.ts";
 import { buildFeatures, regionRect } from "./features.ts";
 import { Compression, PMTilesWriter, TileType } from "./pmtiles-writer.ts";
@@ -51,10 +52,12 @@ const FIELDS: Record<string, Record<string, string>> = {
   housenumber: { housenumber: "String" },
 };
 
-const HELP = `Build a vector tile archive (.pmtiles) from an OpenStreetMap .osm.pbf file.
+const HELP = `Build a vector tile archive (.pmtiles) from an OpenStreetMap .osm.pbf file,
+or convert an MBTiles file to PMTiles.
 
 Usage:
   maplet-tiles --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.pmtiles>
+  maplet-tiles convert <file.mbtiles> <file.pmtiles>
 
 Options:
   --input     OpenStreetMap PBF file, for example a Geofabrik extract
@@ -67,6 +70,20 @@ Options:
 `;
 
 async function main(): Promise<void> {
+  if (process.argv[2] === "convert") {
+    const [input, output] = process.argv.slice(3);
+    if (!input || !output) {
+      console.log(HELP);
+      process.exit(1);
+    }
+    const started = performance.now();
+    const log = (m: string) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}`);
+    log(`converting ${resolve(input)}`);
+    const result = await convertMbtiles(resolve(input), resolve(output), log);
+    log(`wrote ${resolve(output)}: ${result.tiles.toLocaleString()} tiles, ${(result.bytes / 1e6).toFixed(1)} MB`);
+    log(`done in ${((performance.now() - started) / 1000).toFixed(1)} s`);
+    return;
+  }
   const { values } = parseArgs({
     options: {
       input: { type: "string" },
