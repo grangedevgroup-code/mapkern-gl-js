@@ -102,6 +102,34 @@ export async function fetchBytes(
   }
 }
 
+async function fetchWithProtocol(
+  handler: ProtocolHandler,
+  request: ProtocolRequest,
+  signal: AbortSignal,
+): Promise<FetchResult> {
+  let result: Awaited<ReturnType<ProtocolHandler>>;
+  try {
+    result = await handler(request, signal);
+  } catch (error) {
+    if (signal.aborted || error instanceof FetchFailure || isAbortError(error)) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new FetchFailure({ kind: "network", message, retryable: true });
+  }
+  if (signal.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
+  if (result === null) return { kind: "empty" };
+  const isBytes = result instanceof ArrayBuffer || result instanceof Uint8Array;
+  const bytes = isBytes ? result : result.data;
+  const contentType = isBytes ? "" : (result.contentType ?? "");
+  const data =
+    bytes instanceof ArrayBuffer
+      ? bytes
+      : bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength && bytes.buffer instanceof ArrayBuffer
+        ? bytes.buffer
+        : bytes.slice().buffer;
+  if (data.byteLength === 0) return { kind: "empty" };
+  return { kind: "data", data, contentType };
+}
+
 export function classifyStatus(status: number, retryAfter: string | null): TileFailure {
   if (status === 401 || status === 403) {
     return { kind: "auth", status, message: `Access denied (HTTP ${status})`, retryable: false };
