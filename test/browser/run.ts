@@ -3,9 +3,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildAll } from "../../scripts/build.ts";
 import { startServer } from "../../scripts/server.ts";
+import { latFromMercatorY, mercatorX, mercatorY } from "../../src/geo/mercator.ts";
 import type { Page } from "./cdp.ts";
 import { Browser } from "./cdp.ts";
-import { latFromMercatorY, mercatorX, mercatorY } from "../../src/geo/mercator.ts";
 import { demHeight, fixtureRoute, HILL, square, writeMbtilesFixture } from "./fixtures.ts";
 import { BORDER, zoomColor } from "./png.ts";
 
@@ -643,7 +643,8 @@ const specs: Spec[] = [
       }
       for (const x of [360, 400, 440]) {
         const column: number[] = [];
-        for (let y = Math.round(seamY) - 10; y <= Math.round(seamY) + 10; y++) column.push(await brightness(page, x, y));
+        for (let y = Math.round(seamY) - 10; y <= Math.round(seamY) + 10; y++)
+          column.push(await brightness(page, x, y));
         if (roughness(column) > 4)
           fail(`seam at y=${seamY.toFixed(1)}, column ${x}: ${column.map(Math.round).join(" ")}`);
       }
