@@ -146,7 +146,8 @@ export class LabelRenderer {
     for (const { layer, manager } of inputs) {
       parts.push(`${layer.id}:${layer.revision}`);
       for (const piece of manager.pieces) {
-        if (piece.tile.data?.buckets.has(layer.id)) parts.push(`${piece.tile.key}/${piece.wrap}`);
+        if (piece.tile.data?.buckets.has(layer.id))
+          parts.push(`${piece.tile.key}/${piece.tile.revision}/${piece.wrap}`);
       }
     }
     const structure = parts.join(",");
