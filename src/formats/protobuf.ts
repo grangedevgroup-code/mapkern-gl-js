@@ -186,9 +186,11 @@ export class Reader {
       case FIXED64:
         this.pos += 8;
         break;
-      case BYTES:
-        this.pos += this.varint();
+      case BYTES: {
+        const len = this.varint();
+        this.pos += len;
         break;
+      }
       case FIXED32:
         this.pos += 4;
         break;
