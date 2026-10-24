@@ -27,7 +27,21 @@ export function fontKey(font: FontSpec): string {
 }
 
 export function cssFamily(stack: readonly string[]): string {
-  const generic = new Set(["serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui", "ui-sans-serif", "ui-serif", "ui-monospace", "ui-rounded", "emoji", "math", "fangsong"]);
+  const generic = new Set([
+    "serif",
+    "sans-serif",
+    "monospace",
+    "cursive",
+    "fantasy",
+    "system-ui",
+    "ui-sans-serif",
+    "ui-serif",
+    "ui-monospace",
+    "ui-rounded",
+    "emoji",
+    "math",
+    "fangsong",
+  ]);
   return stack.map((f) => (generic.has(f) ? f : `"${f.replace(/["\\]/g, "")}"`)).join(", ");
 }
 
@@ -105,7 +119,15 @@ export class GlyphAtlas {
     const sdf = signedDistanceField(alpha, bw, bh, SDF_RADIUS);
     for (let y = 0; y < bh; y++) this.data.set(sdf.subarray(y * bw, (y + 1) * bw), (spot.y + y) * this.width + spot.x);
     this.markDirty(spot.y, spot.y + bh);
-    const metrics: GlyphMetrics = { x: spot.x, y: spot.y, width: bw, height: bh, left: -left - GLYPH_BUFFER, top: -ascent - GLYPH_BUFFER, advance };
+    const metrics: GlyphMetrics = {
+      x: spot.x,
+      y: spot.y,
+      width: bw,
+      height: bh,
+      left: -left - GLYPH_BUFFER,
+      top: -ascent - GLYPH_BUFFER,
+      advance,
+    };
     this.glyphs.set(key, metrics);
     return metrics;
   }
@@ -171,14 +193,22 @@ export class GlyphAtlas {
   }
 }
 
-const COMPLEX = /[\u0590-\u08ff\u0900-\u0dff\u0e00-\u0eff\u0f00-\u0fff\u1000-\u109f\u1780-\u17ff\u1800-\u18af\ufb1d-\ufdff\ufe70-\ufeff]/;
+const COMPLEX =
+  /[\u0590-\u08ff\u0900-\u0dff\u0e00-\u0eff\u0f00-\u0fff\u1000-\u109f\u1780-\u17ff\u1800-\u18af\ufb1d-\ufdff\ufe70-\ufeff]/;
 
 export function needsWholeShaping(text: string): boolean {
   return COMPLEX.test(text);
 }
 
 export function splitGraphemes(text: string): string[] {
-  const segmenter = (Intl as unknown as { Segmenter?: new (locale?: string, options?: { granularity: string }) => { segment(input: string): Iterable<{ segment: string }> } }).Segmenter;
+  const segmenter = (
+    Intl as unknown as {
+      Segmenter?: new (
+        locale?: string,
+        options?: { granularity: string },
+      ) => { segment(input: string): Iterable<{ segment: string }> };
+    }
+  ).Segmenter;
   if (segmenter) {
     const out: string[] = [];
     for (const s of new segmenter(undefined, { granularity: "grapheme" }).segment(text)) out.push(s.segment);
