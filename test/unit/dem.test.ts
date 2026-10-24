@@ -148,7 +148,7 @@ test("stitched neighbors give the same slopes as one seamless grid", () => {
   }
   const east = gradients(tiles[1]![2]!);
   for (let j = 1; j < n - 1; j++) {
-    const ours = ((j * n + n - 1) * 2) as number;
+    const ours = (j * n + n - 1) * 2;
     const theirs = (j * n + 1) * 2;
     assert.ok(Math.abs(g[ours]! - east[theirs]!) < 1e-4, `seam slope differs at row ${j}`);
   }
