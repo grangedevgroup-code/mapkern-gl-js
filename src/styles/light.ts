@@ -35,26 +35,6 @@ function labelLayers(font: string[] = DEFAULT_FONT): LayerSpec[] {
       paint: { color: "#557790", haloColor: "rgba(255, 255, 255, 0.6)", haloWidth: 1.2 },
     },
     {
-      id: "road-label",
-      type: "symbol",
-      source: "osm",
-      sourceLayer: "road",
-      minZoom: 13,
-      filter: ["all", ["has", "name"], ["!", ["in", ["get", "class"], ["literal", ["path", "track"]]]]],
-      layout: {
-        text: ["get", "name"],
-        font,
-        placement: "line",
-        spacing: 320,
-        size: linearZoom([
-          [13, 10.5],
-          [17, 14],
-        ]),
-        priority: ["match", ["get", "class"], "motorway", 40, "trunk", 38, "primary", 36, "secondary", 34, "tertiary", 32, "minor", 30, 28],
-      },
-      paint: { color: "#57534d", ...halo },
-    },
-    {
       id: "peak-label",
       type: "symbol",
       source: "osm",
@@ -569,7 +549,7 @@ export function lightStyle(options: LightStyleOptions = {}): StyleSpec {
       },
     },
   );
-  if (options.labels !== false) layers.push(...labelLayers());
+  if (options.labels !== false) layers.push(...labelLayers(options.font));
   return {
     version: 1,
     name: "Maplet Light",
