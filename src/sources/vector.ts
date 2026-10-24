@@ -8,6 +8,7 @@ import type { VectorSourceSpec } from "../style/types.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileLoader, TileStats } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
+import type { LabelCandidate } from "../worker/symbols.ts";
 import type {
   BucketData,
   BucketType,
@@ -17,7 +18,6 @@ import type {
   VectorTileRequest,
   VectorTileResult,
 } from "../worker/vector-task.ts";
-import type { LabelCandidate } from "../worker/symbols.ts";
 import type { MapSource, SourceContext } from "./source.ts";
 import type { TileSet } from "./tilejson.ts";
 import { resolveTileSet, tileUrl } from "./tilejson.ts";
