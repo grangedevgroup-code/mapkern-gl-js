@@ -302,7 +302,6 @@ test("large data is split level by level and still clips exactly", () => {
   const idx = index(feature({ type: "Polygon", coordinates: [ring] }), { maxZoom: z });
   const n = 2 ** z;
   const world = Float64Array.from(ring.flatMap(([lng, lat]) => [mercatorX(lng!), mercatorY(lat!)]));
-  const outer = signedArea(world) > 0 ? world : world;
   const ty = Math.floor(mercatorY(0) * n);
   for (const tx of [Math.floor(mercatorX(20) * n) - 1, Math.floor(mercatorX(20) * n), Math.floor(mercatorX(0) * n)]) {
     const pad = BUFFER / 512 / n;
