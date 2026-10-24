@@ -115,7 +115,8 @@ function decode(text: string): string {
   if (text.indexOf("&") < 0) return text;
   return text.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);/g, (match, entity: string) => {
     if (entity[0] === "#") {
-      const code = entity[1] === "x" || entity[1] === "X" ? Number.parseInt(entity.slice(2), 16) : Number(entity.slice(1));
+      const code =
+        entity[1] === "x" || entity[1] === "X" ? Number.parseInt(entity.slice(2), 16) : Number(entity.slice(1));
       return Number.isFinite(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
     }
     return ENTITIES[entity] ?? match;
