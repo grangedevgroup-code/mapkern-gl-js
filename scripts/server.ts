@@ -94,7 +94,6 @@ export function startServer(options: ServerOptions): Promise<{ server: Server; u
       "accept-ranges": "bytes",
       "access-control-allow-origin": "*",
     };
-    if (file.endsWith(".gz.pbf") || file.endsWith(".pbf.gz")) headers["content-encoding"] = "gzip";
     const range = req.headers.range;
     if (range) {
       const m = /^bytes=(\d*)-(\d*)$/.exec(range);
