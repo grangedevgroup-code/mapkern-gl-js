@@ -21,6 +21,119 @@ export interface SymbolLayout {
   transform: "none" | "uppercase" | "lowercase";
 }
 
+export interface LabelInfo {
+  text: string;
+  size: number;
+  priority: number;
+}
+
+export function labelInfo(ctx: EvalContext, layout: SymbolLayout): LabelInfo | null {
+  const raw = layout.text.evaluate(ctx);
+  let text = typeof raw === "string" ? raw : typeof raw === "number" ? String(raw) : "";
+  text = text.replace(/\s+/g, " ").trim();
+  if (text.length === 0) return null;
+  if (text.length > 200) text = `${text.slice(0, 199)}…`;
+  if (layout.transform === "uppercase") text = text.toLocaleUpperCase();
+  else if (layout.transform === "lowercase") text = text.toLocaleLowerCase();
+  return { text, size: numberOr(layout.size.evaluate(ctx), 14), priority: numberOr(layout.priority.evaluate(ctx), 0) };
+}
+
+export function lineLabels(
+  parts: readonly Int32Array[],
+  info: LabelInfo,
+  index: number,
+  layout: SymbolLayout,
+  extent: number,
+): LabelCandidate[] {
+  const { text, size, priority } = info;
+  const spacing = Math.max(16, layout.spacing) * (extent / 512);
+  const minLength = Math.min(text.length * size * 0.5, 400) * (extent / 512);
+  const out: LabelCandidate[] = [];
+  for (const part of parts) {
+    const length = lineLength(part);
+    if (length < minLength) continue;
+    const anchors: number[] = [];
+    const count = Math.max(1, Math.floor(length / spacing));
+    const step = length / count;
+    for (let i = 0; i < count; i++) {
+      const at = step * (i + 0.5);
+      const p = pointAlong(part, at);
+      anchors.push(p[0], p[1], at);
+    }
+    out.push({ feature: index, text, size, priority, line: true, anchors: Float32Array.from(anchors), path: part });
+  }
+  return out;
+}
+
+export function mergeParts(parts: readonly Int32Array[]): Int32Array[] {
+  if (parts.length < 2) return parts.slice();
+  const key = (x: number, y: number) => x * 67108864 + y;
+  const ends = new Map<number, number[]>();
+  const link = (k: number, end: number) => {
+    const list = ends.get(k);
+    if (list) list.push(end);
+    else ends.set(k, [end]);
+  };
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i]!;
+    if (p.length < 4) continue;
+    link(key(p[0]!, p[1]!), i * 2);
+    link(key(p[p.length - 2]!, p[p.length - 1]!), i * 2 + 1);
+  }
+  const used = new Uint8Array(parts.length);
+  const take = (x: number, y: number): number => {
+    const list = ends.get(key(x, y));
+    if (!list) return -1;
+    for (const end of list) if (!used[end >> 1]) return end;
+    return -1;
+  };
+  const out: Int32Array[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (used[i]) continue;
+    used[i] = 1;
+    const first = parts[i]!;
+    if (first.length < 4) {
+      out.push(first);
+      continue;
+    }
+    const forward: number[] = Array.from(first);
+    for (;;) {
+      const end = take(forward[forward.length - 2]!, forward[forward.length - 1]!);
+      if (end < 0) break;
+      used[end >> 1] = 1;
+      const next = parts[end >> 1]!;
+      if ((end & 1) === 0) for (let k = 2; k < next.length; k++) forward.push(next[k]!);
+      else for (let k = next.length - 4; k >= 0; k -= 2) forward.push(next[k]!, next[k + 1]!);
+    }
+    const heads: number[][] = [];
+    let hx = forward[0]!;
+    let hy = forward[1]!;
+    for (;;) {
+      const end = take(hx, hy);
+      if (end < 0) break;
+      used[end >> 1] = 1;
+      const next = parts[end >> 1]!;
+      const piece: number[] = [];
+      if ((end & 1) === 1) for (let k = 0; k < next.length - 2; k++) piece.push(next[k]!);
+      else for (let k = next.length - 2; k >= 2; k -= 2) piece.push(next[k]!, next[k + 1]!);
+      heads.push(piece);
+      hx = piece[0]!;
+      hy = piece[1]!;
+    }
+    let total = forward.length;
+    for (const piece of heads) total += piece.length;
+    const merged = new Int32Array(total);
+    let at = 0;
+    for (let h = heads.length - 1; h >= 0; h--) {
+      merged.set(heads[h]!, at);
+      at += heads[h]!.length;
+    }
+    merged.set(forward, at);
+    out.push(merged);
+  }
+  return out;
+}
+
 export function labelCandidates(
   feature: VectorFeature,
   index: number,
@@ -28,35 +141,14 @@ export function labelCandidates(
   layout: SymbolLayout,
   extent: number,
 ): LabelCandidate[] {
-  const raw = layout.text.evaluate(ctx);
-  let text = typeof raw === "string" ? raw : typeof raw === "number" ? String(raw) : "";
-  text = text.replace(/\s+/g, " ").trim();
-  if (text.length === 0) return [];
-  if (text.length > 200) text = `${text.slice(0, 199)}…`;
-  if (layout.transform === "uppercase") text = text.toLocaleUpperCase();
-  else if (layout.transform === "lowercase") text = text.toLocaleLowerCase();
-  const size = numberOr(layout.size.evaluate(ctx), 14);
-  const priority = numberOr(layout.priority.evaluate(ctx), 0);
+  const info = labelInfo(ctx, layout);
+  if (!info) return [];
+  const { text, size, priority } = info;
   const geometry = feature.geometry();
   if (geometry.length === 0) return [];
   const out: LabelCandidate[] = [];
   if (layout.placement === "line" && (feature.type === 2 || feature.type === 3)) {
-    const spacing = Math.max(16, layout.spacing) * (extent / 512);
-    const minLength = Math.min(text.length * size * 0.5, 400) * (extent / 512);
-    for (const part of geometry) {
-      const length = lineLength(part);
-      if (length < minLength) continue;
-      const anchors: number[] = [];
-      const count = Math.max(1, Math.floor(length / spacing));
-      const step = length / count;
-      for (let i = 0; i < count; i++) {
-        const at = step * (i + 0.5);
-        const p = pointAlong(part, at);
-        anchors.push(p[0], p[1], at);
-      }
-      out.push({ feature: index, text, size, priority, line: true, anchors: Float32Array.from(anchors), path: part });
-    }
-    return out;
+    return lineLabels(geometry, info, index, layout, extent);
   }
   if (feature.type === 1) {
     const anchors: number[] = [];
