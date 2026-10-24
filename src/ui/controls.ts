@@ -99,13 +99,21 @@ export class NavigationControl implements Control {
     const m = this.mapRef;
     if (!m) return;
     const zoom = m.getZoom();
-    if (this.zoomIn) this.zoomIn.disabled = zoom >= m.getMaxZoom() - 1e-9;
-    if (this.zoomOut) this.zoomOut.disabled = zoom <= m.getMinZoom() + 1e-9;
+    const atMax = zoom >= m.getMaxZoom() - 1e-9;
+    const atMin = zoom <= m.getMinZoom() + 1e-9;
+    if (this.zoomIn && this.zoomIn.disabled !== atMax) this.zoomIn.disabled = atMax;
+    if (this.zoomOut && this.zoomOut.disabled !== atMin) this.zoomOut.disabled = atMin;
     if (this.needle) {
       const scale = 1 / Math.cos((m.getPitch() * Math.PI) / 180);
-      this.needle.style.transform = `scale(1, ${Math.min(scale, 3).toFixed(3)}) rotate(${(-m.getBearing()).toFixed(2)}deg)`;
+      const transform = `scale(1, ${Math.min(scale, 3).toFixed(2)}) rotate(${(-m.getBearing()).toFixed(1)}deg)`;
+      if (transform !== this.lastTransform) {
+        this.lastTransform = transform;
+        this.needle.style.transform = transform;
+      }
     }
   }
+
+  private lastTransform = "";
 }
 
 export interface AttributionOptions {
@@ -208,39 +216,54 @@ export class ScaleControl implements Control {
     const el = this.element;
     const map = this.mapRef;
     if (!el || !map) return;
-    const h = map.getContainer().clientHeight / 2;
+    const h = map.transform.height / 2;
     const a = map.unproject([0, h]);
     const b = map.unproject([this.maxWidth, h]);
-    if (!a || !b) {
-      el.style.visibility = "hidden";
-      return;
-    }
-    el.style.visibility = "visible";
-    const meters = distanceMeters(a, b);
-    let value: number;
-    let label: string;
-    if (this.unit === "imperial") {
-      const feet = meters * 3.28084;
-      if (feet > 5280) {
-        value = niceNumber(feet / 5280);
-        label = `${value} mi`;
-        el.style.width = `${(this.maxWidth * value) / (feet / 5280)}px`;
+    let label = "";
+    let width = "";
+    if (a && b) {
+      const meters = distanceMeters(a, b);
+      let span: number;
+      let unit: string;
+      if (this.unit === "imperial") {
+        const feet = meters * 3.28084;
+        if (feet > 5280) {
+          span = feet / 5280;
+          unit = "mi";
+        } else {
+          span = feet;
+          unit = "ft";
+        }
+      } else if (meters >= 1000) {
+        span = meters / 1000;
+        unit = "km";
       } else {
-        value = niceNumber(feet);
-        label = `${value} ft`;
-        el.style.width = `${(this.maxWidth * value) / feet}px`;
+        span = meters;
+        unit = "m";
       }
-    } else if (meters >= 1000) {
-      value = niceNumber(meters / 1000);
-      label = `${value} km`;
-      el.style.width = `${(this.maxWidth * value) / (meters / 1000)}px`;
-    } else {
-      value = niceNumber(meters);
-      label = `${value} m`;
-      el.style.width = `${(this.maxWidth * value) / meters}px`;
+      value = niceNumber(span);
+      label = `${value} ${unit}`;
+      width = `${Math.round((this.maxWidth * value) / span)}px`;
     }
-    el.textContent = label;
+    const visibility = label ? "visible" : "hidden";
+    if (visibility !== this.lastVisibility) {
+      this.lastVisibility = visibility;
+      el.style.visibility = visibility;
+    }
+    if (!label) return;
+    if (width !== this.lastWidth) {
+      this.lastWidth = width;
+      el.style.width = width;
+    }
+    if (label !== this.lastLabel) {
+      this.lastLabel = label;
+      el.textContent = label;
+    }
   }
+
+  private lastLabel = "";
+  private lastWidth = "";
+  private lastVisibility = "";
 }
 
 function niceNumber(n: number): number {
