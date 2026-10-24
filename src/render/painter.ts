@@ -1,13 +1,15 @@
 import type { Transform } from "../camera/transform.ts";
 import type { RasterSource } from "../sources/raster.ts";
 import type { MapSource } from "../sources/source.ts";
-import type { VectorSource } from "../sources/vector.ts";
+import type { VectorTile } from "../sources/vector.ts";
+import { isVectorTileSource } from "../sources/vector.ts";
 import type { RGBA } from "../style/color.ts";
 import { premultiply } from "../style/color.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { SymbolLayerInput } from "../text/labels.ts";
 import { LabelRenderer } from "../text/labels.ts";
 import { textShader } from "../text/shader.ts";
+import type { TileManager } from "../tiles/manager.ts";
 import type { GL, Program } from "./gl.ts";
 import { rasterShader, solidShader } from "./shaders/raster.ts";
 import { circleShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
@@ -103,9 +105,8 @@ export class Painter {
         case "line":
         case "circle": {
           const source = layer.source ? frame.sources.get(layer.source) : undefined;
-          if ((source?.type === "vector" || source?.type === "geojson") && (source as VectorSource).manager) {
-            this.vector.draw(frame, layer, (source as VectorSource).manager!, this.stats);
-          }
+          const manager = vectorManager(source);
+          if (manager) this.vector.draw(frame, layer, manager, this.stats);
           break;
         }
         default:
@@ -115,10 +116,8 @@ export class Painter {
     const symbols: SymbolLayerInput[] = [];
     for (const layer of layers) {
       if (layer.type !== "symbol" || !layer.source) continue;
-      const source = frame.sources.get(layer.source);
-      if ((source?.type === "vector" || source?.type === "geojson") && (source as VectorSource).manager) {
-        symbols.push({ layer, manager: (source as VectorSource).manager! });
-      }
+      const manager = vectorManager(frame.sources.get(layer.source));
+      if (manager) symbols.push({ layer, manager });
     }
     let animating = false;
     if (symbols.length > 0 || this.labels.visibleCount > 0) {
@@ -221,4 +220,8 @@ export function hueMatrix(degrees: number, out: Float32Array): Float32Array {
   out[7] = k - r;
   out[8] = c + k;
   return out;
+}
+
+function vectorManager(source: MapSource | undefined): TileManager<VectorTile> | null {
+  return isVectorTileSource(source) ? source.manager : null;
 }
