@@ -22,7 +22,11 @@ export class FetchFailure extends Error {
 
 export type FetchResult = { kind: "data"; data: ArrayBuffer; contentType: string } | { kind: "empty" };
 
-export function resolveRequest(url: string, kind: ResourceKind, transform: TransformRequest | undefined): RequestParameters {
+export function resolveRequest(
+  url: string,
+  kind: ResourceKind,
+  transform: TransformRequest | undefined,
+): RequestParameters {
   const custom = transform?.(url, kind);
   return custom ?? { url };
 }
@@ -54,7 +58,11 @@ export async function fetchBytes(
     } catch (error) {
       if (signal.aborted) throw error;
       if (timedOut) {
-        throw new FetchFailure({ kind: "timeout", message: `Request timed out after ${timeoutMs} ms`, retryable: true });
+        throw new FetchFailure({
+          kind: "timeout",
+          message: `Request timed out after ${timeoutMs} ms`,
+          retryable: true,
+        });
       }
       throw new FetchFailure({ kind: "network", message: "Network request failed", retryable: true });
     }
@@ -73,7 +81,11 @@ export async function fetchBytes(
     } catch (error) {
       if (signal.aborted) throw error;
       if (timedOut) {
-        throw new FetchFailure({ kind: "timeout", message: `Request timed out after ${timeoutMs} ms`, retryable: true });
+        throw new FetchFailure({
+          kind: "timeout",
+          message: `Request timed out after ${timeoutMs} ms`,
+          retryable: true,
+        });
       }
       throw new FetchFailure({ kind: "network", message: "Response body could not be read", retryable: true });
     }
@@ -128,7 +140,13 @@ export function isAbortError(error: unknown): boolean {
   );
 }
 
-export function expandTemplate(template: string, z: number, x: number, y: number, extra: (key: string) => string | undefined): string {
+export function expandTemplate(
+  template: string,
+  z: number,
+  x: number,
+  y: number,
+  extra: (key: string) => string | undefined,
+): string {
   return template.replace(/\{([a-z-]+)\}/gi, (match, key: string) => {
     switch (key) {
       case "z":
