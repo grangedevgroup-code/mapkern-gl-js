@@ -665,13 +665,15 @@ export class MapletMap extends Emitter<MapEvents> {
       target = this.elevationFrom + (this.elevationTo - this.elevationFrom) * progress;
     }
     if (target !== null) {
+      const before = t.elevation;
+      const zoom = t.zoom;
       if (this.elevationIntent === "camera" && progress === null && Math.abs(target - t.elevation) > 1e-3) {
         t.setElevationKeepCamera(target);
       }
       const floor = this.cameraFloor(terrain);
       const wanted = floor === null ? target : Math.max(target, floor);
       if (Math.abs(wanted - t.elevation) > 1e-3) t.setElevation(wanted);
-      this.cameraVersion++;
+      if (t.elevation !== before || t.zoom !== zoom) this.cameraVersion++;
     }
     terrain.update(t);
     t.setGround(Math.min(terrain.ground, t.elevation));
