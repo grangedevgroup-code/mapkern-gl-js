@@ -1,5 +1,4 @@
 import type { Transform } from "../camera/transform.ts";
-import { MapletError } from "../core/errors.ts";
 import type { TileCoord } from "../geo/tile.ts";
 import type { GL } from "../render/gl.ts";
 import { PaintTable } from "../render/paint-table.ts";
@@ -19,6 +18,7 @@ import type {
   VectorTileResult,
 } from "../worker/vector-task.ts";
 import type { MapSource, SourceContext } from "./source.ts";
+import { tileEvents } from "./source.ts";
 import type { TileSet } from "./tilejson.ts";
 import { resolveTileSet, tileUrl } from "./tilejson.ts";
 
@@ -49,6 +49,10 @@ export interface VectorTile {
   bytes: number;
   uploaded: boolean;
   featureCount: number;
+}
+
+export interface VectorTileSource {
+  readonly manager: TileManager<VectorTile> | null;
 }
 
 const DATA_DRIVEN: Record<string, readonly string[]> = {
@@ -104,16 +108,97 @@ export function layerProgram(layer: StyleLayer): LayerProgram | null {
   };
 }
 
-export class VectorSource implements MapSource {
+export class LayerPrograms {
+  programs: LayerProgram[] = [];
+  signature = "";
+  private revisions = new Map<string, number>();
+
+  update(layers: readonly StyleLayer[]): boolean {
+    let changed = layers.length !== this.revisions.size;
+    if (!changed) {
+      for (const layer of layers) {
+        if (this.revisions.get(layer.id) !== layer.revision) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (!changed) return false;
+    this.revisions = new Map(layers.map((l) => [l.id, l.revision]));
+    const programs = layers.map(layerProgram).filter((p): p is LayerProgram => p !== null);
+    const signature = JSON.stringify(programs);
+    if (signature === this.signature) return false;
+    const first = this.signature === "";
+    this.signature = signature;
+    this.programs = programs;
+    return !first;
+  }
+}
+
+export function vectorTile(decoded: VectorTileResult, signature: string): VectorTile {
+  const buckets = new Map<string, VectorBucket>();
+  let bytes = 0;
+  for (const b of decoded.buckets) {
+    buckets.set(b.layerId, {
+      layerId: b.layerId,
+      type: b.type,
+      extent: b.extent,
+      features: new FeatureTable(b.features),
+      main: null,
+      outline: null,
+      cpu: b,
+      paint: new PaintTable(),
+      labels: b.labels ?? null,
+    });
+    bytes += geometryBytes(b.main) + geometryBytes(b.outline) + b.features.ids.byteLength * 4;
+  }
+  return { buckets, signature, bytes, uploaded: false, featureCount: decoded.featureCount };
+}
+
+export function vectorTileLoader(gl: GL, load: TileLoader<VectorTile>["load"]): TileLoader<VectorTile> {
+  return {
+    load,
+    needsUpload: (data) => !data.uploaded,
+    upload: (data) => {
+      for (const bucket of data.buckets.values()) {
+        const cpu = bucket.cpu;
+        if (!cpu) continue;
+        bucket.main = cpu.main ? uploadGeometry(gl, bucket.type, cpu.main) : null;
+        bucket.outline = cpu.outline && bucket.main ? uploadOutline(gl, bucket.main, cpu.outline) : null;
+        bucket.cpu = null;
+      }
+      data.uploaded = true;
+    },
+    release: (data) => {
+      for (const bucket of data.buckets.values()) {
+        releaseGeometry(gl, bucket.main);
+        releaseGeometry(gl, bucket.outline);
+        bucket.paint.release(gl);
+        bucket.main = null;
+        bucket.outline = null;
+        bucket.cpu = null;
+      }
+      data.buckets.clear();
+    },
+    byteSize: (data) => {
+      let bytes = 0;
+      for (const b of data.buckets.values()) {
+        bytes += (b.main?.bytes ?? 0) + (b.outline?.bytes ?? 0) + b.paint.bytes + b.features.bytes;
+        if (b.cpu) bytes += geometryBytes(b.cpu.main) + geometryBytes(b.cpu.outline);
+      }
+      return bytes || data.bytes;
+    },
+  };
+}
+
+export class VectorSource implements MapSource, VectorTileSource {
   readonly id: string;
   readonly type = "vector" as const;
   spec: VectorSourceSpec;
   manager: TileManager<VectorTile> | null = null;
   tileSet: TileSet | null = null;
   private readonly ctx: SourceContext;
-  private programs: LayerProgram[] = [];
-  private signature = "";
-  private layerRevisions = new Map<string, number>();
+  private readonly layers = new LayerPrograms();
 
   constructor(id: string, spec: VectorSourceSpec, ctx: SourceContext) {
     this.id = id;
@@ -148,7 +233,7 @@ export class VectorSource implements MapSource {
     this.manager = new TileManager<VectorTile>(
       this.id,
       { tileSize: 512, minZoom: set.minZoom, maxZoom: set.maxZoom, roundZoom: false, bounds: set.bounds },
-      this.loader(set),
+      vectorTileLoader(this.ctx.gl, (tile, tileSignal, onDecoding) => this.loadTile(set, tile, tileSignal, onDecoding)),
       this.ctx.scheduler,
       {
         fadeDuration: 0,
@@ -158,46 +243,12 @@ export class VectorSource implements MapSource {
         failureCooldownMs: 120000,
         prefetchLimit: this.ctx.prefetchLimit,
       },
-      {
-        changed: () => this.ctx.changed(),
-        failure: (failure, tile) => {
-          const code = failure.kind === "auth" ? "auth" : failure.kind === "decode" ? "decode" : "tile-error";
-          this.ctx.error(
-            new MapletError(
-              code,
-              `Tile ${tile.z}/${tile.x}/${tile.y} of source "${this.id}" failed: ${failure.message}`,
-              {
-                sourceId: this.id,
-                tile: { z: tile.z, x: tile.x, y: tile.y },
-                failure,
-              },
-            ),
-          );
-        },
-        wakeAt: (time) => this.ctx.wakeAt(time),
-      },
+      tileEvents(this.id, this.ctx),
     );
   }
 
   setLayers(layers: readonly StyleLayer[]): void {
-    let changed = layers.length !== this.layerRevisions.size;
-    if (!changed) {
-      for (const layer of layers) {
-        if (this.layerRevisions.get(layer.id) !== layer.revision) {
-          changed = true;
-          break;
-        }
-      }
-    }
-    if (!changed) return;
-    this.layerRevisions = new Map(layers.map((l) => [l.id, l.revision]));
-    const programs = layers.map(layerProgram).filter((p): p is LayerProgram => p !== null);
-    const signature = JSON.stringify(programs);
-    if (signature === this.signature) return;
-    const first = this.signature === "";
-    this.signature = signature;
-    this.programs = programs;
-    if (!first) this.manager?.reload();
+    if (this.layers.update(layers)) this.manager?.refresh();
   }
 
   update(transform: Transform, now: number, predicted: readonly Transform[]): void {
@@ -229,81 +280,30 @@ export class VectorSource implements MapSource {
     this.manager = null;
   }
 
-  private loader(set: TileSet): TileLoader<VectorTile> {
+  private async loadTile(
+    set: TileSet,
+    tile: TileCoord,
+    signal: AbortSignal,
+    onDecoding: () => void,
+  ): Promise<VectorTile | null> {
     const ctx = this.ctx;
-    const gl = ctx.gl;
-    return {
-      load: async (tile: TileCoord, signal: AbortSignal, onDecoding: () => void): Promise<VectorTile | null> => {
-        const url = tileUrl(set, tile.z, tile.x, tile.y);
-        const result = await fetchBytes(
-          resolveRequest(url, "tile", ctx.transformRequest),
-          signal,
-          ctx.requestTimeoutMs,
-        );
-        if (result.kind === "empty") return null;
-        onDecoding();
-        const programs = this.programs;
-        const signature = this.signature;
-        const request: VectorTileRequest = {
-          bytes: result.data,
-          z: tile.z,
-          x: tile.x,
-          y: tile.y,
-          layers: programs,
-          overzoom: tile.z >= set.maxZoom,
-        };
-        const decoded = await ctx
-          .workers()
-          .send<VectorTileResult>("vector", request, [result.data], signal, tile.x + tile.y);
-        const buckets = new Map<string, VectorBucket>();
-        let bytes = 0;
-        for (const b of decoded.buckets) {
-          buckets.set(b.layerId, {
-            layerId: b.layerId,
-            type: b.type,
-            extent: b.extent,
-            features: new FeatureTable(b.features),
-            main: null,
-            outline: null,
-            cpu: b,
-            paint: new PaintTable(),
-            labels: b.labels ?? null,
-          });
-          bytes += geometryBytes(b.main) + geometryBytes(b.outline) + b.features.ids.byteLength * 4;
-        }
-        return { buckets, signature, bytes, uploaded: false, featureCount: decoded.featureCount };
-      },
-      needsUpload: (data) => !data.uploaded,
-      upload: (data) => {
-        for (const bucket of data.buckets.values()) {
-          const cpu = bucket.cpu;
-          if (!cpu) continue;
-          bucket.main = cpu.main ? uploadGeometry(gl, bucket.type, cpu.main) : null;
-          bucket.outline = cpu.outline && bucket.main ? uploadOutline(gl, bucket.main, cpu.outline) : null;
-          bucket.cpu = null;
-        }
-        data.uploaded = true;
-      },
-      release: (data) => {
-        for (const bucket of data.buckets.values()) {
-          releaseGeometry(gl, bucket.main);
-          releaseGeometry(gl, bucket.outline);
-          bucket.paint.release(gl);
-          bucket.main = null;
-          bucket.outline = null;
-          bucket.cpu = null;
-        }
-        data.buckets.clear();
-      },
-      byteSize: (data) => {
-        let bytes = 0;
-        for (const b of data.buckets.values()) {
-          bytes += (b.main?.bytes ?? 0) + (b.outline?.bytes ?? 0) + b.paint.bytes + b.features.bytes;
-          if (b.cpu) bytes += geometryBytes(b.cpu.main) + geometryBytes(b.cpu.outline);
-        }
-        return bytes || data.bytes;
-      },
+    const url = tileUrl(set, tile.z, tile.x, tile.y);
+    const result = await fetchBytes(resolveRequest(url, "tile", ctx.transformRequest), signal, ctx.requestTimeoutMs);
+    if (result.kind === "empty") return null;
+    onDecoding();
+    const { programs, signature } = this.layers;
+    const request: VectorTileRequest = {
+      bytes: result.data,
+      z: tile.z,
+      x: tile.x,
+      y: tile.y,
+      layers: programs,
+      overzoom: tile.z >= set.maxZoom,
     };
+    const decoded = await ctx
+      .workers()
+      .send<VectorTileResult>("vector", request, [result.data], signal, tile.x + tile.y);
+    return vectorTile(decoded, signature);
   }
 }
 
