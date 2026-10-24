@@ -3,7 +3,7 @@ export const rasterShader = {
   vertex: `
 uniform mat4 u_matrix;
 uniform vec4 u_clip;
-in vec2 a_pos;
+layout(location = 0) in vec2 a_pos;
 out vec2 v_uv;
 void main() {
   vec2 p = mix(u_clip.xy, u_clip.zw, a_pos);
@@ -36,7 +36,7 @@ void main() {
 export const solidShader = {
   name: "solid",
   vertex: `
-in vec2 a_pos;
+layout(location = 0) in vec2 a_pos;
 void main() {
   gl_Position = vec4(a_pos * 2.0 - 1.0, 0.0, 1.0);
 }
