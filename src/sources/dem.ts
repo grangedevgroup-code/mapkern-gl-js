@@ -167,9 +167,7 @@ export class DemSource implements MapSource {
         if (result.kind === "empty") return null;
         onDecoding();
         const request: DemRequest = { bytes: result.data, unpack };
-        const reply = await ctx
-          .workers()
-          .send<DemReply | null>("dem", request, [result.data], signal, tile.x + tile.y);
+        const reply = await ctx.workers().send<DemReply | null>("dem", request, [result.data], signal, tile.x + tile.y);
         if (!reply) return null;
         return {
           z: tile.z,
@@ -202,7 +200,8 @@ export class DemSource implements MapSource {
       },
       byteSize: (data: DemTile): number => {
         const size = data.grid.size;
-        const cpu = data.grid.elevation.byteLength + (data.grid.mask?.byteLength ?? 0) + (data.gradient?.byteLength ?? 0);
+        const cpu =
+          data.grid.elevation.byteLength + (data.grid.mask?.byteLength ?? 0) + (data.gradient?.byteLength ?? 0);
         const gpu = (data.gradientTexture ? (size + 2) ** 2 * 4 : 0) + (data.maskTexture ? size * size : 0);
         return cpu + gpu;
       },
