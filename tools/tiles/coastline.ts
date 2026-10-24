@@ -11,6 +11,7 @@ interface Piece {
 export interface CoastlineResult {
   water: Polygon[];
   droppedPieces: number;
+  invertedRings?: number;
 }
 
 const EPS = 1e-12;
@@ -26,7 +27,12 @@ function perimeter(x: number, y: number, r: Rect): number {
 }
 
 function onBoundary(x: number, y: number, r: Rect): boolean {
-  return Math.abs(x - r.x0) <= EPS * 4 || Math.abs(x - r.x1) <= EPS * 4 || Math.abs(y - r.y0) <= EPS * 4 || Math.abs(y - r.y1) <= EPS * 4;
+  return (
+    Math.abs(x - r.x0) <= EPS * 4 ||
+    Math.abs(x - r.x1) <= EPS * 4 ||
+    Math.abs(y - r.y0) <= EPS * 4 ||
+    Math.abs(y - r.y1) <= EPS * 4
+  );
 }
 
 const CORNERS: [number, (r: Rect) => [number, number]][] = [
@@ -48,6 +54,7 @@ export function coastlineWater(chains: { coords: Float64Array; closed: boolean }
   const islands: Ring[] = [];
   const lakes: Ring[] = [];
   let dropped = 0;
+  let inverted = 0;
   for (const chain of chains) {
     let coords = chain.coords;
     if (chain.closed) {
@@ -62,7 +69,10 @@ export function coastlineWater(chains: { coords: Float64Array; closed: boolean }
     }
     for (const part of clipLine(coords, r)) {
       const n = part.length;
-      const sx = part[0]!, sy = part[1]!, ex = part[n - 2]!, ey = part[n - 1]!;
+      const sx = part[0]!,
+        sy = part[1]!,
+        ex = part[n - 2]!,
+        ey = part[n - 1]!;
       if (!onBoundary(sx, sy, r) || !onBoundary(ex, ey, r)) {
         dropped++;
         continue;
@@ -102,17 +112,19 @@ export function coastlineWater(chains: { coords: Float64Array; closed: boolean }
         }
       }
       if (!best) break;
-      let t = current.exit;
+      const t = current.exit;
       const end = t + bestD;
+      const corners: [number, number, number][] = [];
       for (const [corner, at] of CORNERS) {
         for (const c of [corner - 4, corner, corner + 4]) {
           if (c > t + EPS && c < end - EPS) {
             const [cx, cy] = at(r);
-            ring.push(cx, cy);
+            corners.push([c, cx, cy]);
           }
         }
       }
-      t = end;
+      corners.sort((a, b) => a[0] - b[0]);
+      for (const [, cx, cy] of corners) ring.push(cx, cy);
       if (best === start) break;
       best.used = true;
       for (let i = 0; i < best.points.length; i++) ring.push(best.points[i]!);
@@ -120,7 +132,9 @@ export function coastlineWater(chains: { coords: Float64Array; closed: boolean }
     }
     ring.push(ring[0]!, ring[1]!);
     const outer = Float64Array.from(ring);
-    if (Math.abs(signedArea(outer)) > 0) water.push({ outer: signedArea(outer) < 0 ? reverse(outer) : outer, holes: [] });
+    const area = signedArea(outer);
+    if (area > 0) water.push({ outer, holes: [] });
+    else if (area < 0) inverted++;
   }
   for (const island of islands) {
     const x = island[0]!;
@@ -133,7 +147,7 @@ export function coastlineWater(chains: { coords: Float64Array; closed: boolean }
     }
   }
   for (const lake of lakes) water.push({ outer: lake, holes: [] });
-  return { water, droppedPieces: dropped };
+  return { water, droppedPieces: dropped, invertedRings: inverted };
 }
 
 function rotateToOutside(ring: Float64Array, r: Rect): Float64Array {
@@ -154,13 +168,4 @@ function rotateToOutside(ring: Float64Array, r: Rect): Float64Array {
     }
   }
   return ring;
-}
-
-function reverse(ring: Float64Array): Float64Array {
-  const out = new Float64Array(ring.length);
-  for (let i = 0, j = ring.length - 2; i < ring.length; i += 2, j -= 2) {
-    out[i] = ring[j]!;
-    out[i + 1] = ring[j + 1]!;
-  }
-  return out;
 }
