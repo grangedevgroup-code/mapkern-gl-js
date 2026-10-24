@@ -189,26 +189,19 @@ export class SqliteReader {
     let filled = local;
     let next = u32(page, start + local);
     const chunk = this.usable - 4;
-    while (filled < size && next !== 0) {
-      const remainingPages = Math.ceil((size - filled) / chunk);
-      const run = await this.pages(next, remainingPages, signal);
-      let i = 0;
-      for (; i < run.length && filled < size; i++) {
-        const p = run[i]!;
+    while (filled < size) {
+      if (next === 0) throw new SqliteError("A record runs past the end of its overflow pages");
+      const run = await this.pages(next, Math.ceil((size - filled) / chunk), signal);
+      let current = next;
+      for (const p of run) {
         const take = Math.min(chunk, size - filled);
         out.set(p.subarray(4, 4 + take), filled);
         filled += take;
-        const following = u32(p, 0);
-        if (following !== next + 1 && filled < size) {
-          next = following;
-          i++;
-          break;
-        }
-        next = following;
+        next = u32(p, 0);
+        if (filled >= size || next !== current + 1) break;
+        current = next;
       }
-      if (i === run.length && filled < size && next === 0) break;
     }
-    if (filled < size) throw new SqliteError("A record runs past the end of its overflow pages");
     return out;
   }
 
