@@ -22,6 +22,18 @@ export interface DemTile {
   gradient: Float32Array | null;
   gradientTexture: WebGLTexture | null;
   maskTexture: WebGLTexture | null;
+  elevationTexture: WebGLTexture | null;
+  elevationDirty: boolean;
+}
+
+function demBytes(data: DemTile): number {
+  const size = data.grid.size;
+  const cpu = data.grid.elevation.byteLength + (data.grid.mask?.byteLength ?? 0) + (data.gradient?.byteLength ?? 0);
+  const gpu =
+    (data.gradientTexture ? (size + 2) ** 2 * 4 : 0) +
+    (data.maskTexture ? size * size : 0) +
+    (data.elevationTexture ? data.grid.elevation.byteLength : 0);
+  return cpu + gpu;
 }
 
 export class DemSource implements MapSource {
@@ -80,6 +92,22 @@ export class DemSource implements MapSource {
       },
       tileEvents(this.id, this.ctx),
     );
+  }
+
+  elevationTexture(data: DemTile): WebGLTexture | null {
+    const gl = this.ctx.gl;
+    if (gl.isLost) return null;
+    const { stride, elevation } = data.grid;
+    if (!data.elevationTexture) {
+      data.elevationTexture = gl.createDataTexture(stride, stride, "r32f", elevation, false);
+      data.elevationDirty = false;
+      const tile = this.manager?.getTile(data.z, data.x, data.y);
+      if (tile?.data === data) tile.bytes = demBytes(data);
+    } else if (data.elevationDirty) {
+      gl.updateDataTexture(data.elevationTexture, 0, 0, stride, stride, "r32f", elevation);
+      data.elevationDirty = false;
+    }
+    return data.elevationTexture;
   }
 
   elevationAt(lngLat: LngLatLike): number | null {
@@ -144,6 +172,7 @@ export class DemSource implements MapSource {
   }
 
   private refreshFrame(data: DemTile): void {
+    data.elevationDirty = true;
     const texture = data.gradientTexture;
     if (data.gradient) writeFrame(data.grid, data.gradient);
     if (!texture) return;
@@ -177,6 +206,8 @@ export class DemSource implements MapSource {
           gradient: reply.gradient,
           gradientTexture: null,
           maskTexture: null,
+          elevationTexture: null,
+          elevationDirty: false,
         };
       },
       needsUpload: (data: DemTile): boolean => data.gradient !== null,
@@ -190,21 +221,18 @@ export class DemSource implements MapSource {
         const mask = data.grid.mask;
         if (mask) data.maskTexture = gl.createDataTexture(data.grid.size, data.grid.size, "r8", mask, true);
         data.gradient = null;
+        data.elevationDirty = true;
       },
       release: (data: DemTile): void => {
         gl.deleteTexture(data.gradientTexture);
         gl.deleteTexture(data.maskTexture);
+        gl.deleteTexture(data.elevationTexture);
         data.gradientTexture = null;
         data.maskTexture = null;
+        data.elevationTexture = null;
         data.gradient = null;
       },
-      byteSize: (data: DemTile): number => {
-        const size = data.grid.size;
-        const cpu =
-          data.grid.elevation.byteLength + (data.grid.mask?.byteLength ?? 0) + (data.gradient?.byteLength ?? 0);
-        const gpu = (data.gradientTexture ? (size + 2) ** 2 * 4 : 0) + (data.maskTexture ? size * size : 0);
-        return cpu + gpu;
-      },
+      byteSize: demBytes,
     };
   }
 }
