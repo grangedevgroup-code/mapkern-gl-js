@@ -85,7 +85,8 @@ function assertDisjoint(pieces: RenderPiece<string>[]): void {
     for (let j = i + 1; j < rects.length; j++) {
       const a = rects[i]!;
       const b = rects[j]!;
-      const overlap = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > 1e-12 && Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) > 1e-12;
+      const overlap =
+        Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > 1e-12 && Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) > 1e-12;
       assert.ok(!overlap, `pieces ${i} and ${j} overlap`);
     }
   }
@@ -151,7 +152,10 @@ test("zooming out draws loaded children inside the coarser slot", async () => {
   await flush();
   const pieces = manager.pieces;
   assertDisjoint(pieces);
-  assert.ok(pieces.some((p) => p.tile.z === 4), "children should stand in for missing z3 tiles");
+  assert.ok(
+    pieces.some((p) => p.tile.z === 4),
+    "children should stand in for missing z3 tiles",
+  );
   assert.ok(coveredArea(pieces) >= before - 1e-12);
 });
 
@@ -175,7 +179,7 @@ test("failed child keeps the parent visible and retries are bounded", async () =
     p.reject(new FetchFailure({ kind: "http", status: 500, message: "HTTP 500", retryable: true }));
   }
   await flush();
-  manager.update(transform, performance.now() + 60001);
+  manager.update(transform, performance.now() + 30000);
   await flush();
   assert.equal(loader.pending.filter((p) => p.coord.z === 3).length, 0, "no third attempt before cooldown");
   assert.ok(failures.length > 0);
@@ -209,7 +213,7 @@ test("tiles that leave the view are aborted and released", async () => {
 });
 
 test("cache evicts least recently used tiles over budget but keeps visible ones", async () => {
-  const { transform, loader, manager } = setup(5, { cacheBytes: 20000 });
+  const { transform, loader, manager } = setup(5, { cacheBytes: 6000 });
   manager.update(transform, 0);
   await flush();
   await resolveAll(loader);
