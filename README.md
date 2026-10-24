@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-Maplet GL JS is a map library for the web. It draws vector tiles, raster tiles and GeoJSON with WebGL2, and it doesn't depend on any other package.
+Maplet GL JS is a map library for the web. It draws vector tiles, raster tiles and GeoJSON with WebGL2, and it doesn't depend on any other package. You can try it on the [website](https://grangedevgroup-code.github.io/maplet-gl-js/).
 
 ![Seattle, tilted 50 degrees](assets/screenshot-seattle.webp)
 
