@@ -117,9 +117,14 @@ async function fetchWithProtocol(
   }
   if (signal.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
   if (result === null) return { kind: "empty" };
-  const isBytes = result instanceof ArrayBuffer || result instanceof Uint8Array;
-  const bytes = isBytes ? result : result.data;
-  const contentType = isBytes ? "" : (result.contentType ?? "");
+  let bytes: ArrayBuffer | Uint8Array;
+  let contentType = "";
+  if (result instanceof ArrayBuffer || result instanceof Uint8Array) {
+    bytes = result;
+  } else {
+    bytes = result.data;
+    contentType = result.contentType ?? "";
+  }
   const data =
     bytes instanceof ArrayBuffer
       ? bytes
