@@ -48,6 +48,7 @@ export class Tile<D> implements TileCoord {
   requestedAt = 0;
   bytes = 0;
   generation = 0;
+  revision = 0;
   controller: AbortController | null = null;
 
   constructor(z: number, x: number, y: number) {
