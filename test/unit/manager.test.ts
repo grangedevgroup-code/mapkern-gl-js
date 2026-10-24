@@ -280,3 +280,192 @@ test("scheduler honours priority and concurrency", async () => {
   await flush();
   assert.deepEqual(started, [0, 1, 3]);
 });
+
+interface Uploadable {
+  v: string;
+  uploaded: boolean;
+}
+
+class UploadingLoader implements TileLoader<Uploadable> {
+  pending: { coord: TileCoord; resolve: (v: Uploadable | null) => void }[] = [];
+  released: string[] = [];
+  load(coord: TileCoord, signal: AbortSignal): Promise<Uploadable | null> {
+    return new Promise((resolve, reject) => {
+      this.pending.push({ coord: { z: coord.z, x: coord.x, y: coord.y }, resolve });
+      signal.addEventListener("abort", () => reject(signal.reason));
+    });
+  }
+  needsUpload(data: Uploadable): boolean {
+    return !data.uploaded;
+  }
+  upload(data: Uploadable): void {
+    data.uploaded = true;
+  }
+  release(data: Uploadable): void {
+    this.released.push(data.v);
+  }
+  byteSize(): number {
+    return 1000;
+  }
+}
+
+function drawn(manager: TileManager<string>): string[] {
+  return manager.pieces.map((p) => p.tile.data ?? "none");
+}
+
+test("refresh keeps ready tiles on screen until replacements arrive", async () => {
+  const { transform, loader, manager } = setup(4);
+  manager.update(transform, 0);
+  await flush();
+  await resolveAll(loader);
+  manager.update(transform, 1);
+  const before = drawn(manager);
+  assert.ok(before.length > 0);
+  manager.refresh();
+  manager.update(transform, 2);
+  await flush();
+  assert.deepEqual(drawn(manager), before, "old tiles stay drawn while new ones load");
+  assert.equal(manager.stats.blankPending, 0);
+  assert.equal(manager.isLoaded, false);
+  assert.ok(manager.stats.refreshing > 0);
+  const reloads = loader.take(() => true);
+  assert.ok(reloads.length >= before.length);
+  for (const p of reloads) p.resolve(`new ${p.coord.z}/${p.coord.x}/${p.coord.y}`);
+  await flush();
+  manager.update(transform, 3);
+  assert.ok(drawn(manager).every((d) => d.startsWith("new ")));
+  assert.equal(manager.isLoaded, true);
+  assert.equal(manager.stats.refreshing, 0);
+  assert.ok(
+    loader.released.some((d) => !d.startsWith("new ")),
+    "old data is released after the swap",
+  );
+});
+
+test("refreshed data waits for upload before replacing what is drawn", async () => {
+  const transform = new Transform();
+  transform.resize(800, 600);
+  transform.setCenter(10, 20);
+  transform.setZoom(3);
+  const loader = new UploadingLoader();
+  const manager = new TileManager<Uploadable>(
+    "upload",
+    { tileSize: 512, minZoom: 0, maxZoom: 14, roundZoom: false, bounds: null },
+    loader,
+    new RequestScheduler(64),
+    options,
+    { changed() {}, failure() {}, wakeAt() {} },
+  );
+  manager.update(transform, 0);
+  await flush();
+  for (const p of loader.pending.splice(0)) p.resolve({ v: "old", uploaded: false });
+  await flush();
+  manager.uploadPending(Number.POSITIVE_INFINITY, 1);
+  manager.update(transform, 1);
+  assert.ok(manager.pieces.length > 0);
+  manager.refresh();
+  manager.update(transform, 2);
+  await flush();
+  for (const p of loader.pending.splice(0)) p.resolve({ v: "new", uploaded: false });
+  await flush();
+  manager.update(transform, 3);
+  assert.ok(
+    manager.pieces.every((p) => p.tile.data?.v === "old"),
+    "nothing changes before the upload",
+  );
+  assert.equal(manager.hasPendingUploads, true);
+  manager.uploadPending(Number.POSITIVE_INFINITY, 4);
+  manager.update(transform, 4);
+  assert.ok(manager.pieces.every((p) => p.tile.data?.v === "new" && p.tile.data.uploaded));
+  assert.ok(loader.released.includes("old"));
+  assert.equal(manager.hasPendingUploads, false);
+});
+
+test("refreshing again while replacements load still shows each finished version", async () => {
+  const { transform, loader, manager } = setup(4);
+  manager.update(transform, 0);
+  await flush();
+  await resolveAll(loader);
+  manager.update(transform, 1);
+  manager.refresh();
+  manager.update(transform, 2);
+  await flush();
+  const first = loader.take(() => true);
+  assert.ok(first.length > 0);
+  manager.refresh();
+  manager.update(transform, 3);
+  await flush();
+  assert.ok(
+    first.every((p) => !p.signal.aborted),
+    "a second refresh does not abort replacements already loading",
+  );
+  for (const p of first) p.resolve("gen1");
+  await flush();
+  manager.update(transform, 4);
+  await flush();
+  assert.ok(drawn(manager).every((d) => d === "gen1"));
+  assert.ok(loader.pending.length > 0, "outdated replacements are requested again");
+  await resolveAll(loader);
+  manager.update(transform, 5);
+  assert.ok(drawn(manager).every((d) => d !== "gen1"));
+  assert.equal(manager.isLoaded, true);
+});
+
+test("a failed refresh keeps the old tile and retries later", async () => {
+  const { transform, loader, manager, failures } = setup(4);
+  manager.update(transform, 0);
+  await flush();
+  await resolveAll(loader);
+  manager.update(transform, 1);
+  const before = drawn(manager);
+  manager.refresh();
+  manager.update(transform, 2);
+  await flush();
+  for (const p of loader.take(() => true)) {
+    p.reject(new FetchFailure({ kind: "http", status: 500, message: "HTTP 500", retryable: true }));
+  }
+  await flush();
+  const now = performance.now();
+  manager.update(transform, now);
+  await flush();
+  assert.deepEqual(drawn(manager), before);
+  assert.ok(failures.length > 0);
+  assert.equal(manager.stats.blankFailed + manager.stats.blankPending, 0);
+  assert.equal(loader.pending.length, 0, "no retry before the backoff");
+  manager.update(transform, now + 5000);
+  await flush();
+  assert.ok(loader.pending.length > 0, "retried after the backoff");
+});
+
+test("refresh releases cached tiles that are out of view", async () => {
+  const { transform, loader, manager } = setup(5);
+  manager.update(transform, 0);
+  await flush();
+  await resolveAll(loader);
+  manager.update(transform, 1);
+  const cached = manager.stats.ready;
+  transform.setCenter(-120, -40);
+  manager.update(transform, 2);
+  await flush();
+  assert.equal(loader.released.length, 0);
+  manager.refresh();
+  assert.equal(loader.released.length, cached, "every tile from the old view is released");
+  assert.equal(manager.stats.ready, 0);
+});
+
+test("empty tiles are requested again after a refresh", async () => {
+  const { transform, loader, manager } = setup(3);
+  manager.update(transform, 0);
+  await flush();
+  for (const p of loader.take(() => true)) p.resolve(null);
+  await flush();
+  manager.update(transform, 1);
+  assert.ok(manager.stats.noData > 0.99);
+  manager.refresh();
+  manager.update(transform, 2);
+  await flush();
+  assert.ok(loader.pending.length > 0);
+  await resolveAll(loader);
+  manager.update(transform, 3);
+  assert.ok(manager.pieces.length > 0);
+});
