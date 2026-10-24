@@ -96,7 +96,9 @@ const ROAD_MIN: Record<RoadClass, number> = {
 function roadLayers(brunnel: "tunnel" | "road" | "bridge"): LayerSpec[] {
   const out: LayerSpec[] = [];
   const brunnelFilter: Expression =
-    brunnel === "road" ? ["!", ["in", ["get", "brunnel"], ["literal", ["bridge", "tunnel"]]]] : ["==", ["get", "brunnel"], brunnel];
+    brunnel === "road"
+      ? ["!", ["in", ["get", "brunnel"], ["literal", ["bridge", "tunnel"]]]]
+      : ["==", ["get", "brunnel"], brunnel];
   const order = [...ROAD_CLASSES].reverse();
   for (const part of ["casing", "fill"] as const) {
     for (const cls of order) {
