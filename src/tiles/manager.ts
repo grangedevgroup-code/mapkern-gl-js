@@ -32,7 +32,7 @@ export interface RenderPiece<D> {
 
 export interface ManagerOptions {
   fadeDuration: number;
-  backstopLevels: number;
+  backstopLevels: readonly number[];
   maxRetries: number;
   cacheBytes: number;
   failureCooldownMs: number;
@@ -67,6 +67,7 @@ export interface ManagerEvents {
 }
 
 const FULL: Rect = { x0: 0, y0: 0, x1: 1, y1: 1 };
+const LINGER_MS = 2500;
 const MAX_FALLBACK_DEPTH = 2;
 const BREAKER_THRESHOLD = 16;
 
@@ -203,8 +204,21 @@ export class TileManager<D> {
       }
     }
     let prefetched = 0;
+    let order = 0;
     for (const future of predicted) {
       const tiles = future.coveringTiles(cover);
+      for (const level of levels) {
+        if (level <= 0) continue;
+        for (const slot of tiles) {
+          if (!this.withinBounds(slot)) continue;
+          const z = Math.max(this.tiling.minZoom, slot.z - level);
+          if (z >= slot.z) continue;
+          const p = parentTile(slot, slot.z - z);
+          const existing = this.tiles.get(tileKey(p.z, p.x, p.y));
+          if (existing?.wanted) continue;
+          this.want(p.z, p.x, p.y, 9000 + order++, now);
+        }
+      }
       for (let i = 0; i < tiles.length && prefetched < this.options.prefetchLimit; i++) {
         const slot = tiles[i]!;
         if (!this.withinBounds(slot)) continue;
@@ -214,6 +228,10 @@ export class TileManager<D> {
         prefetched++;
       }
     }
+    for (const tile of this.tiles.values()) {
+      if (tile.wanted) tile.unwantedSince = Number.NaN;
+      else if (Number.isNaN(tile.unwantedSince)) tile.unwantedSince = now;
+    }
     this.buildPieces(transform, ideal, now);
     this.dispatch(now);
     this.evict();
@@ -221,9 +239,9 @@ export class TileManager<D> {
 
   uploadPending(deadline: number, now: number): boolean {
     const pending: Tile<D>[] = [];
-    for (const tile of this.tiles.values()) if (tile.state === "prepared" && tile.wanted) pending.push(tile);
+    for (const tile of this.tiles.values()) if (tile.state === "prepared") pending.push(tile);
     if (pending.length === 0) return false;
-    pending.sort((a, b) => a.priority - b.priority);
+    pending.sort((a, b) => (a.wanted ? a.priority : 1e12) - (b.wanted ? b.priority : 1e12));
     let uploaded = false;
     for (const tile of pending) {
       if (uploaded && performance.now() > deadline) return true;
@@ -362,6 +380,18 @@ export class TileManager<D> {
   }
 
   private dispatch(now: number): void {
+    let waiting = false;
+    for (const [key, handle] of this.jobs) {
+      const tile = this.tiles.get(key);
+      if (tile?.wanted && handle.state === "queued") waiting = true;
+      if (!tile && handle.state === "queued") {
+        this.scheduler.cancel(handle);
+        this.jobs.delete(key);
+      }
+    }
+    for (const tile of this.tiles.values()) {
+      if (tile.wanted && tile.state === "queued" && !this.jobs.has(tile.key) && tile.retryAt <= now) waiting = true;
+    }
     for (const [key, handle] of this.jobs) {
       const tile = this.tiles.get(key);
       if (!tile) continue;
@@ -372,9 +402,12 @@ export class TileManager<D> {
           this.counters.aborted++;
           this.drop(tile);
         } else if (handle.state === "active" && tile.controller) {
-          tile.controller.abort(new DOMException("Tile no longer needed", "AbortError"));
-          this.counters.aborted++;
-          this.drop(tile);
+          const lingering = now - tile.unwantedSince;
+          if (lingering > LINGER_MS || (waiting && lingering > 150)) {
+            tile.controller.abort(new DOMException("Tile no longer needed", "AbortError"));
+            this.counters.aborted++;
+            this.drop(tile);
+          }
         }
       } else {
         handle.job.priority = tile.priority;
