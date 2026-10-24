@@ -1,0 +1,41 @@
+export type {
+  AnimationOptions,
+  BoundsLike,
+  CameraOptions,
+  Diagnostics,
+  FitBoundsOptions,
+  FlyToOptions,
+  MapErrorEvent,
+  MapEvent,
+  MapEvents,
+  MapMoveEvent,
+  MapOptions,
+  MapPointerEvent,
+  SourceDataEvent,
+  UiText,
+} from "./core/map.ts";
+export { MapletMap as Map } from "./core/map.ts";
+export type { MapletErrorCode } from "./core/errors.ts";
+export { MapletError } from "./core/errors.ts";
+export type { LngLat, LngLatLike, LngLatObject } from "./geo/mercator.ts";
+export { distanceMeters, lngLatToWorld, metersPerPixel, worldToLngLat } from "./geo/mercator.ts";
+export type { Feature, FeatureCollection, GeoJSON, Geometry } from "./geo/geojson.ts";
+export type * from "./style/types.ts";
+export type { StyleIssue } from "./style/validate.ts";
+export { validateStyle } from "./style/validate.ts";
+export type { ProtocolHandler, ProtocolRequest, ProtocolResult } from "./tiles/protocols.ts";
+export { addProtocol, removeProtocol } from "./tiles/protocols.ts";
+export type { RequestParameters, ResourceKind, TransformRequest } from "./tiles/fetch.ts";
+export type { TileStats } from "./tiles/manager.ts";
+export type {
+  AttributionOptions,
+  Control,
+  ControlPosition,
+  NavigationOptions,
+  ScaleOptions,
+} from "./ui/controls.ts";
+export { AttributionControl, NavigationControl, ScaleControl } from "./ui/controls.ts";
+
+export const version: string = typeof MAPLET_VERSION === "string" ? MAPLET_VERSION : "0.0.0-dev";
+
+declare const MAPLET_VERSION: string | undefined;
