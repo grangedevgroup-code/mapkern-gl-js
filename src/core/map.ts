@@ -8,6 +8,7 @@ import { InputHandlers } from "../input/handlers.ts";
 import { GL } from "../render/gl.ts";
 import { Painter } from "../render/painter.ts";
 import { GeoJSONSource } from "../sources/geojson.ts";
+import { registerMbtilesProtocol } from "../sources/mbtiles.ts";
 import { registerPmtilesProtocol } from "../sources/pmtiles.ts";
 import { RasterSource } from "../sources/raster.ts";
 import type { MapSource, SourceContext } from "../sources/source.ts";
@@ -243,6 +244,7 @@ export class MapletMap extends Emitter<MapEvents> {
     const doc = container.ownerDocument;
     injectStyles(doc);
     registerPmtilesProtocol();
+    registerMbtilesProtocol();
     this.transform = new Transform();
     this.transform.renderWorldCopies = options.renderWorldCopies ?? true;
     this.transform.setPitchRange(
