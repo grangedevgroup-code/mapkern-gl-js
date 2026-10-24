@@ -145,30 +145,25 @@ export class VectorPainter {
     const opacity = layer.paintValue<number>("opacity", { zoom });
     if (opacity <= 0) return;
     const outline = layer.paintProperty<unknown>("outlineColor");
-    const lineProgram = g.program(lineShader);
-    g.use(lineProgram);
+    const outlineProgram = g.program(fillOutlineShader);
+    g.use(outlineProgram);
     const colorSource = outline.constant && outline.evaluate({ zoom }) === null ? "color" : "outlineColor";
     const paint: PaintUniform[] = [
       { name: colorSource, uniform: "u_color", kind: "color" },
       { name: "opacity", uniform: "u_opacity", kind: "number" },
     ];
-    this.prepare(lineProgram, layer, zoom, paint);
-    gl.uniform1f(lineProgram.uniforms.get("u_width") ?? null, 1 / frame.pixelRatio);
-    gl.uniform1f(lineProgram.uniforms.get("u_blur") ?? null, 0);
-    gl.uniform1i(lineProgram.uniforms.get("u_width_slot") ?? null, -1);
-    gl.uniform1i(lineProgram.uniforms.get("u_blur_slot") ?? null, -1);
-    gl.uniform1f(lineProgram.uniforms.get("u_min_width") ?? null, 0);
-    gl.uniform1f(lineProgram.uniforms.get("u_pixel_ratio") ?? null, frame.pixelRatio);
-    gl.uniform1i(lineProgram.uniforms.get("u_dash_count") ?? null, 0);
+    this.prepare(outlineProgram, layer, zoom, paint);
+    gl.uniform2f(outlineProgram.uniforms.get("u_world") ?? null, gl.drawingBufferWidth, gl.drawingBufferHeight);
     for (const piece of manager.pieces) {
       const bucket = piece.tile.data?.buckets.get(layer.id);
       if (!bucket?.outline) continue;
-      this.bindPaint(lineProgram, layer, bucket, zoom, paint);
-      this.tileUniforms(lineProgram, frame, piece.tile, piece.wrap, bucket.extent, piece.clip);
+      this.bindPaint(outlineProgram, layer, bucket, zoom, paint);
+      this.tileUniforms(outlineProgram, frame, piece.tile, piece.wrap, bucket.extent, piece.clip);
       const units = bucket.extent / (512 * 2 ** (zoom - piece.tile.z));
-      gl.uniform1f(lineProgram.uniforms.get("u_units_per_px") ?? null, units);
-      gl.uniform2f(lineProgram.uniforms.get("u_translate") ?? null, translate[0] * units, translate[1] * units);
-      this.drawGeometry(bucket.outline, stats);
+      gl.uniform2f(outlineProgram.uniforms.get("u_translate") ?? null, translate[0] * units, translate[1] * units);
+      gl.bindVertexArray(bucket.outline.vao);
+      gl.drawElements(gl.LINES, bucket.outline.indexCount, gl.UNSIGNED_INT, 0);
+      stats.drawCalls++;
     }
   }
 
