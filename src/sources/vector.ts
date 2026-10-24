@@ -20,7 +20,7 @@ import type {
 import type { MapSource, SourceContext } from "./source.ts";
 import { tileEvents } from "./source.ts";
 import type { TileSet } from "./tilejson.ts";
-import { resolveTileSet, tileUrl } from "./tilejson.ts";
+import { archiveSpec, resolveTileSet, tileUrl } from "./tilejson.ts";
 
 export interface GpuGeometry {
   vao: WebGLVertexArrayObject;
@@ -219,13 +219,9 @@ export class VectorSource implements MapSource, VectorTileSource {
   }
 
   async load(signal: AbortSignal): Promise<void> {
-    const spec =
-      this.spec.url && /\.pmtiles(\?|#|$)/i.test(this.spec.url) && !this.spec.url.startsWith("pmtiles://")
-        ? { ...this.spec, url: `pmtiles://${absoluteUrl(this.spec.url)}` }
-        : this.spec;
     const set = await resolveTileSet(
       this.id,
-      spec,
+      archiveSpec(this.spec),
       { minZoom: 0, maxZoom: 14 },
       this.ctx.transformRequest,
       this.ctx.requestTimeoutMs,
@@ -314,14 +310,6 @@ export class VectorSource implements MapSource, VectorTileSource {
 
 function geometryBytes(g: Geometry | null): number {
   return g ? g.vertices.byteLength + g.indices.byteLength : 0;
-}
-
-function absoluteUrl(url: string): string {
-  try {
-    return new URL(url, globalThis.location?.href).href;
-  } catch {
-    return url;
-  }
 }
 
 export function uploadGeometry(gl: GL, type: BucketType, g: Geometry): GpuGeometry | null {
