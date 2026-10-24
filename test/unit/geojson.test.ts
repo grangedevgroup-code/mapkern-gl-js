@@ -54,7 +54,11 @@ function vertexCount(f: VectorFeature): number {
 
 test("reads every geometry type and skips invalid input", () => {
   const data = collection(
-    feature({ type: "Point", coordinates: [10, 20] }, { name: "a", n: 2, ok: true, nested: { a: 1 }, nothing: null }, 7),
+    feature(
+      { type: "Point", coordinates: [10, 20] },
+      { name: "a", n: 2, ok: true, nested: { a: 1 }, nothing: null },
+      7,
+    ),
     feature({
       type: "MultiPoint",
       coordinates: [
@@ -309,10 +313,7 @@ test("large data is split level by level and still clips exactly", () => {
     const rect = { x0: tx / n - pad, y0: ty / n - pad, x1: (tx + 1) / n + pad, y1: (ty + 1) / n + pad };
     const clipped = clipRing(world, rect);
     const expected = clipped ? Math.abs(signedArea(clipped)) * (n * EXTENT) ** 2 : 0;
-    const got = features(idx, z, tx, ty).reduce(
-      (s, f) => s + f.geometry().reduce((a, r) => a + ringArea(r), 0),
-      0,
-    );
+    const got = features(idx, z, tx, ty).reduce((s, f) => s + f.geometry().reduce((a, r) => a + ringArea(r), 0), 0);
     assert.ok(Math.abs(got - expected) <= Math.max(1, expected * 1e-3), `tile ${tx}: ${got} vs ${expected}`);
   }
 });
@@ -343,11 +344,16 @@ test("GeoJSON tiles feed the same bucket builder as vector tiles", () => {
     ),
   );
   const layer = idx.tile(2, 2, 1);
-  const { result } = buildBuckets(new Map([[layer.name, layer]]), 2, [
-    program("fill", "fill"),
-    program("line", "line", { cap: "round", join: "round", miterLimit: 2 }),
-    program("circle", "circle"),
-  ], false);
+  const { result } = buildBuckets(
+    new Map([[layer.name, layer]]),
+    2,
+    [
+      program("fill", "fill"),
+      program("line", "line", { cap: "round", join: "round", miterLimit: 2 }),
+      program("circle", "circle"),
+    ],
+    false,
+  );
   assert.deepEqual(result.buckets.map((b) => b.layerId).sort(), ["circle", "fill", "line"]);
   for (const bucket of result.buckets) assert.ok(bucket.main && bucket.main.indexCount > 0);
 });
