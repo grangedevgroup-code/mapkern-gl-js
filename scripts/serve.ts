@@ -6,7 +6,9 @@ import { buildAll } from "./build.ts";
 import { startServer } from "./server.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const { values } = parseArgs({ options: { port: { type: "string", default: "8080" }, host: { type: "string", default: "127.0.0.1" } } });
+const { values } = parseArgs({
+  options: { port: { type: "string", default: "8080" }, host: { type: "string", default: "127.0.0.1" } },
+});
 
 await buildAll({ types: false });
 const { url } = await startServer({ root, port: Number(values.port), host: values.host });
