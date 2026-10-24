@@ -53,6 +53,24 @@ export async function buildAll(options: BuildOptions = {}): Promise<void> {
       sourcemap: true,
     }),
   ]);
+  const tools = {
+    absWorkingDir: root,
+    bundle: true,
+    platform: "node" as const,
+    format: "esm" as const,
+    target: "node22",
+    legalComments: "none" as const,
+    logLevel: "warning" as const,
+  };
+  await Promise.all([
+    build({
+      ...tools,
+      entryPoints: ["tools/tiles/cli.ts"],
+      outfile: "dist/tiles/cli.js",
+      banner: { js: "#!/usr/bin/env node" },
+    }),
+    build({ ...tools, entryPoints: ["tools/tiles/extract-worker.ts"], outfile: "dist/tiles/extract-worker.js" }),
+  ]);
   const { CSS } = await import("../src/ui/css.ts");
   writeFileSync(join(dist, "maplet.css"), `${CSS.trim()}\n`);
   if (options.types !== false) {
