@@ -55,6 +55,10 @@ export interface VectorTileSource {
   readonly manager: TileManager<VectorTile> | null;
 }
 
+export function isVectorTileSource(source: MapSource | undefined): source is MapSource & VectorTileSource {
+  return source?.type === "vector" || source?.type === "geojson";
+}
+
 const DATA_DRIVEN: Record<string, readonly string[]> = {
   fill: ["color", "opacity", "outlineColor"],
   line: ["color", "width", "opacity", "blur"],
