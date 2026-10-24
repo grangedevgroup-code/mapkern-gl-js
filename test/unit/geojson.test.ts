@@ -233,7 +233,8 @@ test("features across the antimeridian appear on both sides", () => {
   assert.equal(features(idx, 1, 0, 0).length, 1);
   const [west] = features(idx, 1, 0, 0);
   const line = west!.geometry()[0]!;
-  assert.equal(line[0], -PAD);
+  assert.equal(line[0], Math.round((mercatorX(170) - 1) * 2 * EXTENT));
+  assert.equal(line[line.length - 2], Math.round((mercatorX(190) - 1) * 2 * EXTENT));
 });
 
 test("simplification thins lines when zoomed out and keeps detail at max zoom", () => {
