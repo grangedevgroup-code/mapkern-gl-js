@@ -243,7 +243,14 @@ export class VectorSource implements MapSource {
         onDecoding();
         const programs = this.programs;
         const signature = this.signature;
-        const request: VectorTileRequest = { bytes: result.data, z: tile.z, x: tile.x, y: tile.y, layers: programs };
+        const request: VectorTileRequest = {
+          bytes: result.data,
+          z: tile.z,
+          x: tile.x,
+          y: tile.y,
+          layers: programs,
+          overzoom: tile.z >= set.maxZoom,
+        };
         const decoded = await ctx
           .workers()
           .send<VectorTileResult>("vector", request, [result.data], signal, tile.x + tile.y);
