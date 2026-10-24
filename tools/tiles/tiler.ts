@@ -27,7 +27,13 @@ export interface TilerStats {
 const LAYER_ORDER = new Map<string, number>(LAYERS.map((l, i) => [l, i]));
 
 export function buildTiles(features: TileFeature[], options: TilerOptions): TilerStats {
-  const stats: TilerStats = { tiles: 0, bytes: 0, maxTileBytes: 0, maxTile: "", byZoom: new Array(options.maxZoom + 1).fill(0) };
+  const stats: TilerStats = {
+    tiles: 0,
+    bytes: 0,
+    maxTileBytes: 0,
+    maxTile: "",
+    byZoom: new Array(options.maxZoom + 1).fill(0),
+  };
   const started = performance.now();
   let lastLog = started;
   const visit = (z: number, x: number, y: number, feats: TileFeature[]) => {
@@ -46,7 +52,9 @@ export function buildTiles(features: TileFeature[], options: TilerOptions): Tile
       const now = performance.now();
       if (options.log && now - lastLog > 10000) {
         lastLog = now;
-        options.log(`  tiles: ${stats.tiles.toLocaleString()} written, at ${z}/${x}/${y}, ${((now - started) / 1000).toFixed(0)} s`);
+        options.log(
+          `  tiles: ${stats.tiles.toLocaleString()} written, at ${z}/${x}/${y}, ${((now - started) / 1000).toFixed(0)} s`,
+        );
       }
     }
     if (z >= options.maxZoom) return;
@@ -56,8 +64,14 @@ export function buildTiles(features: TileFeature[], options: TilerOptions): Tile
         const cx = x * 2 + dx;
         const cy = y * 2 + dy;
         const tile: Rect = { x0: cx / n, y0: cy / n, x1: (cx + 1) / n, y1: (cy + 1) / n };
-        if (tile.x1 < options.bounds.x0 || tile.x0 > options.bounds.x1 || tile.y1 < options.bounds.y0 || tile.y0 > options.bounds.y1) continue;
-        const pad = (options.buffer / options.extent) / n;
+        if (
+          tile.x1 < options.bounds.x0 ||
+          tile.x0 > options.bounds.x1 ||
+          tile.y1 < options.bounds.y0 ||
+          tile.y0 > options.bounds.y1
+        )
+          continue;
+        const pad = options.buffer / options.extent / n;
         const buffered: Rect = { x0: tile.x0 - pad, y0: tile.y0 - pad, x1: tile.x1 + pad, y1: tile.y1 + pad };
         const child = clipFeatures(feats, tile, buffered);
         if (child.length > 0) visit(z + 1, cx, cy, child);
@@ -107,7 +121,10 @@ function clipFeatures(feats: TileFeature[], tile: Rect, buffered: Rect): TileFea
 }
 
 function boundsOf(parts: Float64Array[]): Rect {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
   for (const p of parts) {
     for (let i = 0; i < p.length; i += 2) {
       const x = p[i]!;
@@ -176,7 +193,9 @@ function encode(z: number, x: number, y: number, feats: TileFeature[], options: 
   }
   if (layers.size === 0) return null;
   const out: EncodedLayer[] = [];
-  for (const [name, list] of [...layers].sort((a, b) => (LAYER_ORDER.get(a[0]) ?? 99) - (LAYER_ORDER.get(b[0]) ?? 99))) {
+  for (const [name, list] of [...layers].sort(
+    (a, b) => (LAYER_ORDER.get(a[0]) ?? 99) - (LAYER_ORDER.get(b[0]) ?? 99),
+  )) {
     list.sort((a, b) => (sortKeys.get(a) ?? 0) - (sortKeys.get(b) ?? 0));
     out.push({ name, extent, features: list });
   }
