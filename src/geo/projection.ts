@@ -29,7 +29,9 @@ export function projectionFromWkt(wkt: string): Unproject | null {
   const projection = String(find(root, "PROJECTION")?.args[0] ?? find(root, "METHOD")?.args[0] ?? "");
   const params = new Map<string, number>();
   for (const p of findAll(root, "PARAMETER")) {
-    const key = String(p.args[0] ?? "").toLowerCase().replace(/\s+/g, "_");
+    const key = String(p.args[0] ?? "")
+      .toLowerCase()
+      .replace(/\s+/g, "_");
     const value = Number(p.args[1]);
     if (Number.isFinite(value)) params.set(key, value);
   }
@@ -37,7 +39,9 @@ export function projectionFromWkt(wkt: string): Unproject | null {
   const a = Number(spheroid?.args[1]);
   const invf = Number(spheroid?.args[2]);
   const ellipsoid: Ellipsoid = Number.isFinite(a) && a > 0 ? { a, f: invf > 0 ? 1 / invf : 0 } : WGS84;
-  const unitNode = root.args.filter((x): x is WktNode => typeof x === "object" && /^(UNIT|LENGTHUNIT)$/i.test(x.name)).pop();
+  const unitNode = root.args
+    .filter((x): x is WktNode => typeof x === "object" && /^(UNIT|LENGTHUNIT)$/i.test(x.name))
+    .pop();
   const unit = Number(unitNode?.args[1]) > 0 ? Number(unitNode!.args[1]) : 1;
   const get = (...keys: string[]) => {
     for (const k of keys) {
@@ -53,18 +57,33 @@ export function projectionFromWkt(wkt: string): Unproject | null {
   const k0 = params.get("scale_factor") ?? params.get("scale_factor_at_natural_origin") ?? 1;
   const p = projection.toLowerCase();
   let inverse: Unproject;
-  if (p.includes("mercator_auxiliary_sphere") || p.includes("pseudo") || (p.includes("mercator") && /web|3857|auxiliary/i.test(wkt))) {
+  if (
+    p.includes("mercator_auxiliary_sphere") ||
+    p.includes("pseudo") ||
+    (p.includes("mercator") && /web|3857|auxiliary/i.test(wkt))
+  ) {
     inverse = webMercatorInverse(fe, fn);
   } else if (p.includes("transverse_mercator") || p.includes("transverse mercator")) {
     inverse = transverseMercatorInverse(ellipsoid, lon0, lat0, k0, fe, fn);
   } else if (p.includes("lambert_conformal_conic") || p.includes("lambert conic conformal")) {
     const sp1 = params.get("standard_parallel_1") ?? params.get("latitude_of_1st_standard_parallel");
     const sp2 = params.get("standard_parallel_2") ?? params.get("latitude_of_2nd_standard_parallel");
-    inverse = lambertInverse(ellipsoid, lon0, lat0, sp1 ?? lat0, sp2 ?? sp1 ?? lat0, sp1 === undefined ? k0 : 1, fe, fn);
+    inverse = lambertInverse(
+      ellipsoid,
+      lon0,
+      lat0,
+      sp1 ?? lat0,
+      sp2 ?? sp1 ?? lat0,
+      sp1 === undefined ? k0 : 1,
+      fe,
+      fn,
+    );
   } else if (p === "mercator" || p.includes("mercator_1sp") || p.includes("mercator_2sp")) {
     inverse = mercatorInverse(ellipsoid, lon0, k0, fe, fn);
   } else {
-    throw new ProjectionError(`The ${projection || "unknown"} projection is not supported. Convert the data to longitude and latitude (EPSG:4326) first`);
+    throw new ProjectionError(
+      `The ${projection || "unknown"} projection is not supported. Convert the data to longitude and latitude (EPSG:4326) first`,
+    );
   }
   return unit === 1 ? inverse : (x, y) => inverse(x * unit, y * unit);
 }
@@ -78,23 +97,32 @@ export function projectionFromEpsg(code: number): Unproject | null {
   if (code >= 32701 && code <= 32760) return utm(code - 32700, true);
   if (code >= 25801 && code <= 25860) return utm(code - 25800, false);
   if (code >= 26901 && code <= 26923) return utm(code - 26900, false);
-  throw new ProjectionError(`EPSG:${code} is not supported. Convert the data to longitude and latitude (EPSG:4326) first`);
+  throw new ProjectionError(
+    `EPSG:${code} is not supported. Convert the data to longitude and latitude (EPSG:4326) first`,
+  );
 }
 
 function webMercatorInverse(fe: number, fn: number): Unproject {
   const r = 6378137;
-  return (x, y) => [((x - fe) / r) / DEG, (2 * Math.atan(Math.exp((y - fn) / r)) - Math.PI / 2) / DEG];
+  return (x, y) => [(x - fe) / r / DEG, (2 * Math.atan(Math.exp((y - fn) / r)) - Math.PI / 2) / DEG];
 }
 
 function mercatorInverse(e: Ellipsoid, lon0: number, k0: number, fe: number, fn: number): Unproject {
   const ecc = Math.sqrt(e.f * (2 - e.f));
   return (x, y) => {
     const t = Math.exp(-(y - fn) / (e.a * k0));
-    return [lon0 + ((x - fe) / (e.a * k0)) / DEG, latitudeFromT(t, ecc) / DEG];
+    return [lon0 + (x - fe) / (e.a * k0) / DEG, latitudeFromT(t, ecc) / DEG];
   };
 }
 
-function transverseMercatorInverse(e: Ellipsoid, lon0: number, lat0: number, k0: number, fe: number, fn: number): Unproject {
+function transverseMercatorInverse(
+  e: Ellipsoid,
+  lon0: number,
+  lat0: number,
+  k0: number,
+  fe: number,
+  fn: number,
+): Unproject {
   const e2 = e.f * (2 - e.f);
   const ep2 = e2 / (1 - e2);
   const e4 = e2 * e2;
@@ -132,7 +160,9 @@ function transverseMercatorInverse(e: Ellipsoid, lon0: number, lat0: number, k0:
           ((61 + 90 * t1 + 298 * c1 + 45 * t1 * t1 - 252 * ep2 - 3 * c1 * c1) * d ** 6) / 720);
     const lon =
       lon0 * DEG +
-      (d - ((1 + 2 * t1 + c1) * d ** 3) / 6 + ((5 - 2 * c1 + 28 * t1 - 3 * c1 * c1 + 8 * ep2 + 24 * t1 * t1) * d ** 5) / 120) /
+      (d -
+        ((1 + 2 * t1 + c1) * d ** 3) / 6 +
+        ((5 - 2 * c1 + 28 * t1 - 3 * c1 * c1 + 8 * ep2 + 24 * t1 * t1) * d ** 5) / 120) /
         cos1;
     return [lon / DEG, lat / DEG];
   };
@@ -154,7 +184,10 @@ function lambertInverse(
     Math.tan(Math.PI / 4 - phi / 2) / ((1 - ecc * Math.sin(phi)) / (1 + ecc * Math.sin(phi))) ** (ecc / 2);
   const p1 = sp1 * DEG;
   const p2 = sp2 * DEG;
-  const n = Math.abs(p1 - p2) < 1e-10 ? Math.sin(p1) : (Math.log(m(p1)) - Math.log(m(p2))) / (Math.log(t(p1)) - Math.log(t(p2)));
+  const n =
+    Math.abs(p1 - p2) < 1e-10
+      ? Math.sin(p1)
+      : (Math.log(m(p1)) - Math.log(m(p2))) / (Math.log(t(p1)) - Math.log(t(p2)));
   const big = m(p1) / (n * t(p1) ** n);
   const rho0 = e.a * big * k0 * t(lat0 * DEG) ** n;
   return (x, y) => {
@@ -164,7 +197,7 @@ function lambertInverse(
     const rho = sign * Math.hypot(dx, dy);
     const theta = Math.atan2(sign * dx, sign * dy);
     const tt = (rho / (e.a * big * k0)) ** (1 / n);
-    return [(theta / n) / DEG + lon0, latitudeFromT(tt, ecc) / DEG];
+    return [theta / n / DEG + lon0, latitudeFromT(tt, ecc) / DEG];
   };
 }
 
