@@ -1,6 +1,7 @@
 import type { FeatureType, PropertyValue, VectorFeature } from "../formats/mvt.ts";
 import { numericId, ringArea } from "../formats/mvt.ts";
 import { ALWAYS_KEEP, clipLine, clipRing, rankVertices, reverseRing, ringBounds, signedArea } from "../geo/clip.ts";
+import type { Geometry, Position } from "../geo/geojson.ts";
 import { latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY } from "../geo/mercator.ts";
 import type { Rect } from "../geo/tile.ts";
 import { tileKey } from "../geo/tile.ts";
@@ -12,6 +13,13 @@ export interface GeoJSONOptions {
   buffer: number;
   extent: number;
   promoteId?: string | undefined;
+}
+
+export interface QueriedSourceFeature {
+  index: number;
+  id: number | undefined;
+  properties: Record<string, PropertyValue>;
+  geometry: Geometry | null;
 }
 
 export interface GeoJSONSummary {
@@ -55,13 +63,16 @@ export class GeoJSONIndex {
   readonly options: GeoJSONOptions;
   readonly summary: GeoJSONSummary;
   private readonly root: Node;
+  private readonly originals: Item[];
+  private byFeature: Map<number, Item[]> | null = null;
   private readonly cache = new Map<number, Node>();
   private readonly budget: number;
   private cachedCost = 0;
 
   constructor(data: unknown, options: GeoJSONOptions) {
     this.options = options;
-    const { items, features, bounds } = readGeoJSON(data, options.promoteId);
+    const { items, originals, features, bounds } = readGeoJSON(data, options.promoteId);
+    this.originals = originals;
     let vertices = 0;
     let coverage: Rect | null = null;
     for (const item of items) {
@@ -83,6 +94,37 @@ export class GeoJSONIndex {
           ]
         : null,
     };
+  }
+
+  features(indices: readonly number[]): QueriedSourceFeature[] {
+    if (!this.byFeature) {
+      const map = new Map<number, Item[]>();
+      for (const item of this.originals) {
+        let list = map.get(item.feature.index);
+        if (!list) {
+          list = [];
+          map.set(item.feature.index, list);
+        }
+        list.push(item);
+      }
+      this.byFeature = map;
+    }
+    return indices.map((index) => {
+      const items = this.byFeature!.get(index) ?? [];
+      const feature = items[0]?.feature;
+      const geometries = items.map(itemGeometry);
+      return {
+        index,
+        id: feature?.id,
+        properties: feature?.properties ?? {},
+        geometry:
+          geometries.length === 0
+            ? null
+            : geometries.length === 1
+              ? geometries[0]!
+              : { type: "GeometryCollection", geometries },
+      };
+    });
   }
 
   tile(z: number, x: number, y: number): FeatureLayer {
@@ -376,8 +418,9 @@ function shifted(item: Item, dx: number): Item {
 function readGeoJSON(
   data: unknown,
   promoteId: string | undefined,
-): { items: Item[]; features: number; bounds: Rect | null } {
+): { items: Item[]; originals: Item[]; features: number; bounds: Rect | null } {
   const items: Item[] = [];
+  const originals: Item[] = [];
   let features = 0;
   let bounds: Rect | null = null;
   const add = (geometry: unknown, feature: SourceFeature): boolean => {
@@ -391,6 +434,7 @@ function readGeoJSON(
     const item = readGeometry(g, feature);
     if (!item) return false;
     items.push(item);
+    originals.push(item);
     bounds = bounds ? union(bounds, item.bounds) : item.bounds;
     if (item.bounds.x1 > 1) items.push(shifted(item, -1));
     if (item.bounds.x0 < 0) items.push(shifted(item, 1));
@@ -410,7 +454,7 @@ function readGeoJSON(
     }
   };
   visit(data);
-  return { items, features, bounds };
+  return { items, originals, features, bounds };
 }
 
 function readProperties(raw: unknown): Record<string, PropertyValue> {
@@ -516,4 +560,33 @@ function pathLength(points: Float64Array): number {
     length += Math.hypot(points[i]! - points[i - 3]!, points[i + 1]! - points[i - 2]!);
   }
   return length;
+}
+
+function itemGeometry(item: Item): Geometry {
+  const coords = (part: Part): Position[] => {
+    const p = part.points;
+    const out: Position[] = [];
+    for (let i = 0; i < p.length; i += 3) out.push([lngFromMercatorX(p[i]!), latFromMercatorY(p[i + 1]!)]);
+    return out;
+  };
+  if (item.type === 1) {
+    const points = item.parts.flatMap(coords);
+    return points.length === 1
+      ? { type: "Point", coordinates: points[0]! }
+      : { type: "MultiPoint", coordinates: points };
+  }
+  if (item.type === 2) {
+    const lines = item.parts.map(coords);
+    return lines.length === 1
+      ? { type: "LineString", coordinates: lines[0]! }
+      : { type: "MultiLineString", coordinates: lines };
+  }
+  const polygons: Position[][][] = [];
+  for (const part of item.parts) {
+    if (part.outer) polygons.push([coords(part)]);
+    else polygons[polygons.length - 1]?.push(coords(part));
+  }
+  return polygons.length === 1
+    ? { type: "Polygon", coordinates: polygons[0]! }
+    : { type: "MultiPolygon", coordinates: polygons };
 }
