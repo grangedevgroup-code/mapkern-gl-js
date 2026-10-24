@@ -270,3 +270,49 @@ void main() {
 }
 `,
 };
+
+export const extrusionShader = {
+  name: "extrusion",
+  vertex: `
+layout(location = 0) in vec2 a_pos;
+layout(location = 1) in vec4 a_normal;
+layout(location = 4) in uint a_feature;
+uniform mat4 u_matrix;
+uniform float u_pixels_per_meter;
+uniform vec3 u_light;
+uniform float u_opacity;
+uniform vec4 u_color;
+uniform int u_color_slot;
+uniform int u_color_comp;
+uniform float u_height;
+uniform int u_height_slot;
+uniform int u_height_comp;
+uniform float u_base;
+uniform int u_base_slot;
+uniform int u_base_comp;
+${paintChunk}
+out vec2 v_pos;
+out vec4 v_color;
+void main() {
+  vec4 color = paintValue(a_feature, u_color_slot, u_color_comp, u_color);
+  float height = max(paintValue(a_feature, u_height_slot, u_height_comp, vec4(u_height)).x, 0.0);
+  float base = clamp(paintValue(a_feature, u_base_slot, u_base_comp, vec4(u_base)).x, 0.0, height);
+  bool top = a_normal.w > 0.5;
+  float lambert = max(dot(a_normal.xyz, u_light), 0.0);
+  float shade = a_normal.z > 0.5 ? 1.0 : (0.66 + 0.3 * lambert) * (top ? 1.0 : 0.86);
+  v_color = vec4(color.rgb * shade * color.a, color.a) * u_opacity;
+  v_pos = a_pos;
+  gl_Position = u_matrix * vec4(a_pos, (top ? height : base) * u_pixels_per_meter, 1.0);
+}
+`,
+  fragment: `
+${clipChunk}
+in vec2 v_pos;
+in vec4 v_color;
+out vec4 fragColor;
+void main() {
+  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
+  fragColor = v_color;
+}
+`,
+};
