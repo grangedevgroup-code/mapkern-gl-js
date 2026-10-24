@@ -9,13 +9,13 @@ import type { RGBA } from "../style/color.ts";
 import { premultiply } from "../style/color.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import { terrainMesh } from "../terrain/mesh.ts";
-import type { Terrain } from "../terrain/terrain.ts";
+import type { Terrain, TerrainSlot } from "../terrain/terrain.ts";
 import type { LabelTerrain, SymbolLayerInput } from "../text/labels.ts";
 import { LabelRenderer } from "../text/labels.ts";
 import { textShader } from "../text/shader.ts";
 import type { RenderPiece, TileManager } from "../tiles/manager.ts";
 import type { Tile } from "../tiles/tile.ts";
-import type { RenderView } from "./drape.ts";
+import type { DrapeEntry, RenderView } from "./drape.ts";
 import { DrapeCache, Hash, SlotView } from "./drape.ts";
 import type { GL, Program } from "./gl.ts";
 import { PickBuffer } from "./pick.ts";
@@ -24,7 +24,7 @@ import { rasterShader, solidShader } from "./shaders/raster.ts";
 import { terrainShader } from "./shaders/terrain.ts";
 import { circleShader, extrusionShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
 import type { PickPass } from "./vector-layers.ts";
-import { VectorPainter } from "./vector-layers.ts";
+import { VectorPainter, WARM_VARIANTS } from "./vector-layers.ts";
 
 export interface FrameInput {
   readonly transform: Transform;
@@ -67,6 +67,26 @@ interface TerrainGeometry {
 }
 
 const DRAPED: ReadonlySet<string> = new Set(["background", "raster", "hillshade", "fill", "line", "circle"]);
+const DRAPE_CACHE_BYTES = 32 * 1024 * 1024;
+
+function drapeSize(t: Transform, slot: TerrainSlot, pixelRatio: number): number {
+  const n = 2 ** slot.z;
+  const x0 = slot.wrap + slot.x / n;
+  const y0 = slot.y / n;
+  const x1 = x0 + 1 / n;
+  const y1 = y0 + 1 / n;
+  const z = t.centerElevationPixels;
+  const corners = [t.project(x0, y0, z), t.project(x1, y0, z), t.project(x1, y1, z), t.project(x0, y1, z)];
+  if (corners.some((p) => p.w <= 0)) return 1024;
+  let area = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = corners[i]!;
+    const b = corners[(i + 1) % 4]!;
+    area += a.x * b.y - b.x * a.y;
+  }
+  const pixels = Math.sqrt(Math.abs(area) / 2) * pixelRatio;
+  return pixels > 600 ? 1024 : pixels > 300 ? 512 : 256;
+}
 
 export class Painter {
   readonly gl: GL;
@@ -114,6 +134,7 @@ export class Painter {
       circleShader,
       extrusionShader,
       textShader,
+      ...WARM_VARIANTS,
     ]) {
       this.gl.program(shader);
     }
@@ -133,6 +154,8 @@ export class Painter {
     const g = this.gl;
     const gl = g.gl;
     this.stats = { drawCalls: 0, pieces: 0, drapes: 0 };
+    this.vector.budget.deadline = performance.now() + 4;
+    this.vector.budget.behind = false;
     const terrain = frame.terrain ?? null;
     if (terrain) this.renderDrapes(frame, terrain);
     else if (this.drapes.count > 0) this.drapes.destroy();
@@ -183,7 +206,7 @@ export class Painter {
       this.stats.drawCalls += this.labels.draw(frame.transform, frame.pixelRatio);
     }
     gl.bindVertexArray(null);
-    return animating || this.drapesBehind;
+    return animating || this.drapesBehind || this.vector.budget.behind;
   }
 
   private labelTerrain(transform: Transform, terrain: Terrain): LabelTerrain {
@@ -230,21 +253,33 @@ export class Painter {
     const gl = g.gl;
     const t = frame.transform;
     const zoom = t.zoom;
-    const size = frame.pixelRatio >= 1.5 ? 1024 : 512;
     const layers = frame.layers.filter((l) => DRAPED.has(l.type) && l.isVisible(zoom));
     const turning = layers.some((l) => l.type === "hillshade" && l.fixed<string>("illuminationAnchor") !== "map");
+    const bearing = turning ? Math.round(t.bearing / 4) * 4 : 0;
     const deadline = performance.now() + 6;
     this.drapes.begin();
     this.drapesBehind = false;
+    const common = this.hash.reset().add(bearing).add(frame.pixelRatio);
+    const sources: (readonly RenderPiece<unknown>[])[] = [];
+    for (const layer of layers) {
+      common.add(layer.uid).add(layer.revision);
+      const pieces = this.piecesOf(frame, layer);
+      if (pieces && !sources.includes(pieces)) sources.push(pieces);
+    }
+    const shared = common.value;
     for (const slot of terrain.slots) {
-      const view = new SlotView(slot, zoom, t.bearing, 512 * 2 ** (zoom - slot.z));
-      const signature = this.drapeSignature(frame, layers, view, size, turning ? t.bearing : 0);
-      const entry = this.drapes.target(slot.key, size);
-      if (entry.signature === signature && Math.abs(entry.zoom - zoom) < 0.05) continue;
-      if (!Number.isNaN(entry.signature) && performance.now() > deadline) {
+      const size = drapeSize(t, slot, frame.pixelRatio);
+      const view = new SlotView(slot, zoom, bearing, 512 * 2 ** (zoom - slot.z));
+      const signature = this.drapeSignature(shared, sources, view, size);
+      const current = this.drapes.lookup(slot.key);
+      const drawn = current !== undefined && !Number.isNaN(current.signature);
+      if (drawn && current.size === size && current.signature === signature && Math.abs(current.zoom - zoom) < 0.05)
+        continue;
+      if (performance.now() > deadline && (drawn || this.drapeFallback(slot))) {
         this.drapesBehind = true;
         continue;
       }
+      const entry = this.drapes.target(slot.key, size);
       gl.bindFramebuffer(gl.FRAMEBUFFER, entry.framebuffer);
       g.setViewport(0, 0, size, size);
       g.setDepth(false, false);
@@ -265,27 +300,37 @@ export class Painter {
       entry.zoom = zoom;
       this.stats.drapes++;
     }
-    this.drapes.trim(terrain.slots.length + 32);
+    this.drapes.trim(DRAPE_CACHE_BYTES);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
+  private drapeFallback(slot: TerrainSlot): { entry: DrapeEntry; rect: [number, number, number, number] } | null {
+    for (let dz = 1; dz <= 4 && dz <= slot.z; dz++) {
+      const n = 2 ** dz;
+      const x = Math.floor(slot.x / n);
+      const y = Math.floor(slot.y / n);
+      const entry = this.drapes.lookup(`${slot.z - dz}/${x}/${y}/${slot.wrap}`);
+      if (entry && !Number.isNaN(entry.signature)) {
+        return { entry, rect: [(slot.x - x * n) / n, (slot.y - y * n) / n, 1 / n, 1 / n] };
+      }
+    }
+    return null;
+  }
+
   private drapeSignature(
-    frame: FrameInput,
-    layers: readonly StyleLayer[],
+    shared: number,
+    sources: readonly (readonly RenderPiece<unknown>[])[],
     view: SlotView,
     size: number,
-    bearing: number,
   ): number {
-    const h = this.hash.reset().add(size).add(bearing).add(frame.pixelRatio);
-    for (const layer of layers) {
-      h.add(layer.uid).add(layer.revision);
-      const pieces = this.piecesOf(frame, layer);
-      if (!pieces) continue;
+    const h = this.hash.reset().add(shared).add(size);
+    for (const pieces of sources) {
       for (const p of pieces) {
         const tile = p.tile;
         if (!view.overlaps(tile.z, tile.x, tile.y, p.wrap)) continue;
         h.add(tile.key).add(tile.revision).add(p.opacity).add(p.wrap).add(p.clip.x0).add(p.clip.y0).add(p.clip.x1);
       }
+      h.add(-1);
     }
     return h.value;
   }
@@ -321,11 +366,19 @@ export class Painter {
     const uHas = uniform(program, "u_has_dem");
     const uRows = uniform(program, "u_rows");
     const uSkirt = uniform(program, "u_skirt");
+    const uDrapeRect = uniform(program, "u_drape_rect");
     const pixelsPerMeter = t.pixelsPerMeter * terrain.exaggeration;
     gl.bindVertexArray(mesh.vao);
     for (const slot of terrain.slots) {
-      const entry = this.drapes.lookup(slot.key);
-      if (!entry || Number.isNaN(entry.signature)) continue;
+      let entry = this.drapes.lookup(slot.key);
+      let rect: readonly [number, number, number, number] = [0, 0, 1, 1];
+      if (!entry || Number.isNaN(entry.signature)) {
+        const fallback = this.drapeFallback(slot);
+        if (!fallback) continue;
+        entry = fallback.entry;
+        rect = fallback.rect;
+      }
+      gl.uniform4f(uDrapeRect, rect[0], rect[1], rect[2], rect[3]);
       const data = slot.dem?.data ?? null;
       const dem = data ? terrain.source.elevationTexture(data) : null;
       g.bindTexture(0, entry.texture);
