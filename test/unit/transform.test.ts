@@ -1,6 +1,6 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Transform, convexHull, polygonIntersectsRect } from "../../src/camera/transform.ts";
+import { test } from "node:test";
+import { convexHull, polygonIntersectsRect, Transform } from "../../src/camera/transform.ts";
 import { mercatorX, mercatorY } from "../../src/geo/mercator.ts";
 
 const close = (a: number, b: number, eps = 1e-6) => assert.ok(Math.abs(a - b) <= eps, `${a} != ${b}`);
@@ -66,7 +66,12 @@ test("pitch moves the horizon side away from the camera", () => {
 test("unproject inverts project", () => {
   for (const pitch of [0, 40, 60]) {
     const t = make(14, pitch, 33);
-    for (const [px, py] of [[10, 590], [400, 300], [790, 300], [200, 450]] as const) {
+    for (const [px, py] of [
+      [10, 590],
+      [400, 300],
+      [790, 300],
+      [200, 450],
+    ] as const) {
       const w = t.unproject(px, py);
       assert.ok(w, `ray miss at ${px},${py}`);
       const p = t.project(w[0], w[1]);
@@ -91,7 +96,7 @@ test("covering tiles at pitch 0 use one zoom and cover the view", () => {
   const tiles = t.coveringTiles({ tileSize: 512, minZoom: 0, maxZoom: 22, round: false });
   assert.ok(tiles.length > 0);
   for (const tile of tiles) assert.equal(tile.z, 11);
-  const area = tiles.length * (512 * Math.pow(2, 0.3)) ** 2;
+  const area = tiles.length * (512 * 2 ** 0.3) ** 2;
   assert.ok(area >= 1024 * 768, `tiles cover ${area}`);
   assert.ok(tiles.length <= 16, `too many tiles: ${tiles.length}`);
 });
@@ -143,10 +148,20 @@ test("zoom and pitch limits are enforced", () => {
 });
 
 test("polygon rect intersection", () => {
-  const poly = convexHull([[0, 0], [1, 0], [1, 1], [0, 1], [0.5, 0.5]]);
+  const poly = convexHull([
+    [0, 0],
+    [1, 0],
+    [1, 1],
+    [0, 1],
+    [0.5, 0.5],
+  ]);
   assert.equal(poly.length, 4);
   assert.ok(polygonIntersectsRect(poly, 0.5, 0.5, 2, 2));
   assert.ok(!polygonIntersectsRect(poly, 1.1, 0, 2, 1));
-  const tri: [number, number][] = [[0, 0], [1, 0], [0, 1]];
+  const tri: [number, number][] = [
+    [0, 0],
+    [1, 0],
+    [0, 1],
+  ];
   assert.ok(!polygonIntersectsRect(tri, 0.8, 0.8, 1, 1));
 });
