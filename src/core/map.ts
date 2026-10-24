@@ -7,8 +7,10 @@ import type { InputOptions } from "../input/handlers.ts";
 import { InputHandlers } from "../input/handlers.ts";
 import { GL } from "../render/gl.ts";
 import { Painter } from "../render/painter.ts";
+import { registerPmtilesProtocol } from "../sources/pmtiles.ts";
 import { RasterSource } from "../sources/raster.ts";
 import type { MapSource, SourceContext } from "../sources/source.ts";
+import { VectorSource } from "../sources/vector.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import { Style } from "../style/style.ts";
 import type { LayerSpec, SourceSpec, StyleSpec } from "../style/types.ts";
@@ -237,6 +239,7 @@ export class MapletMap extends Emitter<MapEvents> {
     this.container = container;
     const doc = container.ownerDocument;
     injectStyles(doc);
+    registerPmtilesProtocol();
     this.transform = new Transform();
     this.transform.renderWorldCopies = options.renderWorldCopies ?? true;
     this.transform.setPitchRange(
@@ -865,6 +868,8 @@ export class MapletMap extends Emitter<MapEvents> {
     switch (spec.type) {
       case "raster":
         return new RasterSource(id, spec, ctx);
+      case "vector":
+        return new VectorSource(id, spec, ctx);
       default:
         throw new MapletError("invalid-style", `Source type "${spec.type}" is not supported yet`, { sourceId: id });
     }
@@ -1042,7 +1047,10 @@ export class MapletMap extends Emitter<MapEvents> {
         if (source.uploadPending(deadline, now)) moreUploads = true;
       }
       const predicted = this.predicted();
-      for (const source of style.sources.values()) source.update(this.transform, now, predicted);
+      for (const source of style.sources.values()) {
+        if (source.setLayers) source.setLayers(style.layers.filter((l) => l.source === source.id));
+        source.update(this.transform, now, predicted);
+      }
       if (moreUploads) animating = true;
       this.painter.render({
         transform: this.transform,
