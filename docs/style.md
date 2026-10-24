@@ -54,6 +54,14 @@ A few options control how the tiles are made. `maxZoom` (18) is the last zoom le
 
 Polygon rings can wind either way, and shapes that cross the 180th meridian show up on both sides of it.
 
+Despite the name, a GeoJSON source reads other formats too: KML and KMZ, GPX, CSV, TopoJSON, Shapefiles (zipped together with their `.dbf`, `.prj` and `.cpg` files), FlatGeobuf and WKT. Maplet works out the format from the file itself, so `data: "trails.gpx"` or `data: "parcels.zip"` just works. If it guesses wrong, set `format` to one of `geojson`, `topojson`, `kml`, `kmz`, `gpx`, `csv`, `shapefile`, `flatgeobuf` or `wkt`.
+
+A few notes on what comes through:
+
+- KML styles become `stroke`, `stroke-width`, `fill`, `fill-opacity` and `marker-color` properties, so you can use them in paint expressions like `["get", "stroke"]`.
+- CSV files need a header row and either latitude and longitude columns (`lat`/`latitude`/`y` and `lon`/`lng`/`longitude`/`x`) or a WKT column. Numbers come through as numbers, unless they have leading zeros.
+- Shapefiles and FlatGeobuf files in UTM, a Transverse Mercator or Lambert state plane zone, or Web Mercator are converted to longitude and latitude using the `.prj` file or the EPSG code. Other projections are reported as errors. Datum shifts aren't applied, which can move data in older datums such as NAD27 by up to about 100 m.
+
 ## Layers
 
 Every layer has an `id` and a `type`: `background`, `raster`, `fill`, `line`, `circle`, `extrusion` or `symbol`. Layers that draw data also name a `source`, and for vector tiles a `sourceLayer`, which is the layer inside the tiles. Layers are drawn in order, so later ones end up on top.
