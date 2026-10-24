@@ -181,15 +181,11 @@ function buildBucket(
   const layout = program.layout;
   if (program.type === "fill") {
     const fill = new FillBuilder();
-    const outline = new LineBuilder({ cap: "butt", join: "bevel", miterLimit: 2, roundLimit: 1.05 });
     for (const f of selected) {
       const index = features.length;
       const polygons = classifyRings(f.feature.geometry());
       if (polygons.length === 0) continue;
-      for (const rings of polygons) {
-        fill.addPolygon(rings, index);
-        for (const ring of rings) outline.addLine(ring, index, true);
-      }
+      for (const rings of polygons) fill.addPolygon(rings, index);
       features.push(record(f, program.keys));
     }
     if (fill.vertexCount === 0) return null;
@@ -199,10 +195,7 @@ function buildBucket(
       extent: source.extent,
       features,
       main: geometry(fill.vertices.finish(), fill.indices.finish(), fill.vertexCount),
-      outline:
-        outline.vertexCount > 0
-          ? geometry(outline.vertices.finish(), outline.indices.finish(), outline.vertexCount)
-          : null,
+      outline: fill.edges.length > 0 ? geometry(new ArrayBuffer(0), fill.edges.finish(), fill.vertexCount) : null,
     };
   }
   if (program.type === "line") {
