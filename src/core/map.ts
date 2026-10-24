@@ -7,6 +7,7 @@ import type { InputOptions } from "../input/handlers.ts";
 import { InputHandlers } from "../input/handlers.ts";
 import { GL } from "../render/gl.ts";
 import { Painter } from "../render/painter.ts";
+import { GeoJSONSource } from "../sources/geojson.ts";
 import { registerPmtilesProtocol } from "../sources/pmtiles.ts";
 import { RasterSource } from "../sources/raster.ts";
 import type { MapSource, SourceContext } from "../sources/source.ts";
@@ -103,6 +104,8 @@ export interface FitBoundsOptions extends AnimationOptions {
 
 export type BoundsLike = [[number, number], [number, number]] | [number, number, number, number];
 
+export type Source = RasterSource | VectorSource | GeoJSONSource;
+
 export interface MapEvent {
   readonly target: MapletMap;
   readonly type: string;
@@ -127,7 +130,7 @@ export interface MapErrorEvent extends MapEvent {
 
 export interface SourceDataEvent extends MapEvent {
   readonly sourceId: string;
-  readonly kind: "metadata" | "error";
+  readonly kind: "metadata" | "content" | "error";
 }
 
 export interface MapEvents {
@@ -619,8 +622,8 @@ export class MapletMap extends Emitter<MapEvents> {
     return this;
   }
 
-  getSource(id: string): MapSource | undefined {
-    return this.style?.sources.get(id);
+  getSource(id: string): Source | undefined {
+    return this.style?.sources.get(id) as Source | undefined;
   }
 
   addLayer(layer: LayerSpec, beforeId?: string): this {
@@ -870,6 +873,8 @@ export class MapletMap extends Emitter<MapEvents> {
         return new RasterSource(id, spec, ctx);
       case "vector":
         return new VectorSource(id, spec, ctx);
+      case "geojson":
+        return new GeoJSONSource(id, spec, ctx);
       default:
         throw new MapletError("invalid-style", `Source type "${spec.type}" is not supported yet`, { sourceId: id });
     }
@@ -887,6 +892,10 @@ export class MapletMap extends Emitter<MapEvents> {
       prefetchLimit: this.options.prefetch === false ? 0 : 48,
       pixelRatio: () => this.pixelRatioValue,
       error: (error) => this.fail(error, typeof error.detail.sourceId === "string" ? error.detail.sourceId : undefined),
+      content: (sourceId) => {
+        this.emit("sourcedata", { ...this.event("sourcedata"), sourceId, kind: "content" });
+        this.triggerRepaint();
+      },
       changed: () => this.triggerRepaint(),
       wakeAt: (time) => this.wakeAt(time),
     };
