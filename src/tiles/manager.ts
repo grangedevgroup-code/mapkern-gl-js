@@ -45,6 +45,7 @@ export interface TileStats {
   loading: number;
   failed: number;
   empty: number;
+  refreshing: number;
   bytes: number;
   visibleSlots: number;
   pieces: number;
