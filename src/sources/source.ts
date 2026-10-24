@@ -1,10 +1,10 @@
 import type { Transform } from "../camera/transform.ts";
-import type { MapletError } from "../core/errors.ts";
+import { MapletError } from "../core/errors.ts";
 import type { GL } from "../render/gl.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { SourceSpec } from "../style/types.ts";
 import type { TransformRequest } from "../tiles/fetch.ts";
-import type { TileStats } from "../tiles/manager.ts";
+import type { ManagerEvents, TileStats } from "../tiles/manager.ts";
 import type { RequestScheduler } from "../tiles/scheduler.ts";
 import type { WorkerPool } from "../worker/pool.ts";
 
@@ -19,6 +19,7 @@ export interface SourceContext {
   readonly prefetchLimit: number;
   readonly pixelRatio: () => number;
   error(error: MapletError): void;
+  content(sourceId: string): void;
   changed(): void;
   wakeAt(time: number): void;
 }
@@ -38,4 +39,21 @@ export interface MapSource {
   reload(): void;
   destroy(): void;
   setLayers?(layers: readonly StyleLayer[]): void;
+}
+
+export function tileEvents(sourceId: string, ctx: SourceContext): ManagerEvents {
+  return {
+    changed: () => ctx.changed(),
+    failure: (failure, tile) => {
+      const code = failure.kind === "auth" ? "auth" : failure.kind === "decode" ? "decode" : "tile-error";
+      ctx.error(
+        new MapletError(code, `Tile ${tile.z}/${tile.x}/${tile.y} of source "${sourceId}" failed: ${failure.message}`, {
+          sourceId,
+          tile: { z: tile.z, x: tile.x, y: tile.y },
+          failure,
+        }),
+      );
+    },
+    wakeAt: (time) => ctx.wakeAt(time),
+  };
 }
