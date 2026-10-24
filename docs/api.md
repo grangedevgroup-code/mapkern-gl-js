@@ -193,6 +193,8 @@ const url = await maplet.openTileFile(input.files[0]);
 map.addSource("mine", { type: "vector", url });
 ```
 
+Once a tile source has loaded, its `bounds` tell you the area the file covers, as `[west, south, east, north]`, so `map.fitBounds(map.getSource("mine").bounds)` takes you there. It's `null` for files that cover the whole world or don't say.
+
 ## Your own tile protocol
 
 `addProtocol` lets you answer requests for a made-up URL scheme yourself, for example to serve tiles from IndexedDB or from a file someone picked:
