@@ -17,6 +17,7 @@ export const linear: Easing = (t) => t;
 export interface Anchor {
   world: [number, number];
   screen: [number, number];
+  z?: number;
 }
 
 export interface CameraMotion {
@@ -61,7 +62,7 @@ export function easeMotion(
       transform.setBearing(from.bearing + (tb - from.bearing) * k);
       transform.setPitch(from.pitch + (to.pitch - from.pitch) * k);
       if (anchor) {
-        transform.setLocationAtPoint(anchor.world, anchor.screen[0], anchor.screen[1]);
+        transform.setLocationAtPoint(anchor.world, anchor.screen[0], anchor.screen[1], anchor.z);
       } else {
         transform.setCenterWorld(from.x + (tx - from.x) * k, from.y + (to.y - from.y) * k);
       }
