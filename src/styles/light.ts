@@ -466,30 +466,20 @@ export function lightStyle(options: LightStyleOptions = {}): StyleSpec {
     },
   ];
   const extruded = options.buildings !== false && options.buildings !== "flat";
-  if (options.buildings !== false) {
+  if (options.buildings === "flat") {
     layers.push({
       id: "building",
       type: "fill",
       source: "osm",
       sourceLayer: "building",
-      minZoom: 13,
-      ...(extruded ? { maxZoom: 15.5 } : {}),
+      minZoom: 12,
       paint: {
         color: "#e0ddd5",
         outlineColor: "#d0ccc2",
-        opacity: linearZoom(
-          extruded
-            ? [
-                [13, 0],
-                [14, 1],
-                [15, 1],
-                [15.5, 0],
-              ]
-            : [
-                [13, 0],
-                [14, 1],
-              ],
-        ),
+        opacity: linearZoom([
+          [12, 0],
+          [13, 1],
+        ]),
       },
     });
   }
@@ -608,14 +598,14 @@ export function lightStyle(options: LightStyleOptions = {}): StyleSpec {
       type: "extrusion",
       source: "osm",
       sourceLayer: "building",
-      minZoom: 15,
+      minZoom: 12,
       paint: {
         color: "#e3dfd7",
         height: ["coalesce", ["get", "height"], 6],
         base: ["coalesce", ["get", "min_height"], 0],
         opacity: linearZoom([
-          [15, 0],
-          [15.5, 1],
+          [12, 0],
+          [12.5, 1],
         ]),
       },
     });
