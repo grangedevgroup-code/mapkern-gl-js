@@ -1,6 +1,6 @@
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import * as zlib from "node:zlib";
-import { BYTES, Reader, decodeUtf8 } from "../../src/formats/protobuf.ts";
+import { BYTES, decodeUtf8, Reader } from "../../src/formats/protobuf.ts";
 
 export interface BlobRef {
   offset: number;
@@ -53,7 +53,8 @@ export function indexBlobs(path: string): BlobRef[] {
       const headerLength = lengthBuf.readUInt32BE(0);
       if (headerLength > 64 * 1024) throw new Error(`Blob header at ${pos} is too large (${headerLength} bytes)`);
       const header = Buffer.alloc(headerLength);
-      if (readSync(fd, header, 0, headerLength, pos + 4) !== headerLength) throw new Error(`Truncated blob header at ${pos}`);
+      if (readSync(fd, header, 0, headerLength, pos + 4) !== headerLength)
+        throw new Error(`Truncated blob header at ${pos}`);
       const r = new Reader(header);
       let type = "";
       let dataSize = 0;
@@ -64,7 +65,8 @@ export function indexBlobs(path: string): BlobRef[] {
         else if (field === 3) dataSize = r.varint();
         else r.skip(tag & 7);
       }
-      if (dataSize <= 0 || dataSize > 64 * 1024 * 1024) throw new Error(`Blob at ${pos} has an invalid size ${dataSize}`);
+      if (dataSize <= 0 || dataSize > 64 * 1024 * 1024)
+        throw new Error(`Blob at ${pos} has an invalid size ${dataSize}`);
       refs.push({ offset: pos + 4 + headerLength, size: dataSize, type });
       pos += 4 + headerLength + dataSize;
     }
