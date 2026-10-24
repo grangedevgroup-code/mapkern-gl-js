@@ -22,6 +22,9 @@
   "main": "./dist/maplet.js",
   "module": "./dist/maplet.js",
   "types": "./dist/types/index.d.ts",
+  "bin": {
+    "maplet-tiles": "./dist/tiles/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/types/index.d.ts",
@@ -38,6 +41,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.ts",
+    "prepare": "node scripts/build.ts",
     "check": "tsc -p tsconfig.json",
     "lint": "biome check .",
     "format": "biome check --write .",
