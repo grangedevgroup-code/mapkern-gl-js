@@ -135,8 +135,8 @@ export class Style {
         this.events.sourceFailed(source, err);
       })
       .finally(() => {
-        if (this.sources.get(id) === source || !this.controller.signal.aborted) this.pendingSources--;
-        this.events.changed();
+        this.pendingSources--;
+        if (!this.controller.signal.aborted) this.events.changed();
       });
   }
 }
