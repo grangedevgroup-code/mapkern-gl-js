@@ -601,8 +601,8 @@ export function lightStyle(options: LightStyleOptions = {}): StyleSpec {
       minZoom: 12,
       paint: {
         color: "#e3dfd7",
-        height: ["interpolate", ["linear"], ["zoom"], 12, 0, 13, ["coalesce", ["get", "height"], 6]],
-        base: ["interpolate", ["linear"], ["zoom"], 12, 0, 13, ["coalesce", ["get", "min_height"], 0]],
+        height: ["coalesce", ["get", "height"], 6],
+        base: ["coalesce", ["get", "min_height"], 0],
       },
     });
   }
