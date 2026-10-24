@@ -6,6 +6,7 @@ import { indexBlobs } from "./osm-pbf.ts";
 
 export interface RegionData {
   bbox: [number, number, number, number];
+  warnings: string[];
   nodeIds: Float64Array;
   nodeLon: Int32Array;
   nodeLat: Int32Array;
@@ -35,7 +36,12 @@ class Pool {
     for (const w of this.workers) w.postMessage(message);
   }
 
-  run(tasks: Task[], onResult: (r: Result) => void, onProgress: (done: number) => void): Promise<void> {
+  run(
+    tasks: Task[],
+    onResult: (r: Result) => void,
+    onProgress: (done: number) => void,
+    onSkip: (index: number, message: string) => void,
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       let next = 0;
       let done = 0;
@@ -51,13 +57,8 @@ class Pool {
       for (const w of this.workers) {
         const onMessage = (r: Result) => {
           if (failed) return;
-          if (r.kind === "error") {
-            failed = true;
-            cleanup();
-            reject(new Error(`Blob ${r.index}: ${r.message}`));
-            return;
-          }
-          onResult(r);
+          if (r.kind === "error") onSkip(r.index, r.message);
+          else onResult(r);
           done++;
           onProgress(done);
           if (done === tasks.length) {
@@ -187,7 +188,15 @@ export async function extractRegion(
   const log = options.log ?? (() => undefined);
   const threads = Math.max(1, options.threads ?? Math.max(1, availableParallelism() - 0));
   const started = performance.now();
-  const blobs = indexBlobs(path).filter((b) => b.type === "OSMData");
+  const index = indexBlobs(path);
+  const warnings: string[] = [];
+  if (index.damagedAt !== null) {
+    const lost = index.fileSize - index.damagedAt;
+    const message = `the file is damaged at byte ${index.damagedAt.toLocaleString()} (${index.damage}); the last ${(lost / 1e6).toFixed(1)} MB cannot be read. Download the file again to get everything.`;
+    warnings.push(message);
+    log(`warning: ${message}`);
+  }
+  const blobs = index.blobs.filter((b) => b.type === "OSMData");
   const totalBytes = blobs.reduce((s, b) => s + b.size, 0);
   log(`${blobs.length} data blobs, ${(totalBytes / 1e9).toFixed(2)} GB compressed, ${threads} threads`);
   const fixed: [number, number, number, number] = [
@@ -203,6 +212,12 @@ export async function extractRegion(
     const points: PointRecord[][] = new Array(blobs.length);
     const relationParts: RelationRecord[][] = new Array(blobs.length);
     let maxNodeId = 0;
+    const skipped = new Map<string, number>();
+    const onSkip = (pass: string) => (blobIndex: number, message: string) => {
+      const n = (skipped.get(pass) ?? 0) + 1;
+      skipped.set(pass, n);
+      if (n <= 3) log(`warning: ${pass} pass skipped blob ${blobIndex}: ${message.split(/\r?\n/)[0]}`);
+    };
     await runPass(
       pool,
       "nodes",
@@ -218,6 +233,7 @@ export async function extractRegion(
       },
       log,
       started,
+      onSkip("nodes"),
     );
     const regionNodes = concatNodes(nodeParts.filter(Boolean));
     const relations = relationParts.filter(Boolean).flat();
@@ -245,6 +261,7 @@ export async function extractRegion(
       },
       log,
       started,
+      onSkip("ways"),
     );
     let ways = concatWays(wayParts.filter(Boolean));
     log(`ways kept: ${ways.ids.length.toLocaleString()}, refs: ${ways.refs.length.toLocaleString()}`);
@@ -275,6 +292,7 @@ export async function extractRegion(
         },
         log,
         started,
+        onSkip("closing ways"),
       );
       ways = concatWays([ways, ...extraParts.filter(Boolean)]);
       log(`ways after closing polygons: ${ways.ids.length.toLocaleString()}`);
@@ -304,12 +322,19 @@ export async function extractRegion(
         },
         log,
         started,
+        onSkip("missing nodes"),
       );
       nodes = mergeNodes(regionNodes, concatNodes(missingParts.filter(Boolean)));
+    }
+    for (const [pass, n] of skipped) {
+      const message = `${n.toLocaleString()} damaged blob(s) could not be read in the ${pass} pass, so some data is missing`;
+      warnings.push(message);
+      log(`warning: ${message}`);
     }
     log(`extract finished in ${((performance.now() - started) / 1000).toFixed(1)} s`);
     return {
       bbox,
+      warnings,
       nodeIds: nodes.ids,
       nodeLon: nodes.lon,
       nodeLat: nodes.lat,
@@ -397,6 +422,7 @@ async function runPass(
   onResult: (r: Result) => void,
   log: (message: string) => void,
   started: number,
+  onSkip: (index: number, message: string) => void = () => undefined,
 ): Promise<void> {
   const tasks = blobs.map(task);
   const passStart = performance.now();
