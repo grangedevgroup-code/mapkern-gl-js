@@ -113,8 +113,6 @@ test("stitched neighbors give the same slopes as one seamless grid", () => {
   for (let ty = 0; ty < 3; ty++) {
     const row: DemGrid[] = [];
     for (let tx = 0; tx < 3; tx++) {
-      const pixels = new Uint8Array(size * size * 4);
-      const view = new Float32Array(1);
       const grid = decodeDem(
         image(size, () => 0),
         size,
@@ -122,11 +120,9 @@ test("stitched neighbors give the same slopes as one seamless grid", () => {
       )!;
       for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
-          view[0] = surface(tx * size + x, ty * size + y);
-          grid.elevation[(y + DEM_BORDER) * grid.stride + x + DEM_BORDER] = view[0]!;
+          grid.elevation[(y + DEM_BORDER) * grid.stride + x + DEM_BORDER] = surface(tx * size + x, ty * size + y);
         }
       }
-      pixels.fill(0);
       row.push(grid);
     }
     tiles.push(row);
