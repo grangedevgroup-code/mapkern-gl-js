@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Maplet GL JS draws vector tiles, raster tiles and GeoJSON in the browser with WebGL2. No dependencies, MIT licensed." />
+    <meta name="theme-color" content="#f7f8f6" />
+    <title>Maplet GL JS</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="site.css" />
+  </head>
+  <body>
+    <header class="top">
+      <a class="brand" href="./" aria-label="Maplet home">
+        <img class="logo" src="assets/maplet-logo-black.svg" alt="Maplet" width="112" height="37" />
+      </a>
+      <nav>
+        <a href="https://github.com/grangedevgroup-code/maplet-gl-js/blob/main/docs/api.md">Docs</a>
+        <a href="examples/">Examples</a>
+        <a href="https://github.com/grangedevgroup-code/maplet-gl-js">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div id="map" class="map" aria-label="Map of Seattle"></div>
+        <div class="intro">
+          <h1>Maps for the web, without the baggage.</h1>
+          <p>
+            Maplet GL JS draws vector tiles, raster tiles and GeoJSON with WebGL2. It has no dependencies, it's about
+            77 KB gzipped, and it can build its own street map tiles from OpenStreetMap data.
+          </p>
+          <div class="actions">
+            <a class="button dark" href="https://github.com/grangedevgroup-code/maplet-gl-js#install">Get started</a>
+            <a class="button" href="examples/">See examples</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="text">
+        <h2>A map in a few lines</h2>
+        <p>Install it from GitHub:</p>
+        <pre><code>npm install github:grangedevgroup-code/maplet-gl-js</code></pre>
+        <p>Then give it a container and some data. This one needs no tile server or API key:</p>
+        <pre><code>import * as maplet from "maplet-gl";
+
+const map = new maplet.Map({
+  container: "map",
+  center: [-122.335, 47.608],
+  zoom: 13,
+  style: {
+    version: 1,
+    sources: { places: { type: "geojson", data: "places.geojson" } },
+    layers: [
+      { id: "background", type: "background", paint: { color: "#eef1ef" } },
+      { id: "places", type: "circle", source: "places", paint: { radius: 7, color: "#246a50" } },
+    ],
+  },
+});</code></pre>
+      </section>
+
+      <section class="text columns">
+        <div>
+          <h2>Your own basemap</h2>
+          <p>
+            Download an OpenStreetMap extract, run <code>npx maplet-tiles</code> on the area you want, and you get a
+            single file you can host anywhere. The map above comes from one of those files.
+          </p>
+        </div>
+        <div>
+          <h2>Live data</h2>
+          <p>
+            Replace GeoJSON while the map runs and the old data stays up until the new tiles are ready, so moving
+            things never flicker.
+          </p>
+        </div>
+        <div>
+          <h2>No empty squares</h2>
+          <p>
+            While you pan and zoom, Maplet fills gaps with tiles it already has from other zoom levels and loads what's
+            on screen first.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>MIT licensed. Map data © OpenStreetMap contributors.</span>
+      <a href="https://github.com/grangedevgroup-code/maplet-gl-js">Source on GitHub</a>
+    </footer>
+
+    <script type="module">
+      import * as maplet from "./dist/maplet.js";
+
+      const container = document.getElementById("map");
+      const supported = (() => {
+        try {
+          return !!document.createElement("canvas").getContext("webgl2");
+        } catch {
+          return false;
+        }
+      })();
+
+      if (supported) {
+        const map = new maplet.Map({
+          container,
+          style: maplet.lightStyle({ url: "data/seattle.pmtiles" }),
+          center: [-122.336, 47.612],
+          zoom: 13.2,
+          pitch: 45,
+          bearing: -20,
+          scrollZoom: false,
+        });
+        map.addControl(new maplet.NavigationControl());
+        container.addEventListener("click", () => map.getCanvasContainer().focus(), { once: true });
+        window.map = map;
+      } else {
+        container.classList.add("fallback");
+        container.innerHTML = '<img src="assets/screenshot-seattle.webp" alt="Seattle drawn by Maplet" />';
+      }
+    </script>
+  </body>
+</html>
