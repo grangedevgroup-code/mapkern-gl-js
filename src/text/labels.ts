@@ -394,7 +394,8 @@ export class LabelRenderer {
           const wx = piece.wrap + (tile.x + tx) / n;
           const wy = (tile.y + ty) / n;
           const p = transform.project(wx, wy);
-          if (p.w <= 0 || p.w > transform.cameraToCenterDistance * 2.5) continue;
+          const depth = p.w / transform.cameraToCenterDistance;
+          if (p.w <= 0 || depth > 2.2) continue;
           if (p.x < -margin || p.y < -margin || p.x > transform.width + margin || p.y > transform.height + margin)
             continue;
           const laid = this.layout(layer, text, isLine, budget);
@@ -408,7 +409,7 @@ export class LabelRenderer {
             featureReady = true;
           }
           const size = layer.layoutValue<number>("size", ctx);
-          const scale = size / GLYPH_SIZE;
+          const scale = (size / GLYPH_SIZE) * Math.max(0.7, Math.min(1, 1.3 - 0.3 * depth));
           const w = laid.width * scale;
           const h = laid.height * scale;
           const minDist = isLine ? Math.max(spacing, w * 1.5) : Math.max(80, w * 1.2);
