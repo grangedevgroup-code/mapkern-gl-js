@@ -23,6 +23,7 @@ export interface GeoJSONSummary {
 
 interface SourceFeature {
   readonly id: number | undefined;
+  readonly index: number;
   readonly properties: Record<string, PropertyValue>;
 }
 
@@ -173,25 +174,27 @@ interface Grid {
 
 class TileFeature implements VectorFeature {
   readonly id: number | undefined;
+  readonly source: number;
   readonly type: FeatureType;
   readonly extent: number;
-  private readonly source: SourceFeature;
+  private readonly feature: SourceFeature;
   private readonly parts: Int32Array[];
 
   constructor(item: Item, parts: Int32Array[], extent: number) {
     this.id = item.feature.id;
+    this.source = item.feature.index;
     this.type = item.type;
     this.extent = extent;
-    this.source = item.feature;
+    this.feature = item.feature;
     this.parts = parts;
   }
 
   properties(): Record<string, PropertyValue> {
-    return this.source.properties;
+    return this.feature.properties;
   }
 
   property(key: string): PropertyValue | undefined {
-    return this.source.properties[key];
+    return this.feature.properties[key];
   }
 
   geometry(): Int32Array[] {
@@ -401,8 +404,8 @@ function readGeoJSON(
     } else if (n.type === "Feature") {
       const properties = readProperties(n.properties);
       const raw = promoteId !== undefined && properties[promoteId] !== undefined ? properties[promoteId] : n.id;
-      if (add(n.geometry, { id: numericId(raw), properties })) features++;
-    } else if (add(n, { id: undefined, properties: {} })) {
+      if (add(n.geometry, { id: numericId(raw), index: features, properties })) features++;
+    } else if (add(n, { id: undefined, index: features, properties: {} })) {
       features++;
     }
   };
