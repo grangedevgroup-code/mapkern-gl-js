@@ -39,12 +39,15 @@
   "scripts": {
     "build": "node scripts/build.ts",
     "check": "tsc -p tsconfig.json",
+    "lint": "biome check .",
+    "format": "biome check --write .",
     "test": "node --test \"test/unit/**/*.test.ts\"",
     "test:browser": "node test/browser/run.ts",
     "dev": "node scripts/serve.ts",
     "tiles": "node tools/tiles/cli.ts"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@types/node": "26.6.5",
     "esbuild": "0.28.2",
     "typescript": "7.0.2"
