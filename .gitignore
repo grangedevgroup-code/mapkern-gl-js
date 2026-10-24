@@ -10,3 +10,10 @@ node_modules/
 Thumbs.db
 .vscode/
 .idea/
+.npm/
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
