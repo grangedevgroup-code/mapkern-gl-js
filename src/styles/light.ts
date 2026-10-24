@@ -566,7 +566,7 @@ export function lightStyle(options: LightStyleOptions = {}): StyleSpec {
       type: "circle",
       source: "osm",
       sourceLayer: "poi",
-      minZoom: 14,
+      minZoom: 15,
       filter: ["has", "name"],
       paint: {
         radius: zoomScale([
