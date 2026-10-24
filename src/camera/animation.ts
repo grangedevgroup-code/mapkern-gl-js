@@ -43,7 +43,13 @@ export function shortestBearing(from: number, to: number): number {
   return from + d;
 }
 
-export function easeMotion(from: CameraState, to: CameraState, duration: number, easing: Easing, anchor?: Anchor): CameraMotion {
+export function easeMotion(
+  from: CameraState,
+  to: CameraState,
+  duration: number,
+  easing: Easing,
+  anchor?: Anchor,
+): CameraMotion {
   const tx = shortestX(from.x, to.x);
   const tb = shortestBearing(from.bearing, to.bearing);
   return {
@@ -69,7 +75,6 @@ export interface FlyOptions {
   screenSpeed?: number;
   maxDuration?: number;
   duration?: number;
-  minZoom?: number;
   easing: Easing;
 }
 
@@ -80,14 +85,9 @@ export function flyMotion(from: CameraState, to: CameraState, viewport: number, 
   const scale0 = 2 ** from.zoom;
   const scale1 = 2 ** to.zoom;
   const w0 = viewport / scale0;
-  let w1 = viewport / scale1;
+  const w1 = viewport / scale1;
   const u1 = Math.hypot(tx - from.x, to.y - from.y) * 512;
   const rho2 = rho * rho;
-  if (options.minZoom !== undefined) {
-    const peak = Math.min(options.minZoom, from.zoom, to.zoom);
-    const wMax = viewport / 2 ** peak;
-    w1 = Math.min(w1, wMax * 4);
-  }
   const b = (i: 0 | 1) => {
     const w = i === 0 ? w0 : w1;
     return (w1 * w1 - w0 * w0 + (i === 0 ? 1 : -1) * rho2 * rho2 * u1 * u1) / (2 * w * rho2 * u1);
@@ -109,7 +109,7 @@ export function flyMotion(from: CameraState, to: CameraState, viewport: number, 
     const r1 = r(1);
     S = (r1 - r0) / rho;
     widthAt = (s) => (w0 * Math.cosh(r0)) / Math.cosh(rho * s + r0);
-    progressAt = (s) => ((w0 * (Math.cosh(r0) * Math.tanh(rho * s + r0) - Math.sinh(r0))) / rho2) / u1;
+    progressAt = (s) => (w0 * (Math.cosh(r0) * Math.tanh(rho * s + r0) - Math.sinh(r0))) / rho2 / u1;
   }
   let duration: number;
   if (options.duration !== undefined) {
