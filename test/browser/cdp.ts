@@ -111,9 +111,10 @@ export class Browser {
         break;
       }
       if (existsSync(portFile)) {
-        const [port, path] = readFileSync(portFile, "utf8").split(/\r?\n/);
-        if (port && path) {
-          endpoint = `ws://127.0.0.1:${port}${path}`;
+        const [portText, pathText] = readFileSync(portFile, "utf8").split(/\r?\n/);
+        const port = Number(portText);
+        if (Number.isInteger(port) && port > 0 && port < 65536 && pathText && /^\/devtools\/browser\/[A-Za-z0-9-]+$/.test(pathText)) {
+          endpoint = `ws://127.0.0.1:${port}/devtools/browser/${pathText.slice("/devtools/browser/".length)}`;
           break;
         }
       }
