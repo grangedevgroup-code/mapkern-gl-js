@@ -135,7 +135,10 @@ export const LAYOUT: Record<LayerType, Record<string, PropertyDef>> = {
   hillshade: {},
 };
 
+let nextUid = 1;
+
 export class StyleLayer {
+  readonly uid = nextUid++;
   readonly id: string;
   readonly type: LayerType;
   spec: LayerSpec;
