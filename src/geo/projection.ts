@@ -217,14 +217,15 @@ function parseWktCrs(text: string): WktNode | null {
         args.push(Number(m[0]));
         i += m[0].length;
       } else {
+        const before = i;
         const child = node();
-        if (!child) {
-          const start = i;
-          while (i < text.length && /[A-Za-z0-9_]/.test(text[i]!)) i++;
-          if (i === start) return null;
-          args.push(text.slice(start, i));
-        } else {
+        if (child) {
           args.push(child);
+        } else {
+          i = before;
+          while (i < text.length && /[A-Za-z0-9_]/.test(text[i]!)) i++;
+          if (i === before) return null;
+          args.push(text.slice(before, i));
         }
       }
     }
