@@ -369,15 +369,20 @@ export class Transform {
     return [lngFromMercatorX(w[0]), latFromMercatorY(w[1])];
   }
 
-  setLocationAtPoint(world: [number, number], px: number, py: number, meters?: number): void {
-    const now = this.unprojectClamped(px, py, meters === undefined ? undefined : meters * this.pixelsPerMeter);
-    this.setCenterWorld(this.cx + world[0] - now[0], this.cy + world[1] - now[1]);
+  setLocationAtPoint(world: readonly number[], px: number, py: number, z?: number): void {
+    for (let i = 0; i < 4; i++) {
+      const now = this.unprojectClamped(px, py, z === undefined ? undefined : z * this.worldSize);
+      const dx = world[0]! - now[0];
+      const dy = world[1]! - now[1];
+      this.setCenterWorld(this.cx + dx, this.cy + dy);
+      if (this.elevationMeters === 0 || Math.abs(dx) + Math.abs(dy) < 1e-15) break;
+    }
   }
 
-  zoomAround(zoom: number, px: number, py: number, meters?: number): void {
-    const anchor = this.unproject(px, py, meters === undefined ? undefined : meters * this.pixelsPerMeter);
+  zoomAround(zoom: number, px: number, py: number, z?: number): void {
+    const anchor = this.unproject(px, py, z === undefined ? undefined : z * this.worldSize);
     this.setZoom(zoom);
-    if (anchor) this.setLocationAtPoint(anchor, px, py, meters);
+    if (anchor) this.setLocationAtPoint(anchor, px, py, z);
   }
 
   footprint(): [number, number][] {
