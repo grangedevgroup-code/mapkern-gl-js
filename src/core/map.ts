@@ -1018,9 +1018,24 @@ export class MapletMap extends Emitter<MapEvents> {
   private predicted(): Transform[] {
     const out: Transform[] = [];
     if (this.motion) {
-      const t = this.transform.clone();
-      this.motion.motion.apply(t, 1);
-      out.push(t);
+      const { motion, start } = this.motion;
+      const now = performance.now();
+      for (const ahead of [250, 500, 900]) {
+        const t = (now + ahead - start) / Math.max(1, motion.duration);
+        if (t >= 1) break;
+        const future = this.transform.clone();
+        motion.apply(future, t);
+        out.push(future);
+      }
+      const end = this.transform.clone();
+      motion.apply(end, 1);
+      out.push(end);
+    }
+    const wheelTarget = this.handlers?.wheelTarget;
+    if (wheelTarget) {
+      const future = this.transform.clone();
+      future.zoomAround(wheelTarget.zoom, wheelTarget.point[0], wheelTarget.point[1]);
+      out.push(future);
     }
     return out;
   }
