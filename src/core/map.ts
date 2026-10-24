@@ -465,7 +465,7 @@ export class MapletMap extends Emitter<MapEvents> {
       delete style.meta.terrain;
     } else {
       const source = typeof terrain?.source === "string" ? style.sources.get(terrain.source) : undefined;
-      if (!source || source.type !== "dem") {
+      if (source?.type !== "dem") {
         throw new MapletError("invalid-option", "terrain.source must name a dem source", { terrain });
       }
       const exaggeration = terrain.exaggeration ?? 1;
