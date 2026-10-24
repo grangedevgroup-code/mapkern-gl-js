@@ -3,6 +3,8 @@ import { classifyRings, decodeTile } from "../formats/mvt.ts";
 import type { Compiled, FeatureContext, GeometryType } from "../style/expression.ts";
 import { compile } from "../style/expression.ts";
 import { CircleBuilder, FillBuilder, LineBuilder } from "./buckets.ts";
+import type { LabelCandidate, SymbolLayout } from "./symbols.ts";
+import { labelCandidates } from "./symbols.ts";
 
 export type BucketType = "fill" | "line" | "circle" | "symbol" | "extrusion";
 
@@ -46,6 +48,7 @@ export interface BucketData {
   features: FeatureRecord[];
   main: Geometry | null;
   outline: Geometry | null;
+  labels?: LabelCandidate[];
 }
 
 export interface VectorTileResult {
@@ -59,11 +62,11 @@ const GEOMETRY_NAMES: Record<number, GeometryType> = { 0: "Unknown", 1: "Point",
 
 const compiled = new Map<string, Compiled<unknown>>();
 
-function cachedCompile(key: string, value: unknown, kind: "boolean" | "number"): Compiled<unknown> {
+function cachedCompile(key: string, value: unknown, kind: "boolean" | "number" | "string"): Compiled<unknown> {
   const cacheKey = `${kind}:${key}:${JSON.stringify(value)}`;
   let c = compiled.get(cacheKey);
   if (!c) {
-    c = compile(value, kind, kind === "boolean" ? false : 0, key);
+    c = compile(value, kind, kind === "boolean" ? false : kind === "string" ? "" : 0, key);
     if (compiled.size > 4096) compiled.clear();
     compiled.set(cacheKey, c);
   }
@@ -132,7 +135,7 @@ export async function buildVectorTile(
       keyed.sort((a, b) => a.k - b.k || a.i - b.i);
       selected = keyed.map((e) => e.f);
     }
-    const bucket = buildBucket(program, source, selected);
+    const bucket = buildBucket(program, source, selected, zoom);
     if (!bucket) continue;
     featureCount += bucket.features.length;
     for (const g of [bucket.main, bucket.outline]) {
@@ -166,7 +169,12 @@ function geometry(vertices: ArrayBuffer, indices: ArrayBuffer, vertexCount: numb
   return { vertices, indices, vertexCount, indexCount: indices.byteLength / 4 };
 }
 
-function buildBucket(program: LayerProgram, source: VectorLayer, selected: FeatureView[]): BucketData | null {
+function buildBucket(
+  program: LayerProgram,
+  source: VectorLayer,
+  selected: FeatureView[],
+  zoom: number,
+): BucketData | null {
   const features: FeatureRecord[] = [];
   const layout = program.layout;
   if (program.type === "fill") {
@@ -217,6 +225,26 @@ function buildBucket(program: LayerProgram, source: VectorLayer, selected: Featu
       main: geometry(lines.vertices.finish(), lines.indices.finish(), lines.vertexCount),
       outline: null,
     };
+  }
+  if (program.type === "symbol") {
+    const symbol: SymbolLayout = {
+      text: cachedCompile(`${program.id}.text`, layout.text ?? "", "string"),
+      size: cachedCompile(`${program.id}.size`, layout.size ?? 14, "number"),
+      priority: cachedCompile(`${program.id}.priority`, layout.priority ?? 0, "number"),
+      placement: layout.placement === "line" ? "line" : "point",
+      spacing: typeof layout.spacing === "number" ? layout.spacing : 250,
+      transform: layout.transform === "uppercase" || layout.transform === "lowercase" ? layout.transform : "none",
+    };
+    const labels: LabelCandidate[] = [];
+    for (const f of selected) {
+      const index = features.length;
+      const found = labelCandidates(f.feature, index, { zoom, feature: f }, symbol, source.extent);
+      if (found.length === 0) continue;
+      labels.push(...found);
+      features.push(record(f, program.keys));
+    }
+    if (labels.length === 0) return null;
+    return { layerId: program.id, type: "symbol", extent: source.extent, features, main: null, outline: null, labels };
   }
   if (program.type === "circle") {
     const circles = new CircleBuilder();
