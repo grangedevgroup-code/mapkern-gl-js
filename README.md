@@ -92,7 +92,7 @@ You can replace GeoJSON with `setData()` while the map is running, move the came
 
 While you pan and zoom, Maplet fills gaps with tiles it already has from other zoom levels, so the map doesn't flash empty. Tiles are decoded in Web Workers, and the whole library is about 77 KB gzipped.
 
-3D buildings and terrain aren't finished yet, and the API may still change before 1.0.
+Terrain isn't finished yet, and the API may still change before 1.0.
 
 ## Docs
 
