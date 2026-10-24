@@ -76,7 +76,15 @@ export function labelCandidates(
     }
     if (best) {
       const p = pointAlong(best, bestLength / 2);
-      out.push({ feature: index, text, size, priority, line: false, anchors: Float32Array.of(p[0], p[1], 0), path: null });
+      out.push({
+        feature: index,
+        text,
+        size,
+        priority,
+        line: false,
+        anchors: Float32Array.of(p[0], p[1], 0),
+        path: null,
+      });
     }
     return out;
   }
@@ -94,7 +102,15 @@ export function labelCandidates(
   if (bestRing) {
     const p = interiorPoint(bestRing);
     if (p[0] >= 0 && p[1] >= 0 && p[0] < extent && p[1] < extent) {
-      out.push({ feature: index, text, size, priority, line: false, anchors: Float32Array.of(p[0], p[1], 0), path: null });
+      out.push({
+        feature: index,
+        text,
+        size,
+        priority,
+        line: false,
+        anchors: Float32Array.of(p[0], p[1], 0),
+        path: null,
+      });
     }
   }
   return out;
@@ -172,7 +188,10 @@ function interiorPoint(ring: Int32Array): [number, number] {
 function inside(x: number, y: number, ring: Int32Array): boolean {
   let c = false;
   for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
-    const xi = ring[i]!, yi = ring[i + 1]!, xj = ring[j]!, yj = ring[j + 1]!;
+    const xi = ring[i]!,
+      yi = ring[i + 1]!,
+      xj = ring[j]!,
+      yj = ring[j + 1]!;
     if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
   }
   return c;
