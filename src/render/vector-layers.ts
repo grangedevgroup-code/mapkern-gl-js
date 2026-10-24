@@ -340,23 +340,7 @@ export class VectorPainter {
 }
 
 function multiplyInto(m: Float32Array, a: Float64Array): void {
-  const b0 = m[0]!,
-    b1 = m[1]!,
-    b2 = m[2]!,
-    b3 = m[3]!,
-    b4 = m[4]!,
-    b5 = m[5]!,
-    b6 = m[6]!,
-    b7 = m[7]!,
-    b8 = m[8]!,
-    b9 = m[9]!,
-    b10 = m[10]!,
-    b11 = m[11]!,
-    b12 = m[12]!,
-    b13 = m[13]!,
-    b14 = m[14]!,
-    b15 = m[15]!;
-  const b = [b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15];
+  const b = Array.from(m);
   for (let c = 0; c < 4; c++) {
     for (let r = 0; r < 4; r++) {
       m[c * 4 + r] =
