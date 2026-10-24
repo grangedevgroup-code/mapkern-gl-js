@@ -8,7 +8,15 @@ import type { VectorSourceSpec } from "../style/types.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileLoader, TileStats } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
-import type { BucketData, BucketType, FeatureRecord, Geometry, LayerProgram, VectorTileRequest, VectorTileResult } from "../worker/vector-task.ts";
+import type {
+  BucketData,
+  BucketType,
+  FeatureRecord,
+  Geometry,
+  LayerProgram,
+  VectorTileRequest,
+  VectorTileResult,
+} from "../worker/vector-task.ts";
 import type { MapSource, SourceContext } from "./source.ts";
 import type { TileSet } from "./tilejson.ts";
 import { resolveTileSet, tileUrl } from "./tilejson.ts";
@@ -106,10 +114,18 @@ export class VectorSource implements MapSource {
   }
 
   async load(signal: AbortSignal): Promise<void> {
-    const spec = this.spec.url && /\.pmtiles(\?|#|$)/i.test(this.spec.url) && !this.spec.url.startsWith("pmtiles://")
-      ? { ...this.spec, url: `pmtiles://${absoluteUrl(this.spec.url)}` }
-      : this.spec;
-    const set = await resolveTileSet(this.id, spec, { minZoom: 0, maxZoom: 14 }, this.ctx.transformRequest, this.ctx.requestTimeoutMs, signal);
+    const spec =
+      this.spec.url && /\.pmtiles(\?|#|$)/i.test(this.spec.url) && !this.spec.url.startsWith("pmtiles://")
+        ? { ...this.spec, url: `pmtiles://${absoluteUrl(this.spec.url)}` }
+        : this.spec;
+    const set = await resolveTileSet(
+      this.id,
+      spec,
+      { minZoom: 0, maxZoom: 14 },
+      this.ctx.transformRequest,
+      this.ctx.requestTimeoutMs,
+      signal,
+    );
     if (signal.aborted) return;
     this.tileSet = set;
     this.ctx.scheduler.setGroupLimit(this.id, 16);
@@ -131,11 +147,15 @@ export class VectorSource implements MapSource {
         failure: (failure, tile) => {
           const code = failure.kind === "auth" ? "auth" : failure.kind === "decode" ? "decode" : "tile-error";
           this.ctx.error(
-            new MapletError(code, `Tile ${tile.z}/${tile.x}/${tile.y} of source "${this.id}" failed: ${failure.message}`, {
-              sourceId: this.id,
-              tile: { z: tile.z, x: tile.x, y: tile.y },
-              failure,
-            }),
+            new MapletError(
+              code,
+              `Tile ${tile.z}/${tile.x}/${tile.y} of source "${this.id}" failed: ${failure.message}`,
+              {
+                sourceId: this.id,
+                tile: { z: tile.z, x: tile.x, y: tile.y },
+                failure,
+              },
+            ),
           );
         },
         wakeAt: (time) => this.ctx.wakeAt(time),
@@ -199,13 +219,19 @@ export class VectorSource implements MapSource {
     return {
       load: async (tile: TileCoord, signal: AbortSignal, onDecoding: () => void): Promise<VectorTile | null> => {
         const url = tileUrl(set, tile.z, tile.x, tile.y);
-        const result = await fetchBytes(resolveRequest(url, "tile", ctx.transformRequest), signal, ctx.requestTimeoutMs);
+        const result = await fetchBytes(
+          resolveRequest(url, "tile", ctx.transformRequest),
+          signal,
+          ctx.requestTimeoutMs,
+        );
         if (result.kind === "empty") return null;
         onDecoding();
         const programs = this.programs;
         const signature = this.signature;
         const request: VectorTileRequest = { bytes: result.data, z: tile.z, x: tile.x, y: tile.y, layers: programs };
-        const decoded = await ctx.workers().send<VectorTileResult>("vector", request, [result.data], signal, tile.x + tile.y);
+        const decoded = await ctx
+          .workers()
+          .send<VectorTileResult>("vector", request, [result.data], signal, tile.x + tile.y);
         const buckets = new Map<string, VectorBucket>();
         let bytes = 0;
         for (const b of decoded.buckets) {
@@ -302,7 +328,13 @@ export function uploadGeometry(gl: GL, type: BucketType, g: Geometry): GpuGeomet
   }
   const indexBuffer = gl.createBuffer(ctx.ELEMENT_ARRAY_BUFFER, new Uint32Array(g.indices));
   ctx.bindVertexArray(null);
-  return { vao, vertexBuffer, indexBuffer, indexCount: g.indexCount, bytes: g.vertices.byteLength + g.indices.byteLength };
+  return {
+    vao,
+    vertexBuffer,
+    indexBuffer,
+    indexCount: g.indexCount,
+    bytes: g.vertices.byteLength + g.indices.byteLength,
+  };
 }
 
 export function releaseGeometry(gl: GL, g: GpuGeometry | null): void {
