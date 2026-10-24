@@ -83,6 +83,7 @@ export interface FillLayerSpec extends SourceLayerBase {
     opacity?: Value<number>;
     outlineColor?: Value<Color>;
     translate?: [number, number];
+    antialias?: boolean;
   };
   sortKey?: Value<number>;
 }
@@ -94,7 +95,6 @@ export interface LineLayerSpec extends SourceLayerBase {
     width?: Value<number>;
     opacity?: Value<number>;
     blur?: Value<number>;
-    offset?: Value<number>;
     dash?: number[];
   };
   layout?: {
