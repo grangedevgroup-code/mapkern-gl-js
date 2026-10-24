@@ -202,7 +202,7 @@ function buildBucket(
     const cap = (layout.cap as LineBuilderCap) ?? "butt";
     const join = (layout.join as LineBuilderJoin) ?? "miter";
     const miterLimit = typeof layout.miterLimit === "number" ? layout.miterLimit : 2;
-    const lines = new LineBuilder({ cap, join, miterLimit, roundLimit: 0.995 });
+    const lines = new LineBuilder({ cap, join, miterLimit, roundLimit: 0.94 });
     for (const f of selected) {
       const index = features.length;
       const parts = f.feature.geometry();
