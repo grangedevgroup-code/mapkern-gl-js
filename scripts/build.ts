@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -44,7 +44,14 @@ export async function buildAll(options: BuildOptions = {}): Promise<void> {
   await Promise.all([
     build({ ...common, format: "esm", outfile: "dist/maplet.js", sourcemap: true }),
     build({ ...common, format: "esm", outfile: "dist/maplet.min.js", minify: true, sourcemap: true }),
-    build({ ...common, format: "iife", globalName: "maplet", outfile: "dist/maplet.global.js", minify: true, sourcemap: true }),
+    build({
+      ...common,
+      format: "iife",
+      globalName: "maplet",
+      outfile: "dist/maplet.global.js",
+      minify: true,
+      sourcemap: true,
+    }),
   ]);
   const { CSS } = await import("../src/ui/css.ts");
   writeFileSync(join(dist, "maplet.css"), `${CSS.trim()}\n`);
@@ -52,8 +59,24 @@ export async function buildAll(options: BuildOptions = {}): Promise<void> {
     rmSync(join(dist, "types"), { recursive: true, force: true });
     const tsc = join(root, "node_modules", "typescript", "bin", "tsc");
     execFileSync(process.execPath, [tsc, "-p", "tsconfig.build.json"], { cwd: root, stdio: "inherit" });
+    rewriteDeclarationImports(join(dist, "types"));
   }
   if (!options.quiet) console.log(`Built dist in ${Math.round(performance.now() - started)} ms`);
+}
+
+function rewriteDeclarationImports(dir: string): void {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      rewriteDeclarationImports(path);
+    } else if (entry.name.endsWith(".d.ts")) {
+      const text = readFileSync(path, "utf8");
+      const next = text
+        .replace(/(from\s+["'])(\.{1,2}\/[^"']+)\.ts(["'])/g, "$1$2.js$3")
+        .replace(/(import\(["'])(\.{1,2}\/[^"']+)\.ts(["']\))/g, "$1$2.js$3");
+      if (next !== text) writeFileSync(path, next);
+    }
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
