@@ -2,7 +2,7 @@ import type { VectorFeature } from "../formats/mvt.ts";
 import { classifyRings, decodeTile, numericId } from "../formats/mvt.ts";
 import type { Compiled, FeatureContext, GeometryType } from "../style/expression.ts";
 import { compile } from "../style/expression.ts";
-import { CircleBuilder, FillBuilder, LineBuilder } from "./buckets.ts";
+import { CircleBuilder, ExtrusionBuilder, FillBuilder, LineBuilder } from "./buckets.ts";
 import type { PackedFeatures, PackedLabels } from "./packed.ts";
 import { FeatureTableBuilder, featureTransfers, LabelBuilder, labelTransfers } from "./packed.ts";
 import type { SymbolLayout } from "./symbols.ts";
@@ -225,6 +225,25 @@ function buildBucket(
       features: features.finish(),
       main: geometry(fill.vertices.finish(), fill.indices.finish(), fill.vertexCount),
       outline: fill.edges.length > 0 ? geometry(new ArrayBuffer(0), fill.edges.finish(), fill.vertexCount) : null,
+    };
+  }
+  if (program.type === "extrusion") {
+    const extrusion = new ExtrusionBuilder(source.extent);
+    for (const f of selected) {
+      const index = features.count;
+      const polygons = classifyRings(f.feature.geometry());
+      if (polygons.length === 0) continue;
+      for (const rings of polygons) extrusion.addPolygon(rings, index);
+      features.add(f.feature);
+    }
+    if (extrusion.vertexCount === 0) return null;
+    return {
+      layerId: program.id,
+      type: "extrusion",
+      extent: source.extent,
+      features: features.finish(),
+      main: geometry(extrusion.vertices.finish(), extrusion.indices.finish(), extrusion.vertexCount),
+      outline: null,
     };
   }
   if (program.type === "line") {
