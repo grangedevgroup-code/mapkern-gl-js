@@ -594,7 +594,7 @@ function classifyArea(tags: Tags, out: Classified[]): void {
     if (minHeight !== null && minHeight > 0) props.min_height = Math.round(minHeight * 10) / 10;
     else if (minLevel !== null && minLevel > 0) props.min_height = Math.round(minLevel * 3.2 * 10) / 10;
     if (tags["building:part"]) props.part = 1;
-    out.push({ layer: "building", minZoom: 13, minPixels: 2, props });
+    out.push({ layer: "building", minZoom: 12, minPixels: 2, props });
     const number = tags["addr:housenumber"];
     if (number) out.push({ layer: "housenumber", minZoom: 14, minPixels: 0, props: { housenumber: number } });
     return;
