@@ -14,6 +14,12 @@ Keep the `=` after `--bbox`. Without it, a box that starts with a minus sign get
 
 You can also pass `--maxzoom` (14 by default, 16 at most), `--name` to label the file, and `--threads` to limit how many cores it uses. Inside a clone of this repository, `npm run tiles -- <options>` does the same thing.
 
+Already have tiles in an MBTiles file? Maplet can show those directly, but a PMTiles file loads faster from a web server. To convert one:
+
+```sh
+npx maplet-tiles convert roads.mbtiles roads.pmtiles
+```
+
 The builder reads the whole download but only keeps what's inside your box, so the time depends mostly on the size of the download. A city cut from a state or country extract takes seconds to a few minutes. The Seattle and Tacoma area cut from the 19 GB North America file took 13 minutes on a 4-core desktop and came out at 137 MB. Memory use depends on how much is inside the box, not on the size of the download.
 
 Big downloads sometimes arrive damaged. If the builder finds a broken part, it warns you with the byte position, skips that part and builds the rest. Download the file again if you see that warning.
