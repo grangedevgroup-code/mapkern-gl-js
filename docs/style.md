@@ -288,10 +288,10 @@ A filter is an expression that returns `true` or `false`.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `url` | | A `.pmtiles` file or TileJSON URL |
+| `url` | `"tiles.pmtiles"` | A `.pmtiles` file or TileJSON URL |
 | `tiles` | | Tile URL templates, instead of `url` |
-| `maxZoom` | 14 | Highest zoom level in the tiles |
-| `attribution` | `© OpenStreetMap contributors` | Credit shown in the corner |
+| `maxZoom` | 14 | Highest zoom level in the tiles. Used with `tiles` |
+| `attribution` | the credit stored in the tile file | Credit shown in the corner |
 | `labels` | `true` | Include place, road, water and point of interest labels |
 | `buildings` | `true` | Include buildings |
 | `font` | system sans-serif fonts | Font families for labels |
