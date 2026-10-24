@@ -132,24 +132,28 @@ export class Terrain {
     return null;
   }
 
+  demFor(z: number, x: number, y: number): { tile: Tile<DemTile>; rect: Rect } | null {
+    const manager = this.source.manager;
+    if (!manager) return null;
+    const top = Math.min(z, manager.tiling.maxZoom);
+    for (let dz = top; dz >= manager.tiling.minZoom; dz--) {
+      const shift = z - dz;
+      const tx = Math.floor(x / 2 ** shift);
+      const ty = Math.floor(y / 2 ** shift);
+      const tile = manager.getTile(dz, tx, ty);
+      if (!tile?.isReady || !tile.data) continue;
+      if (shift === 0) return { tile, rect: FULL };
+      const n = 2 ** shift;
+      const x0 = (x - tx * n) / n;
+      const y0 = (y - ty * n) / n;
+      return { tile, rect: { x0, y0, x1: x0 + 1 / n, y1: y0 + 1 / n } };
+    }
+    return null;
+  }
+
   private slot(c: CoveringTile): TerrainSlot {
     const key = `${c.z}/${c.x}/${c.y}/${c.wrap}`;
-    const manager = this.source.manager;
-    if (manager) {
-      const top = Math.min(c.z, manager.tiling.maxZoom);
-      for (let z = top; z >= manager.tiling.minZoom; z--) {
-        const shift = c.z - z;
-        const tx = c.x >> shift;
-        const ty = c.y >> shift;
-        const tile = manager.getTile(z, tx, ty);
-        if (!tile?.isReady || !tile.data) continue;
-        if (shift === 0) return { ...c, key, dem: tile, rect: FULL };
-        const n = 2 ** shift;
-        const x0 = (c.x - tx * n) / n;
-        const y0 = (c.y - ty * n) / n;
-        return { ...c, key, dem: tile, rect: { x0, y0, x1: x0 + 1 / n, y1: y0 + 1 / n } };
-      }
-    }
-    return { ...c, key, dem: null, rect: FULL };
+    const found = this.demFor(c.z, c.x, c.y);
+    return { ...c, key, dem: found?.tile ?? null, rect: found?.rect ?? FULL };
   }
 }
