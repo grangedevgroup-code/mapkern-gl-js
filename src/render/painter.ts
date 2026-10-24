@@ -8,21 +8,30 @@ import { isVectorTileSource } from "../sources/vector.ts";
 import type { RGBA } from "../style/color.ts";
 import { premultiply } from "../style/color.ts";
 import type { StyleLayer } from "../style/layer.ts";
+import { terrainMesh } from "../terrain/mesh.ts";
+import type { Terrain } from "../terrain/terrain.ts";
 import type { SymbolLayerInput } from "../text/labels.ts";
 import { LabelRenderer } from "../text/labels.ts";
 import { textShader } from "../text/shader.ts";
 import type { RenderPiece, TileManager } from "../tiles/manager.ts";
 import type { Tile } from "../tiles/tile.ts";
+import type { RenderView } from "./drape.ts";
+import { DrapeCache, Hash, SlotView } from "./drape.ts";
 import type { GL, Program } from "./gl.ts";
 import { PickBuffer } from "./pick.ts";
 import { hillshadeShader } from "./shaders/hillshade.ts";
 import { rasterShader, solidShader } from "./shaders/raster.ts";
+import { terrainShader } from "./shaders/terrain.ts";
 import { circleShader, extrusionShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
 import type { PickPass } from "./vector-layers.ts";
 import { VectorPainter } from "./vector-layers.ts";
 
 export interface FrameInput {
   readonly transform: Transform;
+  readonly view: RenderView;
+  readonly target?: readonly [number, number];
+  readonly terrain?: Terrain | null;
+  readonly accept?: (piece: RenderPiece<unknown>) => boolean;
   readonly pixelRatio: number;
   readonly layers: readonly StyleLayer[];
   readonly sources: ReadonlyMap<string, MapSource>;
@@ -47,14 +56,29 @@ export interface PickedFeature {
 export interface PaintStats {
   drawCalls: number;
   pieces: number;
+  drapes: number;
 }
+
+interface TerrainGeometry {
+  vao: WebGLVertexArrayObject;
+  vertices: WebGLBuffer;
+  indices: WebGLBuffer;
+  count: number;
+}
+
+const DRAPED: ReadonlySet<string> = new Set(["background", "raster", "hillshade", "fill", "line", "circle"]);
 
 export class Painter {
   readonly gl: GL;
-  stats: PaintStats = { drawCalls: 0, pieces: 0 };
+  stats: PaintStats = { drawCalls: 0, pieces: 0, drapes: 0 };
   private quadVao: WebGLVertexArrayObject | null = null;
   private quadBuffer: WebGLBuffer | null = null;
   private openMask: WebGLTexture | null = null;
+  private flatDem: WebGLTexture | null = null;
+  private terrainGeometry: TerrainGeometry | null = null;
+  private readonly drapes: DrapeCache;
+  private readonly hash = new Hash();
+  private drapesBehind = false;
   private readonly matrix = new Float32Array(16);
   private readonly hue = new Float32Array(9);
   private readonly vector: VectorPainter;
@@ -66,16 +90,24 @@ export class Painter {
     this.vector = new VectorPainter(gl);
     this.labels = new LabelRenderer(gl);
     this.pickBuffer = new PickBuffer(gl);
+    this.drapes = new DrapeCache(gl);
     this.init();
+  }
+
+  get drapeBytes(): number {
+    return this.drapes.bytes;
   }
 
   init(): void {
     this.labels.reset();
     this.pickBuffer.reset();
+    this.drapes.reset();
+    this.terrainGeometry = null;
     for (const shader of [
       solidShader,
       rasterShader,
       hillshadeShader,
+      terrainShader,
       fillShader,
       fillOutlineShader,
       lineShader,
@@ -94,15 +126,18 @@ export class Painter {
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.bindVertexArray(null);
     this.openMask = this.gl.createDataTexture(1, 1, "r8", Uint8Array.of(255), false);
+    this.flatDem = this.gl.createDataTexture(1, 1, "r32f", Float32Array.of(0), false);
   }
 
   render(frame: FrameInput): boolean {
     const g = this.gl;
     const gl = g.gl;
-    this.stats = { drawCalls: 0, pieces: 0 };
+    this.stats = { drawCalls: 0, pieces: 0, drapes: 0 };
+    const terrain = frame.terrain ?? null;
+    if (terrain) this.renderDrapes(frame, terrain);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     g.setViewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-    const zoom = frame.transform.zoom;
+    const zoom = frame.view.zoom;
     const layers = frame.layers;
     let start = 0;
     let clear: RGBA = [0, 0, 0, 0];
@@ -116,34 +151,15 @@ export class Painter {
     gl.clearStencil(0);
     g.setDepth(false, true);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
-    for (let i = start; i < layers.length; i++) {
-      const layer = layers[i]!;
-      if (!layer.isVisible(zoom)) continue;
-      switch (layer.type) {
-        case "background":
-          this.drawSolid(this.backgroundColor(layer, zoom));
-          break;
-        case "raster": {
-          const source = layer.source ? frame.sources.get(layer.source) : undefined;
-          if (source?.type === "raster") this.drawRaster(frame, layer, source as RasterSource);
-          break;
-        }
-        case "hillshade": {
-          const source = layer.source ? frame.sources.get(layer.source) : undefined;
-          if (source?.type === "dem") this.drawHillshade(frame, layer, source as DemSource);
-          break;
-        }
-        case "fill":
-        case "line":
-        case "circle":
-        case "extrusion": {
-          const source = layer.source ? frame.sources.get(layer.source) : undefined;
-          const manager = vectorManager(source);
-          if (manager) this.vector.draw(frame, layer, manager, this.stats);
-          break;
-        }
-        default:
-          break;
+    if (terrain) {
+      this.drawTerrain(frame, terrain);
+      for (const layer of layers) {
+        if (layer.type === "extrusion" && layer.isVisible(zoom)) this.drawLayer(frame, layer);
+      }
+    } else {
+      for (let i = start; i < layers.length; i++) {
+        const layer = layers[i]!;
+        if (layer.isVisible(zoom)) this.drawLayer(frame, layer);
       }
     }
     const symbols: SymbolLayerInput[] = [];
@@ -158,7 +174,178 @@ export class Painter {
       this.stats.drawCalls += this.labels.draw(frame.transform, frame.pixelRatio);
     }
     gl.bindVertexArray(null);
-    return animating;
+    return animating || this.drapesBehind;
+  }
+
+  private drawLayer(frame: FrameInput, layer: StyleLayer): void {
+    switch (layer.type) {
+      case "background":
+        this.drawSolid(this.backgroundColor(layer, frame.view.zoom));
+        break;
+      case "raster": {
+        const source = layer.source ? frame.sources.get(layer.source) : undefined;
+        if (source?.type === "raster") this.drawRaster(frame, layer, source as RasterSource);
+        break;
+      }
+      case "hillshade": {
+        const source = layer.source ? frame.sources.get(layer.source) : undefined;
+        if (source?.type === "dem") this.drawHillshade(frame, layer, source as DemSource);
+        break;
+      }
+      case "fill":
+      case "line":
+      case "circle":
+      case "extrusion": {
+        const source = layer.source ? frame.sources.get(layer.source) : undefined;
+        const manager = vectorManager(source);
+        if (manager) this.vector.draw(frame, layer, manager, this.stats);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  private renderDrapes(frame: FrameInput, terrain: Terrain): void {
+    const g = this.gl;
+    const gl = g.gl;
+    const t = frame.transform;
+    const zoom = t.zoom;
+    const size = frame.pixelRatio >= 1.5 ? 1024 : 512;
+    const layers = frame.layers.filter((l) => DRAPED.has(l.type) && l.isVisible(zoom));
+    const turning = layers.some((l) => l.type === "hillshade" && l.fixed<string>("illuminationAnchor") !== "map");
+    const deadline = performance.now() + 6;
+    this.drapes.begin();
+    this.drapesBehind = false;
+    for (const slot of terrain.slots) {
+      const view = new SlotView(slot, zoom, t.bearing, 512 * 2 ** (zoom - slot.z));
+      const signature = this.drapeSignature(frame, layers, view, size, turning ? t.bearing : 0);
+      const entry = this.drapes.target(slot.key, size);
+      if (entry.signature === signature && Math.abs(entry.zoom - zoom) < 0.05) continue;
+      if (!Number.isNaN(entry.signature) && performance.now() > deadline) {
+        this.drapesBehind = true;
+        continue;
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, entry.framebuffer);
+      g.setViewport(0, 0, size, size);
+      g.setDepth(false, false);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      const sub: FrameInput = {
+        ...frame,
+        view,
+        pixelRatio: size / view.width,
+        target: [size, size],
+        terrain: null,
+        accept: (piece) => view.overlaps(piece.tile.z, piece.tile.x, piece.tile.y, piece.wrap),
+      };
+      for (const layer of layers) this.drawLayer(sub, layer);
+      gl.bindTexture(gl.TEXTURE_2D, entry.texture);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      entry.signature = signature;
+      entry.zoom = zoom;
+      this.stats.drapes++;
+    }
+    this.drapes.trim(terrain.slots.length + 32);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  private drapeSignature(
+    frame: FrameInput,
+    layers: readonly StyleLayer[],
+    view: SlotView,
+    size: number,
+    bearing: number,
+  ): number {
+    const h = this.hash.reset().add(size).add(bearing).add(frame.pixelRatio);
+    for (const layer of layers) {
+      h.add(layer.uid).add(layer.revision);
+      const pieces = this.piecesOf(frame, layer);
+      if (!pieces) continue;
+      for (const p of pieces) {
+        const tile = p.tile;
+        if (!view.overlaps(tile.z, tile.x, tile.y, p.wrap)) continue;
+        h.add(tile.key).add(tile.revision).add(p.opacity).add(p.wrap).add(p.clip.x0).add(p.clip.y0).add(p.clip.x1);
+      }
+    }
+    return h.value;
+  }
+
+  private piecesOf(frame: FrameInput, layer: StyleLayer): readonly RenderPiece<unknown>[] | null {
+    const source = layer.source ? frame.sources.get(layer.source) : undefined;
+    if (layer.type === "raster")
+      return source?.type === "raster" ? ((source as RasterSource).manager?.pieces ?? null) : null;
+    if (layer.type === "hillshade")
+      return source?.type === "dem" ? ((source as DemSource).manager?.pieces ?? null) : null;
+    if (layer.type === "background") return null;
+    return vectorManager(source)?.pieces ?? null;
+  }
+
+  private drawTerrain(frame: FrameInput, terrain: Terrain): void {
+    const g = this.gl;
+    const gl = g.gl;
+    const t = frame.transform;
+    const mesh = this.terrainMesh();
+    if (!mesh) return;
+    const program = g.program(terrainShader);
+    g.use(program);
+    g.setBlend("premultiplied");
+    g.setDepth(true, true);
+    gl.depthFunc(gl.LEQUAL);
+    gl.uniform1i(uniform(program, "u_drape"), 0);
+    gl.uniform1i(uniform(program, "u_dem"), 1);
+    gl.uniform1f(uniform(program, "u_world"), t.worldSize);
+    gl.uniform1f(uniform(program, "u_exaggeration"), terrain.exaggeration);
+    const uMatrix = uniform(program, "u_matrix");
+    const uRect = uniform(program, "u_dem_rect");
+    const uSize = uniform(program, "u_dem_size");
+    const uHas = uniform(program, "u_has_dem");
+    const uRows = uniform(program, "u_rows");
+    const uSkirt = uniform(program, "u_skirt");
+    const pixelsPerMeter = t.pixelsPerMeter * terrain.exaggeration;
+    gl.bindVertexArray(mesh.vao);
+    for (const slot of terrain.slots) {
+      const entry = this.drapes.lookup(slot.key);
+      if (!entry || Number.isNaN(entry.signature)) continue;
+      const data = slot.dem?.data ?? null;
+      const dem = data ? terrain.source.elevationTexture(data) : null;
+      g.bindTexture(0, entry.texture);
+      g.bindTexture(1, dem ?? this.flatDem);
+      const n = 2 ** slot.z;
+      t.tileMatrix(slot.z, slot.x, slot.y, slot.wrap, 1, this.matrix);
+      gl.uniformMatrix4fv(uMatrix, false, this.matrix);
+      const r = slot.rect;
+      gl.uniform4f(uRect, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+      gl.uniform1f(uSize, data ? data.grid.size : 1);
+      gl.uniform1f(uHas, dem ? 1 : 0);
+      gl.uniform2f(uRows, slot.y / n, (slot.y + 1) / n);
+      const range = data ? data.grid.max - data.grid.min : 0;
+      gl.uniform1f(uSkirt, Math.max(30, range * 0.2) * pixelsPerMeter);
+      gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
+      this.stats.drawCalls++;
+      this.stats.pieces++;
+    }
+    g.bindTexture(1, null);
+    gl.activeTexture(gl.TEXTURE0);
+    g.setDepth(false, false);
+  }
+
+  private terrainMesh(): TerrainGeometry | null {
+    if (this.terrainGeometry) return this.terrainGeometry;
+    const g = this.gl;
+    const gl = g.gl;
+    if (g.isLost) return null;
+    const mesh = terrainMesh();
+    const vao = gl.createVertexArray();
+    if (!vao) return null;
+    gl.bindVertexArray(vao);
+    const vertices = g.createBuffer(gl.ARRAY_BUFFER, mesh.vertices);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 4, gl.SHORT, false, 8, 0);
+    const indices = g.createBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.indices);
+    gl.bindVertexArray(null);
+    this.terrainGeometry = { vao, vertices, indices, count: mesh.indices.length };
+    return this.terrainGeometry;
   }
 
   pick(frame: FrameInput, box: PickBox, accept: (layer: StyleLayer) => boolean): PickedFeature[] {
@@ -172,7 +359,7 @@ export class Painter {
     const cx = (box.x0 + box.x1) / t.width - 1;
     const cy = 1 - (box.y0 + box.y1) / t.height;
     const clip = Float64Array.of(1 / hx, 0, 0, 0, 0, 1 / hy, 0, 0, 0, 0, 1, 0, -cx / hx, -cy / hy, 0, 1);
-    const stats: PaintStats = { drawCalls: 0, pieces: 0 };
+    const stats: PaintStats = { drawCalls: 0, pieces: 0, drapes: 0 };
     const found: PickedFeature[] = [];
     this.pickBuffer.begin(width, height);
     try {
@@ -219,9 +406,19 @@ export class Painter {
     this.gl.deleteBuffer(this.quadBuffer);
     this.gl.deleteVertexArray(this.quadVao);
     this.gl.deleteTexture(this.openMask);
+    this.gl.deleteTexture(this.flatDem);
+    this.drapes.destroy();
+    const terrain = this.terrainGeometry;
+    if (terrain) {
+      this.gl.deleteVertexArray(terrain.vao);
+      this.gl.deleteBuffer(terrain.vertices);
+      this.gl.deleteBuffer(terrain.indices);
+    }
+    this.terrainGeometry = null;
     this.quadBuffer = null;
     this.quadVao = null;
     this.openMask = null;
+    this.flatDem = null;
   }
 
   private backgroundColor(layer: StyleLayer, zoom: number): RGBA {
@@ -247,7 +444,7 @@ export class Painter {
     if (!manager || manager.pieces.length === 0) return;
     const g = this.gl;
     const gl = g.gl;
-    const zoom = frame.transform.zoom;
+    const zoom = frame.view.zoom;
     const ctx = { zoom };
     const exaggeration = Math.min(1, Math.max(0, layer.paintValue<number>("exaggeration", ctx)));
     if (exaggeration <= 0) return;
@@ -255,7 +452,7 @@ export class Painter {
     g.use(program);
     g.setBlend("premultiplied");
     g.setDepth(false, false);
-    const anchor = layer.fixed<string>("illuminationAnchor") === "map" ? 0 : frame.transform.bearing;
+    const anchor = layer.fixed<string>("illuminationAnchor") === "map" ? 0 : frame.view.bearing;
     const azimuth = (layer.fixed<number>("illuminationDirection") + anchor) * DEG;
     const level = Math.cos(LIGHT_ALTITUDE);
     gl.uniform3f(
@@ -286,13 +483,13 @@ export class Painter {
     const vertical = (0.5 + exaggeration) * hillshadeBoost(zoom);
     for (const piece of manager.pieces) {
       const data = piece.tile.data;
-      if (!data?.gradientTexture) continue;
+      if (!data?.gradientTexture || (frame.accept && !frame.accept(piece))) continue;
       const { z, x, y } = piece.tile;
       const n = 2 ** z;
       const size = data.grid.size;
       g.bindTexture(0, data.gradientTexture);
       g.bindTexture(1, data.maskTexture ?? this.openMask);
-      frame.transform.tileMatrix(z, x, y, piece.wrap, 1, this.matrix);
+      frame.view.tileMatrix(z, x, y, piece.wrap, 1, this.matrix);
       gl.uniformMatrix4fv(uMatrix, false, this.matrix);
       gl.uniform4f(uClip, piece.clip.x0, piece.clip.y0, piece.clip.x1, piece.clip.y1);
       gl.uniform1f(uOpacity, piece.opacity);
@@ -312,7 +509,7 @@ export class Painter {
     if (!manager || manager.pieces.length === 0) return;
     const g = this.gl;
     const gl = g.gl;
-    const ctx = { zoom: frame.transform.zoom };
+    const ctx = { zoom: frame.view.zoom };
     const opacity = layer.paintValue<number>("opacity", ctx);
     if (opacity <= 0) return;
     const program = g.program(rasterShader);
@@ -340,10 +537,10 @@ export class Painter {
     const uOpacity = uniform(program, "u_opacity");
     for (const piece of manager.pieces) {
       const texture = piece.tile.data?.texture;
-      if (!texture) continue;
+      if (!texture || (frame.accept && !frame.accept(piece))) continue;
       g.bindTexture(0, texture);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, nearest ? gl.NEAREST : gl.LINEAR);
-      frame.transform.tileMatrix(piece.tile.z, piece.tile.x, piece.tile.y, piece.wrap, 1, this.matrix);
+      frame.view.tileMatrix(piece.tile.z, piece.tile.x, piece.tile.y, piece.wrap, 1, this.matrix);
       gl.uniformMatrix4fv(uMatrix, false, this.matrix);
       gl.uniform4f(uClip, piece.clip.x0, piece.clip.y0, piece.clip.x1, piece.clip.y1);
       gl.uniform1f(uOpacity, opacity * piece.opacity);
