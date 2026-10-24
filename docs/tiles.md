@@ -1,94 +1,57 @@
-# Building tiles from OpenStreetMap
+# Tiles
 
-`maplet-tiles` turns an OpenStreetMap extract into one `.pmtiles` file with vector tiles from zoom 0 to 14. The built-in `lightStyle` is made for these tiles.
+`maplet-tiles` turns an OpenStreetMap download into a single `.pmtiles` file with vector tiles for zoom 0 to 14. The built-in `lightStyle` is made to draw these tiles, but you can style them any way you like.
 
-## Build a file
+## Making a file
 
-1. Download an extract in `.osm.pbf` format. [Geofabrik](https://download.geofabrik.de/) has one for every country and many regions. Pick the smallest one that covers your area.
-2. Run the builder with the area you want, as `west,south,east,north` in degrees:
+Get an extract in `.osm.pbf` format first. [Geofabrik](https://download.geofabrik.de/) has one for every country and many smaller regions, and the smallest one that covers your area will be the quickest to work with. Then give the builder the area you want as `west,south,east,north`:
 
-   ```sh
-   npx maplet-tiles --input washington-latest.osm.pbf --bbox=-122.45,47.48,-122.22,47.74 --output seattle.pmtiles
-   ```
+```sh
+npx maplet-tiles --input washington-latest.osm.pbf --bbox=-122.45,47.48,-122.22,47.74 --output seattle.pmtiles
+```
 
-   Write `--bbox=` with an equals sign. Without it, a bounding box that starts with a minus sign is read as an option.
+Keep the `=` after `--bbox`. Without it, a box that starts with a minus sign gets mistaken for another option.
 
-3. Serve the file from any web server that supports HTTP range requests, and load it:
+You can also pass `--maxzoom` (14 by default, 16 at most), `--name` to label the file, and `--threads` to limit how many cores it uses. Inside a clone of this repository, `npm run tiles -- <options>` does the same thing.
 
-   ```js
-   const map = new Map({ container: "map", style: lightStyle({ url: "seattle.pmtiles" }) });
-   ```
+The builder reads the whole download but only keeps what's inside your box, so the time depends mostly on the size of the download. A city cut from a state or country extract takes seconds to a few minutes. The Seattle and Tacoma area cut from the 19 GB North America file took 13 minutes on a 4-core desktop and came out at 137 MB. Memory use depends on how much is inside the box, not on the size of the download.
 
-In a clone of this repository, `npm run tiles -- <options>` runs the same builder.
+Big downloads sometimes arrive damaged. If the builder finds a broken part, it warns you with the byte position, skips that part and builds the rest. Download the file again if you see that warning.
 
-### Options
+To use the result, put it on a web server that supports range requests (most static hosts do) and load it:
 
-| Option | Default | Meaning |
+```js
+const map = new Map({ container: "map", style: lightStyle({ url: "seattle.pmtiles" }) });
+```
+
+## What's inside
+
+Each tile has the layers below. Use the layer name as `sourceLayer` when you write your own styles. A layer only starts showing up at the zoom in the second column, and small things like ponds, parks and buildings are left out until they're big enough to see.
+
+| Layer | From zoom | Fields |
 | --- | --- | --- |
-| `--input` | | The `.osm.pbf` file |
-| `--bbox` | | Area to build: `west,south,east,north` |
-| `--output` | | The `.pmtiles` file to write |
-| `--maxzoom` | 14 | Highest zoom level to build, up to 16. The map scales the last level up when you zoom in further |
-| `--name` | the output file name | Name stored in the file |
-| `--threads` | all cores | Threads used to read the input |
+| `water` | 0 | `class` is `ocean`, `lake`, `reservoir`, `basin` or `river`. `intermittent` is 1 for seasonal water |
+| `waterway` | 8 | Rivers and streams as lines. `class` is `river`, `canal`, `stream`, `ditch` or `drain`. Also `name`, `brunnel`, `intermittent` |
+| `landcover` | 5 | `class` is `wood`, `grass`, `scrub`, `wetland`, `sand`, `rock`, `ice` or `farmland` |
+| `landuse` | 6 | `class` is `residential`, `commercial`, `retail`, `industrial`, `railway`, `cemetery`, `military`, `quarry`, `construction`, `farmland`, `religious`, `park`, `pitch`, `golf`, `school`, `hospital`, `parking`, `airport`, `pier` or `pedestrian` |
+| `park` | 5 | Protected areas. `class` is `national_park`, `nature_reserve` or `protected_area`, plus `name` |
+| `boundary` | 0 | `admin_level` from 2 (countries) to 8 (cities). `maritime` and `disputed` are 1 where they apply |
+| `aeroway` | 10 | `class` is `runway`, `taxiway` or `apron` |
+| `road` | 4 | See below |
+| `railway` | 9 | `class` is `rail`, `light_rail`, `subway`, `tram`, `narrow_gauge`, `monorail`, `funicular` or `preserved`. Also `name`, `brunnel`, `service`, `layer` |
+| `building` | 13 | `height` and `min_height` in meters when OpenStreetMap has them. `part` is 1 for building parts |
+| `place` | 2 | City, town and neighborhood points. `class` is the OpenStreetMap place type, plus `name`, `rank`, `capital` and `population` |
+| `poi` | 8 | Shops, cafes, schools and so on. `class` is the OpenStreetMap key (`amenity`, `shop`, `tourism`...) and `subclass` its value (`cafe`, `bakery`...). Also `name` and `rank` |
+| `water_name` | 8 | Points for naming lakes, bays and seas |
+| `mountain_peak` | 8 | `class` is `peak` or `volcano`, plus `name` and `ele` in meters |
+| `housenumber` | 14 | `housenumber` |
 
-### Time and memory
+Anything with a name has `name`, the local name, and `name_en` when the English name is different. `rank` puts places and points of interest in order of importance, with lower numbers showing up earlier as you zoom in. `brunnel` is `bridge`, `tunnel` or `ford`.
 
-The builder reads the whole input file but keeps only what falls in the area. Building the Seattle and Tacoma region (about 130 by 145 km) from the 19 GB North America extract took 13 minutes on a 4 core desktop and wrote a 137 MB file. A city from a state or country extract takes seconds to a few minutes.
+Roads have the most fields. `class` is `motorway`, `trunk`, `primary`, `secondary`, `tertiary`, `minor`, `service`, `track` or `path`, and paths and service roads get a `subclass` such as `footway`, `cycleway`, `steps` or `driveway`. `ramp` is 1 on links and slip roads, `oneway` is 1 or -1, `layer` runs from -5 to 5, `surface` is `paved` or `unpaved`, and `name` and `ref` carry the street name and route number. Motorways show up from zoom 4, residential streets from 12 and footpaths from 14.
 
-Memory use grows with the number of features in the area, not with the size of the input file.
+Lines and shapes are simplified to what each zoom level can show. Zoom 14 keeps full detail, so the map stays sharp when you zoom in further.
 
-### Damaged downloads
+## Credit
 
-Large downloads sometimes end up incomplete. The builder notices damaged parts of the input, prints a warning with the byte position, skips them and builds the rest. Download the file again if the warning appears.
-
-## Using the data
-
-The file contains these layers. Use the layer name as `sourceLayer` in your own styles.
-
-| Layer | Geometry | From zoom | Fields |
-| --- | --- | --- | --- |
-| `water` | polygons | 0 | `class`: `ocean`, `lake`, `reservoir`, `basin`, `river`. `intermittent`: 1 |
-| `waterway` | lines | 8 | `class`: `river`, `canal`, `stream`, `ditch`, `drain`. `name`, `name_en`, `brunnel`, `intermittent` |
-| `landcover` | polygons | 5 | `class`: `wood`, `grass`, `scrub`, `wetland`, `sand`, `rock`, `ice`, `farmland`. `subclass` for wetlands |
-| `landuse` | polygons | 6 | `class`: `residential`, `commercial`, `retail`, `industrial`, `railway`, `cemetery`, `military`, `quarry`, `construction`, `farmland`, `religious`, `park`, `pitch`, `golf`, `school`, `hospital`, `parking`, `airport`, `pier`, `pedestrian` |
-| `park` | polygons | 5 | `class`: `national_park`, `nature_reserve`, `protected_area`. `name`, `name_en` |
-| `boundary` | lines | 0 | `admin_level`: 2 (countries) to 8 (cities). `maritime`: 1 at sea. `disputed`: 1 |
-| `aeroway` | lines and polygons | 10 | `class`: `runway`, `taxiway`, `apron`. `name`, `name_en` |
-| `road` | lines | 4 | See [Roads](#roads) |
-| `railway` | lines | 9 | `class`: `rail`, `light_rail`, `subway`, `tram`, `narrow_gauge`, `monorail`, `funicular`, `preserved`. `name`, `name_en`, `brunnel`, `service`, `layer` |
-| `building` | polygons | 13 | `height` and `min_height` in meters when known. `part`: 1 for building parts |
-| `place` | points | 2 | `class`: `country`, `state`, `province`, `city`, `town`, `village`, `suburb`, `quarter`, `neighbourhood`, `hamlet`, `locality`, `island`, `islet`, `isolated_dwelling`. `name`, `name_en`, `rank`, `capital`, `population` |
-| `poi` | points | 8 | `class`: the OpenStreetMap key, such as `amenity`, `shop`, `tourism` or `leisure`. `subclass`: its value, such as `cafe`. `name`, `name_en`, `rank` |
-| `water_name` | points | 8 | `class`: `bay`, `strait`, `sea`, `ocean` or a water class. `name`, `name_en` |
-| `mountain_peak` | points | 8 | `class`: `peak`, `volcano`. `name`, `name_en`, `ele` in meters |
-| `housenumber` | points | 14 | `housenumber` |
-
-`name` is the local name. `name_en` is the English name when it is different.
-
-`rank` orders places and points of interest by importance. Lower numbers are more important and appear at lower zooms.
-
-`brunnel` is `bridge`, `tunnel` or `ford`.
-
-### Roads
-
-| Field | Values |
-| --- | --- |
-| `class` | `motorway`, `trunk`, `primary`, `secondary`, `tertiary`, `minor`, `service`, `track`, `path` |
-| `subclass` | For `path` and `service`: `footway`, `cycleway`, `steps`, `driveway`, `parking_aisle` and other OpenStreetMap values |
-| `ramp` | 1 for motorway and other links |
-| `brunnel` | `bridge`, `tunnel`, `ford` |
-| `oneway` | 1 or -1 |
-| `layer` | -5 to 5, from the OpenStreetMap `layer` tag |
-| `surface` | `paved` or `unpaved` |
-| `name`, `name_en`, `ref` | Street name and route number |
-
-Major roads appear from zoom 4. Residential streets appear from 12 and footpaths from 14.
-
-### Detail by zoom
-
-Features appear when they are large enough to see. Small lakes, parks and buildings are left out at low zooms, and lines and polygons are simplified to the precision of the zoom level. At zoom 14 the tiles keep full detail, so zooming further in stays sharp.
-
-## License of the data
-
-Tiles built from OpenStreetMap data are covered by the [Open Database License](https://www.openstreetmap.org/copyright). When you show them, credit "© OpenStreetMap contributors". The builder stores this credit in the file, and Maplet shows it in the attribution control.
+OpenStreetMap data is shared under the [Open Database License](https://www.openstreetmap.org/copyright), which asks you to credit "© OpenStreetMap contributors" wherever the map is shown. The builder stores that line in the file and Maplet puts it in the corner of the map for you.
