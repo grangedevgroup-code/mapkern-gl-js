@@ -148,7 +148,15 @@ export class LabelBuilder {
     return this.texts.length;
   }
 
-  add(text: string, feature: number, size: number, priority: number, line: boolean, anchors: ArrayLike<number>, path: Int32Array | null): void {
+  add(
+    text: string,
+    feature: number,
+    size: number,
+    priority: number,
+    line: boolean,
+    anchors: ArrayLike<number>,
+    path: Int32Array | null,
+  ): void {
     this.texts.push(text);
     this.feature.push(feature);
     this.size.push(size);
@@ -187,5 +195,14 @@ export class LabelBuilder {
 }
 
 export function labelTransfers(p: PackedLabels, out: Transferable[]): void {
-  out.push(p.feature.buffer, p.size.buffer, p.priority.buffer, p.line.buffer, p.anchorStart.buffer, p.anchors.buffer, p.pathStart.buffer, p.paths.buffer);
+  out.push(
+    p.feature.buffer,
+    p.size.buffer,
+    p.priority.buffer,
+    p.line.buffer,
+    p.anchorStart.buffer,
+    p.anchors.buffer,
+    p.pathStart.buffer,
+    p.paths.buffer,
+  );
 }
