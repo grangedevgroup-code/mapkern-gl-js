@@ -7,7 +7,7 @@ import { TileManager } from "../tiles/manager.ts";
 import type { MapSource, SourceContext } from "./source.ts";
 import { tileEvents } from "./source.ts";
 import type { TileSet } from "./tilejson.ts";
-import { archiveSpec, resolveTileSet, tileUrl } from "./tilejson.ts";
+import { archiveSpec, lngLatBounds, resolveTileSet, tileUrl } from "./tilejson.ts";
 
 export interface RasterTile {
   image: ImageBitmap | null;
@@ -38,6 +38,10 @@ export class RasterSource implements MapSource {
 
   get attribution(): string | undefined {
     return this.tileSet?.attribution ?? this.spec.attribution;
+  }
+
+  get bounds(): [number, number, number, number] | null {
+    return lngLatBounds(this.tileSet);
   }
 
   get tileSize(): number {
