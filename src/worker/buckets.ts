@@ -257,15 +257,18 @@ export class LineBuilder {
     }
   }
 
-  private miterPair(
-    x: number,
-    y: number,
-    s0: number,
-    s1: number,
-    dirs: Float64Array,
-    dist: number,
-    feature: number,
-  ): [number, number] {
+  private simple(s0: number, s1: number): boolean {
+    const dirs = this.dirs;
+    const dot = dirs[s0 * 2]! * dirs[s1 * 2]! + dirs[s0 * 2 + 1]! * dirs[s1 * 2 + 1]!;
+    if (this.options.join === "miter") {
+      const cosHalf = Math.sqrt(Math.max(0, (1 + dot) / 2));
+      return cosHalf > 1e-6 && 1 / cosHalf <= this.options.miterLimit;
+    }
+    return dot >= this.options.roundLimit;
+  }
+
+  private miterPair(x: number, y: number, s0: number, s1: number, dist: number, feature: number): void {
+    const dirs = this.dirs;
     const n0x = -dirs[s0 * 2 + 1]!;
     const n0y = dirs[s0 * 2]!;
     const n1x = -dirs[s1 * 2 + 1]!;
