@@ -157,7 +157,14 @@ export function vectorTile(decoded: VectorTileResult, signature: string, raw: Ar
     });
     bytes += geometryBytes(b.main) + geometryBytes(b.outline) + b.features.ids.byteLength * 4;
   }
-  return { buckets, raw, signature, bytes: bytes + (raw?.byteLength ?? 0), uploaded: false, featureCount: decoded.featureCount };
+  return {
+    buckets,
+    raw,
+    signature,
+    bytes: bytes + (raw?.byteLength ?? 0),
+    uploaded: false,
+    featureCount: decoded.featureCount,
+  };
 }
 
 export function vectorTileLoader(gl: GL, load: TileLoader<VectorTile>["load"]): TileLoader<VectorTile> {
