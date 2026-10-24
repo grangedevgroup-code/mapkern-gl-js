@@ -4,7 +4,8 @@ import { triangleArea, triangulate } from "../../src/render/tessellate.ts";
 
 function ringArea(coords: number[], start: number, end: number): number {
   let sum = 0;
-  for (let i = start, j = end - 1; i < end; j = i++) sum += (coords[j * 2]! - coords[i * 2]!) * (coords[i * 2 + 1]! + coords[j * 2 + 1]!);
+  for (let i = start, j = end - 1; i < end; j = i++)
+    sum += (coords[j * 2]! - coords[i * 2]!) * (coords[i * 2 + 1]! + coords[j * 2 + 1]!);
   return Math.abs(sum / 2);
 }
 
@@ -25,7 +26,10 @@ function check(rings: number[][], label: string): number[] {
     expected += i === 0 ? a : -a;
   }
   const got = triangleArea(coords, out);
-  assert.ok(Math.abs(got - expected) <= Math.max(1e-6, expected * 1e-9), `${label}: triangles cover ${got}, polygon is ${expected}`);
+  assert.ok(
+    Math.abs(got - expected) <= Math.max(1e-6, expected * 1e-9),
+    `${label}: triangles cover ${got}, polygon is ${expected}`,
+  );
   for (const i of out) assert.ok(i >= 0 && i < coords.length / 2, `${label}: index ${i} out of range`);
   return out;
 }
@@ -48,7 +52,13 @@ test("concave shapes", () => {
 });
 
 test("holes", () => {
-  check([[0, 0, 100, 0, 100, 100, 0, 100], [20, 20, 40, 20, 40, 40, 20, 40]], "one hole");
+  check(
+    [
+      [0, 0, 100, 0, 100, 100, 0, 100],
+      [20, 20, 40, 20, 40, 40, 20, 40],
+    ],
+    "one hole",
+  );
   check(
     [
       [0, 0, 100, 0, 100, 100, 0, 100],
@@ -59,7 +69,13 @@ test("holes", () => {
     ],
     "four holes",
   );
-  check([[0, 0, 100, 0, 100, 100, 0, 100], [50, 0, 70, 20, 50, 40, 30, 20]], "hole touching the outer edge");
+  check(
+    [
+      [0, 0, 100, 0, 100, 100, 0, 100],
+      [50, 0, 70, 20, 50, 40, 30, 20],
+    ],
+    "hole touching the outer edge",
+  );
 });
 
 test("degenerate input does not hang or throw", () => {
