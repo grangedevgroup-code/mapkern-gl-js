@@ -44,10 +44,12 @@ void main() {
 `,
   fragment: `
 uniform sampler2D u_drape;
+uniform vec4 u_drape_rect;
 in vec2 v_uv;
 out vec4 fragColor;
 void main() {
-  fragColor = texture(u_drape, vec2(v_uv.x, 1.0 - v_uv.y));
+  vec2 uv = u_drape_rect.xy + v_uv * u_drape_rect.zw;
+  fragColor = texture(u_drape, vec2(uv.x, 1.0 - uv.y));
 }
 `,
 };
