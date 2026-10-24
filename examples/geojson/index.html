@@ -20,7 +20,7 @@
   <body>
     <div id="map"></div>
     <script type="module">
-      import { Map, NavigationControl } from "../../dist/maplet.js";
+      import * as maplet from "../../dist/maplet.js";
 
       const center = [-122.335, 47.608];
       const count = 120;
@@ -37,20 +37,21 @@
       function vehicles(time) {
         const features = [];
         for (let i = 0; i < count; i++) {
-          const lane = 0.006 + (i % 6) * 0.004;
-          const speed = 0.00015 + (i % 5) * 0.00004;
-          const a = (i / count) * Math.PI * 2 + time * speed * (i % 2 === 0 ? 1 : -1);
+          const lane = i % 6;
+          const radius = 0.006 + lane * 0.004;
+          const speed = (0.00025 - lane * 0.00002) * (lane % 2 === 0 ? 1 : -1);
+          const a = (i / count) * Math.PI * 2 + time * speed;
           features.push({
             type: "Feature",
             id: i,
-            properties: { lane: i % 6 },
-            geometry: { type: "Point", coordinates: [center[0] + lane * Math.cos(a) * 1.5, center[1] + lane * Math.sin(a)] },
+            properties: { lane },
+            geometry: { type: "Point", coordinates: [center[0] + radius * Math.cos(a) * 1.5, center[1] + radius * Math.sin(a)] },
           });
         }
         return { type: "FeatureCollection", features };
       }
 
-      const map = new Map({
+      const map = new maplet.Map({
         container: "map",
         center,
         zoom: 13.5,
@@ -101,7 +102,7 @@
         },
       });
 
-      map.addControl(new NavigationControl());
+      map.addControl(new maplet.NavigationControl());
 
       const source = () => map.getSource("vehicles");
       let last = 0;
