@@ -54,7 +54,7 @@ const FIELDS: Record<string, Record<string, string>> = {
 const HELP = `Build a vector tile archive (.pmtiles) from an OpenStreetMap .osm.pbf file.
 
 Usage:
-  npm run tiles -- --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.pmtiles>
+  maplet-tiles --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.pmtiles>
 
 Options:
   --input     OpenStreetMap PBF file, for example a Geofabrik extract
