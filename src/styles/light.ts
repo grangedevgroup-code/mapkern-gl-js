@@ -1,4 +1,5 @@
-import type { Expression, LayerSpec, StyleSpec } from "../style/types.ts";
+import { MapletError } from "../core/errors.ts";
+import type { DemSourceSpec, Expression, LayerSpec, StyleSpec, TerrainSpec } from "../style/types.ts";
 
 export interface LightStyleOptions {
   url?: string;
@@ -8,6 +9,8 @@ export interface LightStyleOptions {
   buildings?: boolean | "flat";
   labels?: boolean;
   font?: string[];
+  elevation?: string | DemSourceSpec;
+  terrain?: boolean | number;
 }
 
 const DEFAULT_FONT = ["Inter", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "sans-serif"];
@@ -620,10 +623,32 @@ export function lightStyle(options: LightStyleOptions = {}): StyleSpec {
     );
   }
   if (options.labels !== false) layers.push(...labelLayers(options.font));
+  const sources: StyleSpec["sources"] = { osm: source };
+  let terrain: TerrainSpec | undefined;
+  if (options.elevation !== undefined) {
+    sources.dem =
+      typeof options.elevation === "string"
+        ? { type: "dem", url: options.elevation }
+        : structuredClone(options.elevation);
+    layers.splice(
+      layers.findIndex((l) => l.id === "water"),
+      0,
+      {
+        id: "hillshade",
+        type: "hillshade",
+        source: "dem",
+        paint: { exaggeration: 0.35, shadowColor: "#4d473d", highlightColor: "#ffffff", accentColor: "#4d473d" },
+      },
+    );
+    if (options.terrain) terrain = { source: "dem", exaggeration: options.terrain === true ? 1 : options.terrain };
+  } else if (options.terrain) {
+    throw new MapletError("invalid-option", "lightStyle needs an elevation file for terrain");
+  }
   return {
     version: 1,
     name: "Maplet Light",
-    sources: { osm: source },
+    sources,
     layers,
+    ...(terrain ? { terrain } : {}),
   };
 }
