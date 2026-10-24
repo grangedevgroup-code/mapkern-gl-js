@@ -1,11 +1,11 @@
 import type { Transform } from "../camera/transform.ts";
-import { MapletError } from "../core/errors.ts";
 import type { TileCoord } from "../geo/tile.ts";
 import type { RasterSourceSpec } from "../style/types.ts";
 import { FetchFailure, fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileLoader, TileStats } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
 import type { MapSource, SourceContext } from "./source.ts";
+import { tileEvents } from "./source.ts";
 import type { TileSet } from "./tilejson.ts";
 import { resolveTileSet, tileUrl } from "./tilejson.ts";
 
@@ -70,24 +70,7 @@ export class RasterSource implements MapSource {
         failureCooldownMs: 120000,
         prefetchLimit: this.ctx.prefetchLimit,
       },
-      {
-        changed: () => this.ctx.changed(),
-        failure: (failure, tile) => {
-          const code = failure.kind === "auth" ? "auth" : failure.kind === "decode" ? "decode" : "tile-error";
-          this.ctx.error(
-            new MapletError(
-              code,
-              `Tile ${tile.z}/${tile.x}/${tile.y} of source "${this.id}" failed: ${failure.message}`,
-              {
-                sourceId: this.id,
-                tile: { z: tile.z, x: tile.x, y: tile.y },
-                failure,
-              },
-            ),
-          );
-        },
-        wakeAt: (time) => this.ctx.wakeAt(time),
-      },
+      tileEvents(this.id, this.ctx),
     );
   }
 
