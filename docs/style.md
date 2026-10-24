@@ -128,7 +128,7 @@ Draws a circle at each point.
 
 ### extrusion
 
-Raises polygons into 3D shapes, usually buildings. Walls are shaded by the direction they face, and the light turns with the map so a building looks the same from every side you rotate to.
+Raises polygons into 3D shapes, usually buildings. Walls are shaded by the direction they face, and the light stays put relative to the screen while you rotate the map.
 
 ```js
 {
