@@ -149,7 +149,7 @@ export class VectorPainter {
     const gl = this.gl.gl;
     const tile = piece.tile;
     const extent = bucket.extent;
-    frame.transform.tileMatrix(tile.z, tile.x, tile.y, piece.wrap, extent, this.matrix);
+    frame.view.tileMatrix(tile.z, tile.x, tile.y, piece.wrap, extent, this.matrix);
     if (pick) {
       multiplyInto(this.matrix, pick.clip);
       gl.uniform1ui(program.uniforms.get("u_draw") ?? null, pick.register(piece, bucket));
@@ -181,7 +181,7 @@ export class VectorPainter {
   ): void {
     const g = this.gl;
     const gl = g.gl;
-    const zoom = frame.transform.zoom;
+    const zoom = frame.view.zoom;
     const program = this.program(fillShader, pick);
     g.setDepth(false, false);
     this.prepare(program, layer, zoom, FILL_PAINT);
@@ -189,7 +189,7 @@ export class VectorPainter {
     let any = false;
     for (const piece of manager.pieces) {
       const bucket = piece.tile.data?.buckets.get(layer.id);
-      if (!bucket?.main) continue;
+      if (!bucket?.main || (frame.accept && !frame.accept(piece))) continue;
       any = true;
       this.bindPaint(program, layer, bucket, zoom, FILL_PAINT);
       this.tileUniforms(program, frame, piece, bucket, pick);
@@ -209,10 +209,11 @@ export class VectorPainter {
       { name: "opacity", uniform: "u_opacity", kind: "number" },
     ];
     this.prepare(outlineProgram, layer, zoom, paint);
-    gl.uniform2f(outlineProgram.uniforms.get("u_world") ?? null, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    const [targetWidth, targetHeight] = frame.target ?? [gl.drawingBufferWidth, gl.drawingBufferHeight];
+    gl.uniform2f(outlineProgram.uniforms.get("u_world") ?? null, targetWidth, targetHeight);
     for (const piece of manager.pieces) {
       const bucket = piece.tile.data?.buckets.get(layer.id);
-      if (!bucket?.outline) continue;
+      if (!bucket?.outline || (frame.accept && !frame.accept(piece))) continue;
       this.bindPaint(outlineProgram, layer, bucket, zoom, paint);
       this.tileUniforms(outlineProgram, frame, piece, bucket, undefined);
       const units = bucket.extent / (512 * 2 ** (zoom - piece.tile.z));
@@ -232,7 +233,7 @@ export class VectorPainter {
   ): void {
     const g = this.gl;
     const gl = g.gl;
-    const zoom = frame.transform.zoom;
+    const zoom = frame.view.zoom;
     const program = this.program(lineShader, pick);
     g.setDepth(false, false);
     this.prepare(program, layer, zoom, LINE_PAINT);
@@ -257,7 +258,7 @@ export class VectorPainter {
     }
     for (const piece of manager.pieces) {
       const bucket = piece.tile.data?.buckets.get(layer.id);
-      if (!bucket?.main) continue;
+      if (!bucket?.main || (frame.accept && !frame.accept(piece))) continue;
       this.bindPaint(program, layer, bucket, zoom, LINE_PAINT);
       this.tileUniforms(program, frame, piece, bucket, pick);
       gl.uniform1f(program.uniforms.get("u_units_per_px") ?? null, bucket.extent / (512 * 2 ** (zoom - piece.tile.z)));
@@ -275,16 +276,16 @@ export class VectorPainter {
   ): void {
     const g = this.gl;
     const gl = g.gl;
-    const zoom = frame.transform.zoom;
+    const zoom = frame.view.zoom;
     const program = this.program(circleShader, pick);
     g.setDepth(false, false);
     this.prepare(program, layer, zoom, CIRCLE_PAINT);
     gl.uniform1f(program.uniforms.get("u_pixel_ratio") ?? null, frame.pixelRatio);
     const [hx, hy] = pick ? pick.scale : [1, 1];
-    gl.uniform2f(program.uniforms.get("u_viewport") ?? null, frame.transform.width * hx, frame.transform.height * hy);
+    gl.uniform2f(program.uniforms.get("u_viewport") ?? null, frame.view.width * hx, frame.view.height * hy);
     for (const piece of manager.pieces) {
       const bucket = piece.tile.data?.buckets.get(layer.id);
-      if (!bucket?.main) continue;
+      if (!bucket?.main || (frame.accept && !frame.accept(piece))) continue;
       this.bindPaint(program, layer, bucket, zoom, CIRCLE_PAINT);
       this.tileUniforms(program, frame, piece, bucket, pick);
       this.drawGeometry(bucket.main, stats);
