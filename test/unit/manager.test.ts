@@ -208,10 +208,16 @@ test("tiles that leave the view linger briefly, then are aborted and released", 
   transform.setCenter(-120, -40);
   manager.update(transform, 1);
   await flush();
-  assert.ok(inflight.every((p) => !p.signal.aborted), "in-flight tiles keep loading right after leaving the view");
+  assert.ok(
+    inflight.every((p) => !p.signal.aborted),
+    "in-flight tiles keep loading right after leaving the view",
+  );
   manager.update(transform, 3000);
   await flush();
-  assert.ok(inflight.every((p) => p.signal.aborted), "tiles that stay out of view are aborted");
+  assert.ok(
+    inflight.every((p) => p.signal.aborted),
+    "tiles that stay out of view are aborted",
+  );
   assert.ok(manager.stats.aborted > 0);
 });
 
@@ -226,7 +232,11 @@ test("a tile that returns to view while lingering is reused instead of refetched
   manager.update(transform, 2);
   await flush();
   assert.ok(first.every((p) => !p.signal.aborted));
-  const again = loader.pending.filter((p) => first.some((f) => f.coord.z === p.coord.z && f.coord.x === p.coord.x && f.coord.y === p.coord.y) && !first.includes(p));
+  const again = loader.pending.filter(
+    (p) =>
+      first.some((f) => f.coord.z === p.coord.z && f.coord.x === p.coord.x && f.coord.y === p.coord.y) &&
+      !first.includes(p),
+  );
   assert.equal(again.length, 0, "no duplicate requests for tiles still in flight");
 });
 
