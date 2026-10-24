@@ -17,7 +17,8 @@ import type { MapSource, SourceContext } from "../sources/source.ts";
 import { VectorSource } from "../sources/vector.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import { Style } from "../style/style.ts";
-import type { LayerSpec, SourceSpec, StyleSpec } from "../style/types.ts";
+import type { LayerSpec, SourceSpec, StyleSpec, TerrainSpec } from "../style/types.ts";
+import { metersToWorld, Terrain } from "../terrain/terrain.ts";
 import type { TransformRequest } from "../tiles/fetch.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileStats } from "../tiles/manager.ts";
@@ -189,6 +190,7 @@ export interface Diagnostics {
   sources: Record<string, TileStats | null>;
   blankRatio: number;
   canvas: { width: number; height: number; pixelRatio: number };
+  terrain: { tiles: number; textureBytes: number; redrawn: number } | null;
   contextLost: boolean;
 }
 
@@ -222,6 +224,10 @@ export class MapletMap extends Emitter<MapEvents> {
   private wakeTimer: ReturnType<typeof setTimeout> | undefined;
   private wakeAtTime = Number.POSITIVE_INFINITY;
   private motion: { motion: CameraMotion; start: number; flags: CameraFlags } | null = null;
+  private terrain: Terrain | null = null;
+  private elevationIntent: "zoom" | "camera" = "zoom";
+  private elevationFrom = 0;
+  private elevationTo: number | null = null;
   private removed = false;
   private loadedFired = false;
   private idleFired = false;
@@ -445,9 +451,36 @@ export class MapletMap extends Emitter<MapEvents> {
 
   jumpTo(options: CameraOptions): this {
     this.stop();
+    this.elevationIntent = "zoom";
+    this.elevationTo = null;
     this.applyCamera(options);
     this.cameraChanged();
     return this;
+  }
+
+  setTerrain(terrain: TerrainSpec | null): this {
+    const style = this.style;
+    if (!style) throw new MapletError("invalid-option", "Set a style before turning on terrain");
+    if (terrain === null) {
+      delete style.meta.terrain;
+    } else {
+      const source = typeof terrain?.source === "string" ? style.sources.get(terrain.source) : undefined;
+      if (!source || source.type !== "dem") {
+        throw new MapletError("invalid-option", "terrain.source must name a dem source", { terrain });
+      }
+      const exaggeration = terrain.exaggeration ?? 1;
+      if (typeof exaggeration !== "number" || !Number.isFinite(exaggeration) || exaggeration < 0) {
+        throw new MapletError("invalid-option", "terrain.exaggeration must be a number of 0 or more", { terrain });
+      }
+      style.meta.terrain = { source: terrain.source, exaggeration };
+    }
+    this.cameraChanged();
+    return this;
+  }
+
+  getTerrain(): TerrainSpec | null {
+    const terrain = this.style?.meta.terrain;
+    return terrain ? { ...terrain } : null;
   }
 
   easeTo(options: CameraOptions & AnimationOptions): this {
@@ -456,12 +489,13 @@ export class MapletMap extends Emitter<MapEvents> {
     const to = this.targetState(options);
     const reduced = this.prefersReducedMotion();
     const duration = options.animate === false || reduced ? 0 : checkNumber(options.duration, "duration", 500);
-    let anchor: { world: [number, number]; screen: [number, number] } | undefined;
+    let anchor: { world: [number, number]; screen: [number, number]; z: number } | undefined;
     if (options.around !== undefined && options.center === undefined) {
       const [lng, lat] = toLngLat(options.around);
       const world: [number, number] = [mercatorX(lng), mercatorY(lat)];
-      const p = this.transform.project(world[0], world[1]);
-      anchor = { world, screen: [p.x, p.y] };
+      const z = this.groundAt(world[0], world[1]);
+      const p = this.transform.project(world[0], world[1], z * this.transform.worldSize);
+      anchor = { world, screen: [p.x, p.y], z };
     }
     this.startMotion(easeMotion(from, to, duration, options.easing ?? easeOutCubic, anchor), from, to);
     return this;
@@ -574,14 +608,84 @@ export class MapletMap extends Emitter<MapEvents> {
 
   project(lngLat: LngLatLike): { x: number; y: number } {
     const [lng, lat] = toLngLat(lngLat);
-    return this.transform.projectLngLat(lng, lat);
+    const x = mercatorX(lng);
+    const y = mercatorY(lat);
+    const p = this.transform.project(x, y, this.groundAt(x, y) * this.transform.worldSize);
+    return { x: p.x, y: p.y };
   }
 
   unproject(point: [number, number] | { x: number; y: number }): LngLat | null {
     const [x, y] = Array.isArray(point) ? point : [point.x, point.y];
-    const w = this.transform.unproject(x, y);
+    const w = this.pickWorld(x, y);
     if (!w) return null;
     return [wrapLongitude(lngFromMercatorX(w[0])), latFromMercatorY(w[1])];
+  }
+
+  private groundAt(x: number, y: number): number {
+    const terrain = this.terrain;
+    return terrain ? metersToWorld(terrain.surfaceAt(x, y), y) : 0;
+  }
+
+  private pickWorld(px: number, py: number): [number, number, number] | null {
+    const t = this.transform;
+    const terrain = this.terrain;
+    if (terrain) {
+      const ws = t.worldSize;
+      const { origin, dir } = t.screenRay(px, py);
+      const o = [origin[0] / ws, origin[1] / ws, origin[2] / ws];
+      const d = [dir[0] / ws, dir[1] / ws, dir[2] / ws];
+      const hit = terrain.raycast(o, d, Math.hypot(d[0]!, d[1]!, d[2]!));
+      if (hit) return hit;
+    }
+    const w = t.unproject(px, py);
+    return w ? [w[0], w[1], t.centerElevationPixels / t.worldSize] : null;
+  }
+
+  private updateTerrain(style: Style, progress: number | null): void {
+    const spec = style.meta.terrain;
+    const source = spec ? style.sources.get(spec.source) : undefined;
+    const t = this.transform;
+    if (!spec || !(source instanceof DemSource) || !source.manager) {
+      if (this.terrain) {
+        this.terrain = null;
+        t.setGround(0);
+        if (t.elevation !== 0) t.setElevationKeepCamera(0);
+        if (t.elevation !== 0) t.setElevation(0);
+        this.cameraVersion++;
+      }
+      return;
+    }
+    const exaggeration = Math.max(0, spec.exaggeration ?? 1);
+    if (!this.terrain || this.terrain.source !== source) this.terrain = new Terrain(source, exaggeration);
+    const terrain = this.terrain;
+    terrain.exaggeration = exaggeration;
+    const [cx, cy] = t.centerWorld;
+    let target = terrain.elevationAt(cx, cy);
+    if (progress !== null && this.elevationTo !== null) {
+      target = this.elevationFrom + (this.elevationTo - this.elevationFrom) * progress;
+    }
+    if (target !== null) {
+      if (this.elevationIntent === "camera" && progress === null && Math.abs(target - t.elevation) > 1e-3) {
+        t.setElevationKeepCamera(target);
+      }
+      const floor = this.cameraFloor(terrain);
+      const wanted = floor === null ? target : Math.max(target, floor);
+      if (Math.abs(wanted - t.elevation) > 1e-3) t.setElevation(wanted);
+      this.cameraVersion++;
+    }
+    terrain.update(t);
+    t.setGround(Math.min(terrain.ground, t.elevation));
+  }
+
+  private cameraFloor(terrain: Terrain): number | null {
+    const t = this.transform;
+    const ws = t.worldSize;
+    const camera = t.cameraPosition;
+    const ground = terrain.elevationAt(camera[0] / ws, camera[1] / ws);
+    if (ground === null) return null;
+    const pixelsPerMeter = t.pixelsPerMeter;
+    const above = (camera[2] - t.centerElevationPixels) / pixelsPerMeter;
+    return ground + 50 * terrain.exaggeration + 2 / pixelsPerMeter - above;
   }
 
   setStyle(style: StyleSpec | string): this {
@@ -653,6 +757,7 @@ export class MapletMap extends Emitter<MapEvents> {
     const picked = this.painter.pick(
       {
         transform: this.transform,
+        view: this.transform,
         pixelRatio: this.pixelRatioValue,
         layers: style.layers,
         sources: style.sources,
@@ -849,6 +954,13 @@ export class MapletMap extends Emitter<MapEvents> {
       sources,
       blankRatio: blank,
       canvas: { width: this.canvas.width, height: this.canvas.height, pixelRatio: this.pixelRatioValue },
+      terrain: this.terrain
+        ? {
+            tiles: this.terrain.slots.length,
+            textureBytes: this.painter.drapeBytes,
+            redrawn: this.painter.stats.drapes,
+          }
+        : null,
       contextLost: this.contextLost,
     };
   }
@@ -1060,8 +1172,11 @@ export class MapletMap extends Emitter<MapEvents> {
       const zoom = checkNumber(options.zoom, "zoom", t.zoom);
       if (options.around !== undefined && options.center === undefined) {
         const [lng, lat] = toLngLat(options.around);
-        const p = t.projectLngLat(lng, lat);
-        t.zoomAround(zoom, p.x, p.y);
+        const x = mercatorX(lng);
+        const y = mercatorY(lat);
+        const z = this.groundAt(x, y);
+        const p = t.project(x, y, z * t.worldSize);
+        t.zoomAround(zoom, p.x, p.y, z);
       } else {
         t.setZoom(zoom);
       }
@@ -1075,6 +1190,9 @@ export class MapletMap extends Emitter<MapEvents> {
   }
 
   private startMotion(motion: CameraMotion, from: CameraState, to: CameraState): void {
+    this.elevationIntent = "zoom";
+    this.elevationFrom = this.transform.elevation;
+    this.elevationTo = this.terrain ? this.terrain.elevationAt(to.x - Math.floor(to.x), to.y) : null;
     const flags: CameraFlags = {
       zoom: Math.abs(from.zoom - to.zoom) > 1e-9 || motion.duration > 0,
       rotate: Math.abs(from.bearing - to.bearing) > 1e-9,
@@ -1132,10 +1250,12 @@ export class MapletMap extends Emitter<MapEvents> {
     if (this.removed || this.contextLost) return;
     const started = performance.now();
     let animating = false;
+    let progress: number | null = null;
     if (this.motion) {
       const m = this.motion;
       const t = (started - m.start) / m.motion.duration;
       m.motion.apply(this.transform, t);
+      progress = Math.min(1, Math.max(0, t));
       this.cameraVersion++;
       if (t >= 1) this.motion = null;
       else animating = true;
@@ -1153,9 +1273,12 @@ export class MapletMap extends Emitter<MapEvents> {
         if (source.setLayers) source.setLayers(style.layers.filter((l) => l.source === source.id));
         source.update(this.transform, now, predicted);
       }
+      this.updateTerrain(style, progress);
       if (moreUploads) animating = true;
       const labelsBusy = this.painter.render({
         transform: this.transform,
+        view: this.transform,
+        terrain: this.terrain,
         pixelRatio: this.pixelRatioValue,
         layers: style.layers,
         sources: style.sources,
@@ -1169,6 +1292,7 @@ export class MapletMap extends Emitter<MapEvents> {
     } else {
       this.painter.render({
         transform: this.transform,
+        view: this.transform,
         pixelRatio: this.pixelRatioValue,
         layers: [],
         sources: new Map(),
@@ -1244,11 +1368,16 @@ export class MapletMap extends Emitter<MapEvents> {
     return {
       transform: this.transform,
       element: this.canvasContainer,
+      anchor: (px: number, py: number) => this.pickWorld(px, py),
       reducedMotion: () => this.prefersReducedMotion(),
       interrupt: () => {
         this.motion = null;
+        this.elevationIntent = "camera";
       },
-      changed: () => this.cameraChanged(),
+      changed: () => {
+        this.elevationIntent = "camera";
+        this.cameraChanged();
+      },
       gesture: (active: boolean) => {
         this.gestureDepth = Math.max(0, this.gestureDepth + (active ? 1 : -1));
         this.triggerRepaint();
@@ -1267,8 +1396,8 @@ export class MapletMap extends Emitter<MapEvents> {
         if (target.bearing !== undefined) options.bearing = target.bearing;
         if (target.pitch !== undefined) options.pitch = target.pitch;
         if (around) {
-          const ll = this.transform.unprojectLngLat(around[0], around[1]);
-          if (ll) options.around = ll;
+          const hit = this.pickWorld(around[0], around[1]);
+          if (hit) options.around = [lngFromMercatorX(hit[0]), latFromMercatorY(hit[1])];
         }
         this.easeTo(options);
       },
@@ -1280,7 +1409,8 @@ export class MapletMap extends Emitter<MapEvents> {
         this.gestureEvent = event;
         if (!this.listens(type)) return;
         let prevented = false;
-        const ll = this.transform.unprojectLngLat(point[0], point[1]);
+        const hit = this.pickWorld(point[0], point[1]);
+        const ll: LngLat | null = hit ? [lngFromMercatorX(hit[0]), latFromMercatorY(hit[1])] : null;
         const e: MapPointerEvent = {
           target: this,
           type,
