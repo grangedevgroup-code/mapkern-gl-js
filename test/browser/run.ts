@@ -127,7 +127,7 @@ function demStyle(base: string): string {
     sources: { dem: { type: "dem", tiles: [`${base}/fixture/dem/{z}/{x}/{y}.png`], tileSize: 256, maxZoom: 12 } },
     layers: [
       { id: "bg", type: "background", paint: { color: "#808080" } },
-      { id: "hs", type: "hillshade", source: "dem" },
+      { id: "hs", type: "hillshade", source: "dem", paint: { exaggeration: 1 } },
     ],
   });
 }
