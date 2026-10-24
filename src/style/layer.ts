@@ -65,13 +65,13 @@ export const PAINT: Record<LayerType, Record<string, PropertyDef>> = {
     opacity: p("number", 1),
     outlineColor: p("color", null),
     translate: fixed([0, 0], numberPair),
+    antialias: fixed(true, isBoolean),
   },
   line: {
     color: p("color", "#000000"),
     width: p("number", 1),
     opacity: p("number", 1),
     blur: p("number", 0),
-    offset: p("number", 0),
     dash: fixed(null, numberList),
   },
   circle: {
