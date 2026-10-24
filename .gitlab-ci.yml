@@ -1,0 +1,32 @@
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_TAG
+
+include:
+  - template: Jobs/SAST.gitlab-ci.yml
+  - template: Jobs/Secret-Detection.gitlab-ci.yml
+
+stages:
+  - test
+
+variables:
+  SECRET_DETECTION_HISTORIC_SCAN: "true"
+
+check:
+  stage: test
+  image: node:24-bookworm-slim
+  interruptible: true
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm/
+  script:
+    - npm ci --ignore-scripts --cache .npm --prefer-offline
+    - npm run lint
+    - npm run check
+    - npm test
