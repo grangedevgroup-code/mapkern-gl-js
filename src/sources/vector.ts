@@ -38,6 +38,7 @@ export interface VectorBucket {
   outline: GpuGeometry | null;
   cpu: BucketData | null;
   paint: PaintTable;
+  labels: LabelCandidate[] | null;
 }
 
 export interface VectorTile {
