@@ -1,3 +1,5 @@
+import { bytesToGeoJSON, objectToGeoJSON } from "../formats/convert.ts";
+import type { FeatureFormat } from "../formats/feature-format.ts";
 import type { GeoJSONOptions, GeoJSONSummary } from "./geojson.ts";
 import { GeoJSONIndex } from "./geojson.ts";
 import type { LayerProgram, VectorTileResult } from "./vector-task.ts";
@@ -7,6 +9,8 @@ export interface GeoJSONLoadRequest {
   source: string;
   data?: unknown;
   bytes?: ArrayBuffer;
+  name?: string;
+  format?: FeatureFormat | undefined;
   options: GeoJSONOptions;
 }
 
@@ -24,7 +28,9 @@ export type GeoJSONTileReply = { missing: true } | { missing: false; tile: Vecto
 const indexes = new Map<string, GeoJSONIndex>();
 
 export async function loadGeoJSON(request: GeoJSONLoadRequest): Promise<{ result: GeoJSONSummary }> {
-  const data = request.bytes ? parseJSON(request.bytes) : request.data;
+  const data = request.bytes
+    ? await bytesToGeoJSON(new Uint8Array(request.bytes), request.name ?? "", request.format)
+    : objectToGeoJSON(request.data);
   const index = new GeoJSONIndex(data, request.options);
   indexes.set(request.source, index);
   return { result: index.summary };
@@ -44,13 +50,4 @@ export async function buildGeoJSONTile(
 export async function removeGeoJSON(request: { source: string }): Promise<{ result: null }> {
   indexes.delete(request.source);
   return { result: null };
-}
-
-function parseJSON(bytes: ArrayBuffer): unknown {
-  const text = new TextDecoder().decode(bytes);
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    throw new Error(`The GeoJSON data is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
-  }
 }
