@@ -28,9 +28,23 @@ const FIELDS: Record<string, Record<string, string>> = {
     layer: "Number",
     surface: "String",
   },
-  railway: { class: "String", name: "String", name_en: "String", brunnel: "String", service: "String", layer: "Number" },
+  railway: {
+    class: "String",
+    name: "String",
+    name_en: "String",
+    brunnel: "String",
+    service: "String",
+    layer: "Number",
+  },
   building: { height: "Number", min_height: "Number", part: "Number" },
-  place: { class: "String", name: "String", name_en: "String", rank: "Number", capital: "Number", population: "Number" },
+  place: {
+    class: "String",
+    name: "String",
+    name_en: "String",
+    rank: "Number",
+    capital: "Number",
+    population: "Number",
+  },
   poi: { class: "String", subclass: "String", name: "String", name_en: "String", rank: "Number" },
   water_name: { class: "String", name: "String", name_en: "String" },
   mountain_peak: { class: "String", name: "String", name_en: "String", ele: "Number" },
@@ -72,7 +86,8 @@ async function main(): Promise<void> {
     throw new Error("--bbox must be west,south,east,north with west < east and south < north");
   }
   const maxZoom = Number(values.maxzoom);
-  if (!Number.isInteger(maxZoom) || maxZoom < 0 || maxZoom > 16) throw new Error("--maxzoom must be an integer from 0 to 16");
+  if (!Number.isInteger(maxZoom) || maxZoom < 0 || maxZoom > 16)
+    throw new Error("--maxzoom must be an integer from 0 to 16");
   const threads = values.threads ? Number(values.threads) : availableParallelism();
   const input = resolve(values.input);
   const output = resolve(values.output);
@@ -97,7 +112,9 @@ async function main(): Promise<void> {
     onTile: (z, x, y, tile) => writer.add(z, x, y, gzipSync(tile, { level: 6 })),
     log,
   });
-  log(`tiles: ${tileStats.tiles.toLocaleString()}, ${(tileStats.bytes / 1e6).toFixed(1)} MB raw, largest ${tileStats.maxTile} at ${(tileStats.maxTileBytes / 1024).toFixed(0)} KB, per zoom ${tileStats.byZoom.join(" ")}`);
+  log(
+    `tiles: ${tileStats.tiles.toLocaleString()}, ${(tileStats.bytes / 1e6).toFixed(1)} MB raw, largest ${tileStats.maxTile} at ${(tileStats.maxTileBytes / 1024).toFixed(0)} KB, per zoom ${tileStats.byZoom.join(" ")}`,
+  );
   const vectorLayers = Object.entries(FIELDS)
     .filter(([id]) => (stats.byLayer[id] ?? 0) > 0)
     .map(([id, fields]) => ({ id, fields, minzoom: 0, maxzoom: maxZoom }));
@@ -124,7 +141,9 @@ async function main(): Promise<void> {
       vector_layers: vectorLayers,
     },
   });
-  log(`wrote ${output}: ${(result.bytes / 1e6).toFixed(1)} MB, ${result.entries.toLocaleString()} entries, ${result.contents.toLocaleString()} unique tiles, leaf directories ${(result.leaves / 1024).toFixed(0)} KB`);
+  log(
+    `wrote ${output}: ${(result.bytes / 1e6).toFixed(1)} MB, ${result.entries.toLocaleString()} entries, ${result.contents.toLocaleString()} unique tiles, leaf directories ${(result.leaves / 1024).toFixed(0)} KB`,
+  );
   log(`done in ${((performance.now() - started) / 1000).toFixed(1)} s`);
 }
 
