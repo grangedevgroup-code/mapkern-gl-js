@@ -277,12 +277,10 @@ export class SqliteReader {
       this.cache.set(n, hit);
       return hit;
     }
-    const promise = this.ranges
-      .read((n - 1) * this.pageSize, this.pageSize, signal)
-      .then(({ data }) => {
-        if (data.length < this.pageSize) throw new SqliteError(`Page ${n} is past the end of the file`);
-        return data;
-      });
+    const promise = this.ranges.read((n - 1) * this.pageSize, this.pageSize, signal).then(({ data }) => {
+      if (data.length < this.pageSize) throw new SqliteError(`Page ${n} is past the end of the file`);
+      return data;
+    });
     promise.catch(() => this.cache.delete(n));
     this.remember(n, promise);
     return promise;
