@@ -357,6 +357,29 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "events from the constructor reach listeners added right after it",
+    async run({ page }) {
+      const result = await page.evaluate<{ styleload: number; errors: string[] }>(`(async () => {
+        const out = { styleload: 0, errors: [] };
+        const a = new maplet.Map({ container: "map", style: { version: 1, sources: {}, layers: [] } });
+        a.on("styleload", () => out.styleload++);
+        const box = document.createElement("div");
+        box.style.cssText = "position: absolute; inset: 0";
+        document.body.appendChild(box);
+        const b = new maplet.Map({ container: box, style: { version: 1, sources: {}, layers: [{ id: "x", type: "nope" }] } });
+        b.on("error", (e) => out.errors.push(e.error.code));
+        await new Promise((r) => setTimeout(r, 50));
+        a.remove();
+        b.remove();
+        box.remove();
+        return out;
+      })()`);
+      if (result.styleload !== 1) fail(`expected one styleload event, got ${result.styleload}`);
+      if (!result.errors.includes("invalid-style"))
+        fail(`expected an invalid-style error, got ${JSON.stringify(result.errors)}`);
+    },
+  },
+  {
     name: "remove releases the canvas and listeners",
     async run({ page, base }) {
       await createMap(page, rasterStyle(base, "/fixture/raster"));
