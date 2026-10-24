@@ -243,4 +243,10 @@ export function classifyRings(rings: Int32Array[]): Int32Array[][] {
   return polygons;
 }
 
+export function numericId(value: unknown): number | undefined {
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value === "string" && /^\d{1,15}$/.test(value)) return Number(value);
+  return undefined;
+}
+
 export { decodeUtf8 };
