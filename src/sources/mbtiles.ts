@@ -57,6 +57,41 @@ export class MBTilesArchive {
     return blob(imageRow?.[layout.images.columns.indexOf("tile_data")]);
   }
 
+  async forEachTile(
+    visit: (z: number, x: number, y: number, data: Uint8Array) => void,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const { layout } = await this.init(signal);
+    const table = layout.kind === "table" ? layout.tiles : layout.map;
+    const z = table.columns.indexOf("zoom_level");
+    const x = table.columns.indexOf("tile_column");
+    const y = table.columns.indexOf("tile_row");
+    const pending: { z: number; x: number; y: number; id: SqlValue }[] = [];
+    await this.db.scan(table.root, signal, (rowid, values) => {
+      const zoom = Number(values[z]);
+      const column = Number(values[x]);
+      const row = 2 ** zoom - 1 - Number(values[y]);
+      if (layout.kind === "table") {
+        const data = blob(values[layout.tiles.columns.indexOf("tile_data")]);
+        if (data) visit(zoom, column, row, data);
+      } else {
+        const idIndex = layout.map.columns.indexOf("tile_id");
+        pending.push({ z: zoom, x: column, y: row, id: layout.map.rowidAlias === "tile_id" ? rowid : values[idIndex]! });
+      }
+    });
+    if (layout.kind !== "split") return;
+    for (const p of pending) {
+      let imageRow: SqlValue[] | null = null;
+      if (layout.images.rowidAlias === "tile_id" && typeof p.id === "number") {
+        imageRow = await this.db.row(layout.images.root, p.id, signal);
+      } else if (layout.imagesIndex) {
+        imageRow = await this.find(layout.images, layout.imagesIndex, { tile_id: p.id }, signal);
+      }
+      const data = blob(imageRow?.[layout.images.columns.indexOf("tile_data")]);
+      if (data) visit(p.z, p.x, p.y, data);
+    }
+  }
+
   private async find(
     table: TableInfo,
     index: IndexInfo,
