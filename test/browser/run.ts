@@ -5,7 +5,7 @@ import { buildAll } from "../../scripts/build.ts";
 import { startServer } from "../../scripts/server.ts";
 import type { Page } from "./cdp.ts";
 import { Browser } from "./cdp.ts";
-import { fixtureRoute, square } from "./fixtures.ts";
+import { fixtureRoute, square, writeMbtilesFixture } from "./fixtures.ts";
 import { BORDER, zoomColor } from "./png.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -357,6 +357,35 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "MBTiles work over HTTP and as a file the user picks",
+    async run({ page, base, shot }) {
+      const style = (url: string) =>
+        JSON.stringify({
+          version: 1,
+          sources: { fx: { type: "raster", url, tileSize: 256 } },
+          layers: [
+            { id: "bg", type: "background", paint: { color: "#ffffff" } },
+            { id: "r", type: "raster", source: "fx", paint: { fadeDuration: 0 } },
+          ],
+        });
+      await createMap(page, style(`${base}/test/browser/output/fixture.mbtiles`));
+      await shot("mbtiles-http");
+      const remote = await pixel(page, 464, 364);
+      if (!isZoomColor(remote, 4)) fail(`expected z4 colour from the MBTiles file over HTTP, got ${remote}`);
+      const url = await page.evaluate<string>(`(async () => {
+        const bytes = await (await fetch("${base}/test/browser/output/fixture.mbtiles")).arrayBuffer();
+        return maplet.openTileFile(new File([bytes], "picked.mbtiles"));
+      })()`);
+      if (!url.startsWith("mbtiles://")) fail(`openTileFile returned ${url}`);
+      await page.evaluate(`void window.map.setStyle(${style(url)})`);
+      await idle(page);
+      const local = await pixel(page, 464, 364);
+      if (!isZoomColor(local, 4)) fail(`expected z4 colour from the picked file, got ${local}`);
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
     name: "KML from a URL and CSV from a file both turn into map features",
     async run({ page, base, shot }) {
       const style = JSON.stringify({
@@ -471,6 +500,7 @@ async function main(): Promise<void> {
   const software = process.argv.includes("--software") || process.env.CI === "true";
   if (!process.argv.includes("--no-build")) await buildAll({ types: false, quiet: true });
   mkdirSync(output, { recursive: true });
+  writeMbtilesFixture(join(output, "fixture.mbtiles"));
   const { server, url } = await startServer({ root, routes: [fixtureRoute], quiet: true });
   const browser = await Browser.launch({ software });
   let failed = 0;
