@@ -1,6 +1,6 @@
-import { ExpressionError, compile } from "./expression.ts";
+import { compile, ExpressionError } from "./expression.ts";
 import { LAYOUT, PAINT } from "./layer.ts";
-import type { LayerSpec, LayerType, SourceSpec, StyleSpec } from "./types.ts";
+import type { LayerType, SourceSpec, StyleSpec } from "./types.ts";
 
 export interface StyleIssue {
   path: string;
@@ -12,11 +12,45 @@ const SOURCE_TYPES = new Set(["raster", "vector", "dem", "geojson"]);
 const SOURCE_KEYS: Record<string, Set<string>> = {
   raster: new Set(["type", "tiles", "url", "minZoom", "maxZoom", "bounds", "scheme", "attribution", "tileSize"]),
   vector: new Set(["type", "tiles", "url", "minZoom", "maxZoom", "bounds", "scheme", "attribution", "promoteId"]),
-  dem: new Set(["type", "tiles", "url", "minZoom", "maxZoom", "bounds", "scheme", "attribution", "tileSize", "encoding"]),
+  dem: new Set([
+    "type",
+    "tiles",
+    "url",
+    "minZoom",
+    "maxZoom",
+    "bounds",
+    "scheme",
+    "attribution",
+    "tileSize",
+    "encoding",
+  ]),
   geojson: new Set(["type", "data", "maxZoom", "tolerance", "buffer", "attribution", "promoteId"]),
 };
-const LAYER_KEYS = new Set(["id", "type", "source", "sourceLayer", "minZoom", "maxZoom", "visible", "filter", "paint", "layout", "sortKey"]);
-const STYLE_KEYS = new Set(["version", "name", "center", "zoom", "bearing", "pitch", "sources", "layers", "terrain", "fonts"]);
+const LAYER_KEYS = new Set([
+  "id",
+  "type",
+  "source",
+  "sourceLayer",
+  "minZoom",
+  "maxZoom",
+  "visible",
+  "filter",
+  "paint",
+  "layout",
+  "sortKey",
+]);
+const STYLE_KEYS = new Set([
+  "version",
+  "name",
+  "center",
+  "zoom",
+  "bearing",
+  "pitch",
+  "sources",
+  "layers",
+  "terrain",
+  "fonts",
+]);
 
 export function validateStyle(style: unknown): StyleIssue[] {
   const issues: StyleIssue[] = [];
@@ -29,7 +63,8 @@ export function validateStyle(style: unknown): StyleIssue[] {
     issues.push({ path: "center", message: "center must be [lng, lat]" });
   }
   for (const key of ["zoom", "bearing", "pitch"] as const) {
-    if (style[key] !== undefined && !isFiniteNumber(style[key])) issues.push({ path: key, message: `${key} must be a number` });
+    if (style[key] !== undefined && !isFiniteNumber(style[key]))
+      issues.push({ path: key, message: `${key} must be a number` });
   }
   const sources = style.sources;
   if (!isObject(sources)) {
@@ -43,7 +78,9 @@ export function validateStyle(style: unknown): StyleIssue[] {
   } else {
     const ids = new Set<string>();
     layers.forEach((layer, i) => {
-      issues.push(...validateLayer(layer, `layers[${i}]`, isObject(sources) ? (sources as Record<string, SourceSpec>) : {}));
+      issues.push(
+        ...validateLayer(layer, `layers[${i}]`, isObject(sources) ? (sources as Record<string, SourceSpec>) : {}),
+      );
       if (isObject(layer) && typeof layer.id === "string") {
         if (ids.has(layer.id)) issues.push({ path: `layers[${i}].id`, message: `duplicate layer id "${layer.id}"` });
         ids.add(layer.id);
@@ -78,23 +115,33 @@ export function validateSource(id: string, source: unknown): StyleIssue[] {
       issues.push({ path: `${path}.data`, message: "geojson data must be a GeoJSON object or a URL" });
     }
   } else {
-    const hasTiles = Array.isArray(source.tiles) && source.tiles.length > 0 && source.tiles.every((t) => typeof t === "string");
+    const hasTiles =
+      Array.isArray(source.tiles) && source.tiles.length > 0 && source.tiles.every((t) => typeof t === "string");
     if (!hasTiles && typeof source.url !== "string") {
       issues.push({ path, message: `${type} source needs "tiles" or a TileJSON "url"` });
     }
     if (source.scheme !== undefined && source.scheme !== "xyz" && source.scheme !== "tms") {
       issues.push({ path: `${path}.scheme`, message: "scheme must be xyz or tms" });
     }
-    if (source.bounds !== undefined && !(Array.isArray(source.bounds) && source.bounds.length === 4 && source.bounds.every(isFiniteNumber))) {
+    if (
+      source.bounds !== undefined &&
+      !(Array.isArray(source.bounds) && source.bounds.length === 4 && source.bounds.every(isFiniteNumber))
+    ) {
       issues.push({ path: `${path}.bounds`, message: "bounds must be [west, south, east, north]" });
     }
-    if (type === "dem" && source.encoding !== undefined && source.encoding !== "terrarium" && source.encoding !== "mapbox") {
+    if (
+      type === "dem" &&
+      source.encoding !== undefined &&
+      source.encoding !== "terrarium" &&
+      source.encoding !== "mapbox"
+    ) {
       issues.push({ path: `${path}.encoding`, message: "encoding must be terrarium or mapbox" });
     }
   }
   for (const key of ["minZoom", "maxZoom", "tileSize", "tolerance", "buffer"] as const) {
     const v = source[key];
-    if (v !== undefined && (!isFiniteNumber(v) || v < 0)) issues.push({ path: `${path}.${key}`, message: `${key} must be a non-negative number` });
+    if (v !== undefined && (!isFiniteNumber(v) || v < 0))
+      issues.push({ path: `${path}.${key}`, message: `${key} must be a non-negative number` });
   }
   return issues;
 }
@@ -102,7 +149,8 @@ export function validateSource(id: string, source: unknown): StyleIssue[] {
 export function validateLayer(layer: unknown, path: string, sources: Record<string, SourceSpec>): StyleIssue[] {
   if (!isObject(layer)) return [{ path, message: "layer must be an object" }];
   const issues: StyleIssue[] = [];
-  if (typeof layer.id !== "string" || layer.id.length === 0) issues.push({ path: `${path}.id`, message: "layer id must be a non-empty string" });
+  if (typeof layer.id !== "string" || layer.id.length === 0)
+    issues.push({ path: `${path}.id`, message: "layer id must be a non-empty string" });
   const type = layer.type as LayerType;
   if (typeof type !== "string" || !LAYER_TYPES.has(type)) {
     issues.push({ path: `${path}.type`, message: `layer type must be one of ${[...LAYER_TYPES].join(", ")}` });
@@ -121,19 +169,28 @@ export function validateLayer(layer: unknown, path: string, sources: Record<stri
     }
   }
   for (const key of ["minZoom", "maxZoom"] as const) {
-    if (layer[key] !== undefined && !isFiniteNumber(layer[key])) issues.push({ path: `${path}.${key}`, message: `${key} must be a number` });
+    if (layer[key] !== undefined && !isFiniteNumber(layer[key]))
+      issues.push({ path: `${path}.${key}`, message: `${key} must be a number` });
   }
-  if (layer.visible !== undefined && typeof layer.visible !== "boolean") issues.push({ path: `${path}.visible`, message: "visible must be true or false" });
+  if (layer.visible !== undefined && typeof layer.visible !== "boolean")
+    issues.push({ path: `${path}.visible`, message: "visible must be true or false" });
   if (layer.filter !== undefined) issues.push(...checkExpression(layer.filter, `${path}.filter`));
   issues.push(...checkGroup(layer.paint, PAINT[type], `${path}.paint`, type));
   issues.push(...checkGroup(layer.layout, LAYOUT[type], `${path}.layout`, type));
   return issues;
 }
 
-function checkSourceType(type: LayerType, source: SourceSpec, layer: Record<string, unknown>, path: string): StyleIssue[] {
+function checkSourceType(
+  type: LayerType,
+  source: SourceSpec,
+  layer: Record<string, unknown>,
+  path: string,
+): StyleIssue[] {
   const featureLayers: LayerType[] = ["fill", "line", "circle", "symbol", "extrusion"];
-  if (type === "raster" && source.type !== "raster") return [{ path: `${path}.source`, message: "raster layers need a raster source" }];
-  if (type === "hillshade" && source.type !== "dem") return [{ path: `${path}.source`, message: "hillshade layers need a dem source" }];
+  if (type === "raster" && source.type !== "raster")
+    return [{ path: `${path}.source`, message: "raster layers need a raster source" }];
+  if (type === "hillshade" && source.type !== "dem")
+    return [{ path: `${path}.source`, message: "hillshade layers need a dem source" }];
   if (featureLayers.includes(type)) {
     if (source.type !== "vector" && source.type !== "geojson") {
       return [{ path: `${path}.source`, message: `${type} layers need a vector or geojson source` }];
@@ -145,7 +202,12 @@ function checkSourceType(type: LayerType, source: SourceSpec, layer: Record<stri
   return [];
 }
 
-function checkGroup(group: unknown, defs: Record<string, { expression: boolean; check?: (v: unknown) => string | null; kind: string }>, path: string, type: string): StyleIssue[] {
+function checkGroup(
+  group: unknown,
+  defs: Record<string, { expression: boolean; check?: (v: unknown) => string | null; kind: string }>,
+  path: string,
+  type: string,
+): StyleIssue[] {
   if (group === undefined) return [];
   if (!isObject(group)) return [{ path, message: "must be an object" }];
   const issues: StyleIssue[] = [];
@@ -194,5 +256,3 @@ function isLngLat(v: unknown): boolean {
 export function isStyleSpec(v: unknown): v is StyleSpec {
   return validateStyle(v).length === 0;
 }
-
-export type { LayerSpec };
