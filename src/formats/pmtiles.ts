@@ -86,8 +86,8 @@ export function tileCoord(id: number): { z: number; x: number; y: number } {
   let x = 0;
   let y = 0;
   for (let s = 1; s < n; s *= 2) {
-    const rx = 1 & Math.floor(d / 2);
-    const ry = 1 & (Math.floor(d) ^ rx);
+    const rx = Math.floor(d / 2) % 2;
+    const ry = (d % 2) ^ rx;
     if (ry === 0) {
       if (rx === 1) {
         x = s - 1 - x;
