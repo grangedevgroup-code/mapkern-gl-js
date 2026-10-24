@@ -50,7 +50,7 @@ export class SlotView implements RenderView {
   }
 }
 
-interface Entry {
+export interface DrapeEntry {
   texture: WebGLTexture;
   framebuffer: WebGLFramebuffer;
   size: number;
@@ -61,7 +61,7 @@ interface Entry {
 
 export class DrapeCache {
   private readonly gl: GL;
-  private readonly entries = new Map<string, Entry>();
+  private readonly entries = new Map<string, DrapeEntry>();
   private frame = 0;
 
   constructor(gl: GL) {
@@ -70,7 +70,7 @@ export class DrapeCache {
 
   get bytes(): number {
     let total = 0;
-    for (const e of this.entries.values()) total += e.size * e.size * 5.4;
+    for (const e of this.entries.values()) total += entryBytes(e);
     return total;
   }
 
@@ -82,13 +82,13 @@ export class DrapeCache {
     this.frame++;
   }
 
-  lookup(key: string): Entry | undefined {
+  lookup(key: string): DrapeEntry | undefined {
     const entry = this.entries.get(key);
     if (entry) entry.used = this.frame;
     return entry;
   }
 
-  target(key: string, size: number): Entry {
+  target(key: string, size: number): DrapeEntry {
     let entry = this.entries.get(key);
     if (entry && entry.size !== size) {
       this.release(entry);
@@ -118,11 +118,13 @@ export class DrapeCache {
     return entry;
   }
 
-  trim(keep: number): void {
-    if (this.entries.size <= keep) return;
+  trim(budget: number): void {
     const old = [...this.entries].filter(([, e]) => e.used !== this.frame).sort((a, b) => a[1].used - b[1].used);
+    let spare = 0;
+    for (const [, entry] of old) spare += entryBytes(entry);
     for (const [key, entry] of old) {
-      if (this.entries.size <= keep) break;
+      if (spare <= budget) break;
+      spare -= entryBytes(entry);
       this.release(entry);
       this.entries.delete(key);
     }
@@ -137,11 +139,15 @@ export class DrapeCache {
     this.entries.clear();
   }
 
-  private release(entry: Entry): void {
+  private release(entry: DrapeEntry): void {
     if (this.gl.isLost) return;
     this.gl.gl.deleteFramebuffer(entry.framebuffer);
     this.gl.gl.deleteTexture(entry.texture);
   }
+}
+
+function entryBytes(entry: DrapeEntry): number {
+  return Math.round((entry.size * entry.size * 4 * 4) / 3);
 }
 
 export class Hash {
