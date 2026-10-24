@@ -1,5 +1,5 @@
 import { MapletError } from "../core/errors.ts";
-import { EARTH_CIRCUMFERENCE, clampLatitude, mercatorX, mercatorY } from "../geo/mercator.ts";
+import { clampLatitude, EARTH_CIRCUMFERENCE, mercatorX, mercatorY } from "../geo/mercator.ts";
 import type { Rect } from "../geo/tile.ts";
 import { MAX_TILE_ZOOM, quadkey, tmsY } from "../geo/tile.ts";
 import type { TileSourceBase } from "../style/types.ts";
@@ -41,12 +41,19 @@ export async function resolveTileSet(
   let base: string | undefined;
   if (spec.url) {
     const params = resolveRequest(spec.url, "source", transformRequest);
-    const result = await fetchBytes(params, signal, timeoutMs).catch((error: unknown) => {
+    const result = await fetchBytes(params, signal, timeoutMs, "source").catch((error: unknown) => {
       if (signal.aborted) throw error;
-      throw new MapletError("source-error", `Could not load TileJSON for source "${sourceId}" from ${spec.url}`, { sourceId }, error);
+      throw new MapletError(
+        "source-error",
+        `Could not load TileJSON for source "${sourceId}" from ${spec.url}`,
+        { sourceId },
+        error,
+      );
     });
     if (result.kind === "empty") {
-      throw new MapletError("source-error", `TileJSON for source "${sourceId}" was not found at ${spec.url}`, { sourceId });
+      throw new MapletError("source-error", `TileJSON for source "${sourceId}" was not found at ${spec.url}`, {
+        sourceId,
+      });
     }
     try {
       const parsed: unknown = JSON.parse(new TextDecoder().decode(result.data));
