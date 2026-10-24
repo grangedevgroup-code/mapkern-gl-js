@@ -94,7 +94,9 @@ function readShape(view: DataView, o: number, type: number, point: (o: number) =
       const count = view.getInt32(o + 36, true);
       const coordinates: Position[] = [];
       for (let i = 0; i < count; i++) coordinates.push(point(o + 40 + i * 16));
-      return coordinates.length === 1 ? { type: "Point", coordinates: coordinates[0]! } : { type: "MultiPoint", coordinates };
+      return coordinates.length === 1
+        ? { type: "Point", coordinates: coordinates[0]! }
+        : { type: "MultiPoint", coordinates };
     }
     case 3:
     case 13:
@@ -118,7 +120,9 @@ function readShape(view: DataView, o: number, type: number, point: (o: number) =
       if (!polygon) {
         const lines = rings.filter((r) => r.length >= 2);
         if (lines.length === 0) return null;
-        return lines.length === 1 ? { type: "LineString", coordinates: lines[0]! } : { type: "MultiLineString", coordinates: lines };
+        return lines.length === 1
+          ? { type: "LineString", coordinates: lines[0]! }
+          : { type: "MultiLineString", coordinates: lines };
       }
       return assemblePolygons(rings.filter((r) => r.length >= 4));
     }
@@ -142,7 +146,9 @@ function assemblePolygons(rings: Position[][]): Geometry | null {
     if (owner) owner.push(hole);
     else outers.push([hole]);
   }
-  return outers.length === 1 ? { type: "Polygon", coordinates: outers[0]! } : { type: "MultiPolygon", coordinates: outers };
+  return outers.length === 1
+    ? { type: "Polygon", coordinates: outers[0]! }
+    : { type: "MultiPolygon", coordinates: outers };
 }
 
 function area(ring: Position[]): number {
@@ -216,20 +222,20 @@ function fieldValue(type: string, raw: string): unknown {
 }
 
 const LANGUAGE_DRIVERS: Record<number, string> = {
-  0x01: "ibm437",
-  0x02: "ibm850",
-  0x03: "windows-1252",
-  0x57: "windows-1252",
-  0x4d: "gbk",
-  0x4e: "euc-kr",
-  0x4f: "big5",
-  0x7b: "euc-kr",
-  0x7d: "windows-1255",
-  0x7e: "windows-1256",
-  0xc8: "windows-1250",
-  0xc9: "windows-1251",
-  0xca: "windows-1254",
-  0xcb: "windows-1253",
+  1: "ibm437",
+  2: "ibm850",
+  3: "windows-1252",
+  87: "windows-1252",
+  77: "gbk",
+  78: "euc-kr",
+  79: "big5",
+  123: "euc-kr",
+  125: "windows-1255",
+  126: "windows-1256",
+  200: "windows-1250",
+  201: "windows-1251",
+  202: "windows-1254",
+  203: "windows-1253",
 };
 
 function textDecoder(cpg: string | undefined, driver: number): TextDecoder {
