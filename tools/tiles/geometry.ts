@@ -1,11 +1,18 @@
-export type Ring = Float64Array;
+import type { Ring } from "../../src/geo/clip.ts";
+import { pointInRing, reverseRing, ringBounds, segmentDistanceSq, signedArea } from "../../src/geo/clip.ts";
+import type { Rect } from "../../src/geo/tile.ts";
 
-export interface Rect {
-  x0: number;
-  y0: number;
-  x1: number;
-  y1: number;
-}
+export {
+  clipLine,
+  clipRing,
+  clipSegment,
+  pointInRing,
+  reverseRing,
+  ringBounds,
+  signedArea,
+  simplify,
+} from "../../src/geo/clip.ts";
+export type { Rect, Ring };
 
 export function worldX(lonFixed: number): number {
   return (lonFixed / 1e7 + 180) / 360;
@@ -15,53 +22,6 @@ export function worldY(latFixed: number): number {
   const lat = Math.max(-85.0511287798066, Math.min(85.0511287798066, latFixed / 1e7));
   const s = Math.sin((lat * Math.PI) / 180);
   return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
-}
-
-export function signedArea(ring: ArrayLike<number>): number {
-  let sum = 0;
-  const n = ring.length;
-  for (let i = 0, j = n - 2; i < n; j = i, i += 2) {
-    sum += (ring[j]! - ring[i]!) * (ring[i + 1]! + ring[j + 1]!);
-  }
-  return sum / 2;
-}
-
-export function ringBounds(ring: ArrayLike<number>): Rect {
-  let x0 = Infinity,
-    y0 = Infinity,
-    x1 = -Infinity,
-    y1 = -Infinity;
-  for (let i = 0; i < ring.length; i += 2) {
-    const x = ring[i]!;
-    const y = ring[i + 1]!;
-    if (x < x0) x0 = x;
-    if (x > x1) x1 = x;
-    if (y < y0) y0 = y;
-    if (y > y1) y1 = y;
-  }
-  return { x0, y0, x1, y1 };
-}
-
-export function pointInRing(x: number, y: number, ring: ArrayLike<number>): boolean {
-  let inside = false;
-  const n = ring.length;
-  for (let i = 0, j = n - 2; i < n; j = i, i += 2) {
-    const xi = ring[i]!,
-      yi = ring[i + 1]!,
-      xj = ring[j]!,
-      yj = ring[j + 1]!;
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}
-
-export function reverseRing(ring: Ring): Ring {
-  const out = new Float64Array(ring.length);
-  for (let i = 0, j = ring.length - 2; i < ring.length; i += 2, j -= 2) {
-    out[i] = ring[j]!;
-    out[i + 1] = ring[j + 1]!;
-  }
-  return out;
 }
 
 export interface Chain {
@@ -174,206 +134,6 @@ export function splitRings(rings: Ring[]): { outer: Ring[]; inner: Ring[] } {
     else inner.push(r);
   }
   return { outer, inner };
-}
-
-export function clipRing(ring: ArrayLike<number>, r: Rect): Float64Array | null {
-  let pts: number[] = Array.from(ring);
-  if (pts.length >= 4 && pts[0] === pts[pts.length - 2] && pts[1] === pts[pts.length - 1]) pts.length -= 2;
-  for (let edge = 0; edge < 4; edge++) {
-    if (pts.length < 6) return null;
-    const out: number[] = [];
-    const n = pts.length;
-    for (let i = 0; i < n; i += 2) {
-      const ax = pts[(i - 2 + n) % n]!,
-        ay = pts[(i - 1 + n) % n]!;
-      const bx = pts[i]!,
-        by = pts[i + 1]!;
-      const ina = inside(edge, ax, ay, r);
-      const inb = inside(edge, bx, by, r);
-      if (inb) {
-        if (!ina) intersect(edge, ax, ay, bx, by, r, out);
-        out.push(bx, by);
-      } else if (ina) {
-        intersect(edge, ax, ay, bx, by, r, out);
-      }
-    }
-    pts = out;
-  }
-  if (pts.length < 6) return null;
-  pts.push(pts[0]!, pts[1]!);
-  return Float64Array.from(pts);
-}
-
-function inside(edge: number, x: number, y: number, r: Rect): boolean {
-  switch (edge) {
-    case 0:
-      return x >= r.x0;
-    case 1:
-      return x <= r.x1;
-    case 2:
-      return y >= r.y0;
-    default:
-      return y <= r.y1;
-  }
-}
-
-function intersect(edge: number, ax: number, ay: number, bx: number, by: number, r: Rect, out: number[]): void {
-  let t: number;
-  switch (edge) {
-    case 0:
-      t = (r.x0 - ax) / (bx - ax);
-      out.push(r.x0, ay + (by - ay) * t);
-      break;
-    case 1:
-      t = (r.x1 - ax) / (bx - ax);
-      out.push(r.x1, ay + (by - ay) * t);
-      break;
-    case 2:
-      t = (r.y0 - ay) / (by - ay);
-      out.push(ax + (bx - ax) * t, r.y0);
-      break;
-    default:
-      t = (r.y1 - ay) / (by - ay);
-      out.push(ax + (bx - ax) * t, r.y1);
-      break;
-  }
-}
-
-export function clipLine(line: ArrayLike<number>, r: Rect): Float64Array[] {
-  const out: Float64Array[] = [];
-  let current: number[] = [];
-  const flush = () => {
-    if (current.length >= 4) out.push(Float64Array.from(current));
-    current = [];
-  };
-  for (let i = 0; i + 3 < line.length; i += 2) {
-    const seg = clipSegment(line[i]!, line[i + 1]!, line[i + 2]!, line[i + 3]!, r);
-    if (!seg) {
-      flush();
-      continue;
-    }
-    const [ax, ay, bx, by, enteredClipped, exitedClipped] = seg;
-    if (
-      current.length === 0 ||
-      enteredClipped ||
-      current[current.length - 2] !== ax ||
-      current[current.length - 1] !== ay
-    ) {
-      flush();
-      current.push(ax, ay);
-    }
-    current.push(bx, by);
-    if (exitedClipped) flush();
-  }
-  flush();
-  return out;
-}
-
-export function clipSegment(
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-  r: Rect,
-): [number, number, number, number, boolean, boolean] | null {
-  const dx = bx - ax;
-  const dy = by - ay;
-  let t0 = 0;
-  let t1 = 1;
-  const p = [-dx, dx, -dy, dy];
-  const q = [ax - r.x0, r.x1 - ax, ay - r.y0, r.y1 - ay];
-  for (let i = 0; i < 4; i++) {
-    const pi = p[i]!;
-    const qi = q[i]!;
-    if (pi === 0) {
-      if (qi < 0) return null;
-    } else {
-      const t = qi / pi;
-      if (pi < 0) {
-        if (t > t1) return null;
-        if (t > t0) t0 = t;
-      } else {
-        if (t < t0) return null;
-        if (t < t1) t1 = t;
-      }
-    }
-  }
-  return [ax + dx * t0, ay + dy * t0, ax + dx * t1, ay + dy * t1, t0 > 0, t1 < 1];
-}
-
-export function simplify(points: ArrayLike<number>, tolerance: number, closed: boolean): Float64Array {
-  const n = points.length / 2;
-  if (n <= 2 || tolerance <= 0) return Float64Array.from(points);
-  const keep = new Uint8Array(n);
-  keep[0] = 1;
-  keep[n - 1] = 1;
-  const sq = tolerance * tolerance;
-  const stack: number[] = [0, n - 1];
-  if (closed && n > 3) {
-    let far = 1;
-    let best = -1;
-    const x0 = points[0]!,
-      y0 = points[1]!;
-    for (let i = 1; i < n - 1; i++) {
-      const d = (points[i * 2]! - x0) ** 2 + (points[i * 2 + 1]! - y0) ** 2;
-      if (d > best) {
-        best = d;
-        far = i;
-      }
-    }
-    keep[far] = 1;
-    stack.length = 0;
-    stack.push(0, far, far, n - 1);
-  }
-  while (stack.length > 0) {
-    const last = stack.pop()!;
-    const first = stack.pop()!;
-    let maxD = -1;
-    let index = -1;
-    const ax = points[first * 2]!,
-      ay = points[first * 2 + 1]!;
-    const bx = points[last * 2]!,
-      by = points[last * 2 + 1]!;
-    for (let i = first + 1; i < last; i++) {
-      const d = segmentDistanceSq(points[i * 2]!, points[i * 2 + 1]!, ax, ay, bx, by);
-      if (d > maxD) {
-        maxD = d;
-        index = i;
-      }
-    }
-    if (maxD > sq && index > 0) {
-      keep[index] = 1;
-      stack.push(first, index, index, last);
-    }
-  }
-  let count = 0;
-  for (let i = 0; i < n; i++) if (keep[i]) count++;
-  const out = new Float64Array(count * 2);
-  let o = 0;
-  for (let i = 0; i < n; i++) {
-    if (!keep[i]) continue;
-    out[o++] = points[i * 2]!;
-    out[o++] = points[i * 2 + 1]!;
-  }
-  return out;
-}
-
-function segmentDistanceSq(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
-  let x = ax;
-  let y = ay;
-  const dx = bx - ax;
-  const dy = by - ay;
-  if (dx !== 0 || dy !== 0) {
-    const t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
-    if (t > 1) {
-      x = bx;
-      y = by;
-    } else if (t > 0) {
-      x += dx * t;
-      y += dy * t;
-    }
-  }
-  return (px - x) ** 2 + (py - y) ** 2;
 }
 
 export function labelPoint(poly: Polygon): [number, number] {
