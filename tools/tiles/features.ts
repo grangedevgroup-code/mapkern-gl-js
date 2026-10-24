@@ -1,7 +1,19 @@
 import { coastlineWater } from "./coastline.ts";
 import type { RegionData } from "./extract.ts";
 import type { Polygon, Rect } from "./geometry.ts";
-import { buildPolygons, clipLine, clipRing, joinWays, labelPoint, polygonArea, ringBounds, signedArea, splitRings, worldX, worldY } from "./geometry.ts";
+import {
+  buildPolygons,
+  clipLine,
+  clipRing,
+  joinWays,
+  labelPoint,
+  polygonArea,
+  ringBounds,
+  signedArea,
+  splitRings,
+  worldX,
+  worldY,
+} from "./geometry.ts";
 import type { Tags } from "./osm-pbf.ts";
 import type { Classified, Props } from "./schema.ts";
 import { boundaryLevel, boundaryMinZoom, classify, isArea } from "./schema.ts";
@@ -34,10 +46,21 @@ export function regionRect(bbox: [number, number, number, number]): Rect {
   return { x0: worldX(bbox[0] * 1e7), y0: worldY(bbox[3] * 1e7), x1: worldX(bbox[2] * 1e7), y1: worldY(bbox[1] * 1e7) };
 }
 
-export function buildFeatures(data: RegionData, maxZoom: number, log: (m: string) => void = () => undefined): { features: TileFeature[]; stats: FeatureStats } {
+export function buildFeatures(
+  data: RegionData,
+  maxZoom: number,
+  log: (m: string) => void = () => undefined,
+): { features: TileFeature[]; stats: FeatureStats } {
   const rect = regionRect(data.bbox);
   const out: TileFeature[] = [];
-  const stats: FeatureStats = { features: 0, byLayer: {}, missingRefs: 0, brokenRelations: 0, droppedCoastPieces: 0, invertedCoastRings: 0 };
+  const stats: FeatureStats = {
+    features: 0,
+    byLayer: {},
+    missingRefs: 0,
+    brokenRelations: 0,
+    droppedCoastPieces: 0,
+    invertedCoastRings: 0,
+  };
   const ids = data.nodeIds;
 
   const findNode = (id: number): number => {
@@ -67,7 +90,8 @@ export function buildFeatures(data: RegionData, maxZoom: number, log: (m: string
     return -1;
   };
 
-  const wayRefs = (index: number): Float64Array => data.wayRefs.subarray(data.wayOffsets[index]!, data.wayOffsets[index + 1]!);
+  const wayRefs = (index: number): Float64Array =>
+    data.wayRefs.subarray(data.wayOffsets[index]!, data.wayOffsets[index + 1]!);
 
   const coords = (refs: ArrayLike<number>): Float64Array => {
     const pts: number[] = [];
@@ -106,7 +130,10 @@ export function buildFeatures(data: RegionData, maxZoom: number, log: (m: string
         const c = clipRing(h, rect);
         if (c && Math.abs(signedArea(c)) > 0) holes.push(c);
       }
-      clipped.push({ outer: signedArea(outer) < 0 ? reversed(outer) : outer, holes: holes.map((h) => (signedArea(h) > 0 ? reversed(h) : h)) });
+      clipped.push({
+        outer: signedArea(outer) < 0 ? reversed(outer) : outer,
+        holes: holes.map((h) => (signedArea(h) > 0 ? reversed(h) : h)),
+      });
     }
     if (clipped.length === 0) return;
     const area = clipped.reduce((s, p) => s + polygonArea(p), 0);
@@ -120,7 +147,16 @@ export function buildFeatures(data: RegionData, maxZoom: number, log: (m: string
       }
       const parts: Float64Array[] = [];
       for (const p of clipped) parts.push(p.outer, ...p.holes);
-      push({ id, layer: c.layer, minZoom, type: 3, parts, props: c.props, bbox: boundsOf(parts), sortKey: c.sortKey ?? 0 });
+      push({
+        id,
+        layer: c.layer,
+        minZoom,
+        type: 3,
+        parts,
+        props: c.props,
+        bbox: boundsOf(parts),
+        sortKey: c.sortKey ?? 0,
+      });
     }
   };
 
@@ -130,14 +166,24 @@ export function buildFeatures(data: RegionData, maxZoom: number, log: (m: string
     const pieces = clipLine(line, rect);
     if (pieces.length === 0) return;
     for (const c of classes) {
-      push({ id, layer: c.layer, minZoom: Math.min(maxZoom, c.minZoom), type: 2, parts: pieces, props: c.props, bbox: boundsOf(pieces), sortKey: c.sortKey ?? 0 });
+      push({
+        id,
+        layer: c.layer,
+        minZoom: Math.min(maxZoom, c.minZoom),
+        type: 2,
+        parts: pieces,
+        props: c.props,
+        bbox: boundsOf(pieces),
+        sortKey: c.sortKey ?? 0,
+      });
     }
   };
 
   for (const p of data.points) {
     const x = worldX(p.lon);
     const y = worldY(p.lat);
-    for (const c of classify(p.tags, "point")) push(point(p.id * 4, c.layer, Math.min(maxZoom, c.minZoom), x, y, c.props));
+    for (const c of classify(p.tags, "point"))
+      push(point(p.id * 4, c.layer, Math.min(maxZoom, c.minZoom), x, y, c.props));
   }
   log(`points: ${out.length.toLocaleString()} features`);
 
@@ -175,14 +221,17 @@ export function buildFeatures(data: RegionData, maxZoom: number, log: (m: string
     const outerRefs: Float64Array[] = [];
     const innerRefs: Float64Array[] = [];
     const unknownRefs: Float64Array[] = [];
+    let found = 0;
     for (const m of rel.members) {
       const w = findWay(m.ref);
       if (w < 0) continue;
+      found++;
       const refs = wayRefs(w);
       if (m.role === "outer") outerRefs.push(refs);
       else if (m.role === "inner") innerRefs.push(refs);
       else unknownRefs.push(refs);
     }
+    if (found === 0) continue;
     const outerJoined = joinWays(outerRefs);
     const innerJoined = joinWays(innerRefs);
     const unknownJoined = joinWays(unknownRefs);
@@ -213,7 +262,16 @@ export function buildFeatures(data: RegionData, maxZoom: number, log: (m: string
     const props: Props = { admin_level: info.level };
     if (maritime) props.maritime = 1;
     if (tags?.disputed === "yes") props.disputed = 1;
-    push({ id: wayId * 4 + 1, layer: "boundary", minZoom: Math.min(maxZoom, boundaryMinZoom(info.level)), type: 2, parts: pieces, props, bbox: boundsOf(pieces), sortKey: -info.level });
+    push({
+      id: wayId * 4 + 1,
+      layer: "boundary",
+      minZoom: Math.min(maxZoom, boundaryMinZoom(info.level)),
+      type: 2,
+      parts: pieces,
+      props,
+      bbox: boundsOf(pieces),
+      sortKey: -info.level,
+    });
   }
   log(`relations: ${out.length.toLocaleString()} features so far, ${stats.brokenRelations} broken relations`);
 
@@ -229,20 +287,43 @@ export function buildFeatures(data: RegionData, maxZoom: number, log: (m: string
     let n = 0;
     for (const poly of result.water) {
       const parts = [poly.outer, ...poly.holes];
-      push({ id: 3 + 4 * n++, layer: "water", minZoom: 0, type: 3, parts, props: { class: "ocean" }, bbox: boundsOf(parts), sortKey: -1 });
+      push({
+        id: 3 + 4 * n++,
+        layer: "water",
+        minZoom: 0,
+        type: 3,
+        parts,
+        props: { class: "ocean" },
+        bbox: boundsOf(parts),
+        sortKey: -1,
+      });
     }
-    log(`coastline: ${coastRefs.length} ways, ${joined.open.length} open and ${joined.closed.length} closed chains, ${result.water.length} sea polygons, ${result.droppedPieces} dropped pieces`);
+    log(
+      `coastline: ${coastRefs.length} ways, ${joined.open.length} open and ${joined.closed.length} closed chains, ${result.water.length} sea polygons, ${result.droppedPieces} dropped pieces`,
+    );
   }
   stats.features = out.length;
   return { features: out, stats };
 }
 
 function point(id: number, layer: string, minZoom: number, x: number, y: number, props: Props): TileFeature {
-  return { id, layer, minZoom, type: 1, parts: [Float64Array.of(x, y)], props, bbox: { x0: x, y0: y, x1: x, y1: y }, sortKey: 0 };
+  return {
+    id,
+    layer,
+    minZoom,
+    type: 1,
+    parts: [Float64Array.of(x, y)],
+    props,
+    bbox: { x0: x, y0: y, x1: x, y1: y },
+    sortKey: 0,
+  };
 }
 
 function boundsOf(parts: Float64Array[]): Rect {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
   for (const p of parts) {
     const b = ringBounds(p);
     if (b.x0 < x0) x0 = b.x0;
