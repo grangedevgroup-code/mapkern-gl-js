@@ -36,6 +36,6 @@ export type {
 } from "./ui/controls.ts";
 export { AttributionControl, NavigationControl, ScaleControl } from "./ui/controls.ts";
 
-export const version: string = typeof MAPLET_VERSION === "string" ? MAPLET_VERSION : "0.0.0-dev";
-
 declare const MAPLET_VERSION: string | undefined;
+
+export const version: string = typeof MAPLET_VERSION === "string" ? MAPLET_VERSION : "0.0.0-dev";
