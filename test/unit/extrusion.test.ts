@@ -28,7 +28,8 @@ function vertices(builder: ExtrusionBuilder): Vertex[] {
   return out;
 }
 
-const square = (x0: number, y0: number, x1: number, y1: number) => Int32Array.of(x0, y0, x1, y0, x1, y1, x0, y1, x0, y0);
+const square = (x0: number, y0: number, x1: number, y1: number) =>
+  Int32Array.of(x0, y0, x1, y0, x1, y1, x0, y1, x0, y0);
 const reversed = (ring: Int32Array) => {
   const out = new Int32Array(ring.length);
   for (let i = 0, j = ring.length - 2; i < ring.length; i += 2, j -= 2) {
