@@ -10,6 +10,7 @@ export interface PackedFeatures {
   count: number;
   ids: Float64Array;
   types: Uint8Array;
+  sources: Uint32Array;
   columns: PackedColumn[];
 }
 
@@ -17,6 +18,7 @@ export class FeatureTableBuilder {
   private readonly keys: readonly string[];
   private ids: number[] = [];
   private types: number[] = [];
+  private sources: number[] = [];
   private readonly dicts: Map<string, number>[];
   private readonly values: PropertyValue[][];
   private readonly indexes: number[][];
@@ -28,10 +30,11 @@ export class FeatureTableBuilder {
     this.indexes = keys.map(() => []);
   }
 
-  add(feature: VectorFeature): number {
+  add(feature: VectorFeature, source: number): number {
     const i = this.ids.length;
     this.ids.push(feature.id ?? Number.NaN);
     this.types.push(feature.type);
+    this.sources.push(source);
     if (this.keys.length > 0) {
       const props = feature.properties();
       for (let k = 0; k < this.keys.length; k++) {
@@ -62,13 +65,14 @@ export class FeatureTableBuilder {
       count: this.ids.length,
       ids: Float64Array.from(this.ids),
       types: Uint8Array.from(this.types),
+      sources: Uint32Array.from(this.sources),
       columns: this.keys.map((key, k) => ({ key, dict: this.values[k]!, index: Uint32Array.from(this.indexes[k]!) })),
     };
   }
 }
 
 export function featureTransfers(p: PackedFeatures, out: Transferable[]): void {
-  out.push(p.ids.buffer, p.types.buffer);
+  out.push(p.ids.buffer, p.types.buffer, p.sources.buffer);
   for (const c of p.columns) out.push(c.index.buffer);
 }
 
@@ -94,6 +98,10 @@ export class FeatureTable {
     return (this.packed.types[i] ?? 0) as FeatureType;
   }
 
+  source(i: number): number {
+    return this.packed.sources[i] ?? 0;
+  }
+
   fill(i: number, target: Record<string, unknown>): Record<string, unknown> {
     for (const c of this.packed.columns) {
       const slot = c.index[i] ?? 0;
@@ -113,7 +121,7 @@ export class FeatureTable {
   }
 
   get bytes(): number {
-    let b = this.packed.ids.byteLength + this.packed.types.byteLength;
+    let b = this.packed.ids.byteLength + this.packed.types.byteLength + this.packed.sources.byteLength;
     for (const c of this.packed.columns) b += c.index.byteLength + c.dict.length * 16;
     return b;
   }
