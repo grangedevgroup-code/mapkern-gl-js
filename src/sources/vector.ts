@@ -45,6 +45,7 @@ export interface VectorBucket {
 
 export interface VectorTile {
   buckets: Map<string, VectorBucket>;
+  raw: ArrayBuffer | null;
   signature: string;
   bytes: number;
   uploaded: boolean;
@@ -139,7 +140,7 @@ export class LayerPrograms {
   }
 }
 
-export function vectorTile(decoded: VectorTileResult, signature: string): VectorTile {
+export function vectorTile(decoded: VectorTileResult, signature: string, raw: ArrayBuffer | null): VectorTile {
   const buckets = new Map<string, VectorBucket>();
   let bytes = 0;
   for (const b of decoded.buckets) {
@@ -156,7 +157,7 @@ export function vectorTile(decoded: VectorTileResult, signature: string): Vector
     });
     bytes += geometryBytes(b.main) + geometryBytes(b.outline) + b.features.ids.byteLength * 4;
   }
-  return { buckets, signature, bytes, uploaded: false, featureCount: decoded.featureCount };
+  return { buckets, raw, signature, bytes: bytes + (raw?.byteLength ?? 0), uploaded: false, featureCount: decoded.featureCount };
 }
 
 export function vectorTileLoader(gl: GL, load: TileLoader<VectorTile>["load"]): TileLoader<VectorTile> {
@@ -185,7 +186,7 @@ export function vectorTileLoader(gl: GL, load: TileLoader<VectorTile>["load"]): 
       data.buckets.clear();
     },
     byteSize: (data) => {
-      let bytes = 0;
+      let bytes = data.raw?.byteLength ?? 0;
       for (const b of data.buckets.values()) {
         bytes += (b.main?.bytes ?? 0) + (b.outline?.bytes ?? 0) + b.paint.bytes + b.features.bytes;
         if (b.cpu) bytes += geometryBytes(b.cpu.main) + geometryBytes(b.cpu.outline);
@@ -292,6 +293,7 @@ export class VectorSource implements MapSource, VectorTileSource {
     if (result.kind === "empty") return null;
     onDecoding();
     const { programs, signature } = this.layers;
+    const raw = result.data.slice(0);
     const request: VectorTileRequest = {
       bytes: result.data,
       z: tile.z,
@@ -304,7 +306,7 @@ export class VectorSource implements MapSource, VectorTileSource {
     const decoded = await ctx
       .workers()
       .send<VectorTileResult>("vector", request, [result.data], signal, tile.x + tile.y);
-    return vectorTile(decoded, signature);
+    return vectorTile(decoded, signature, raw);
   }
 }
 
