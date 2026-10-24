@@ -67,7 +67,13 @@ export function compile<T>(value: unknown, kind: OutputKind, fallback: T, path =
   const constant = !node.zoom && !node.feature;
   if (constant) {
     const v = evaluate({ zoom: 0 });
-    return { evaluate: () => v, zoomDependent: false, featureDependent: false, constant: true, properties: scope.properties };
+    return {
+      evaluate: () => v,
+      zoomDependent: false,
+      featureDependent: false,
+      constant: true,
+      properties: scope.properties,
+    };
   }
   return {
     evaluate,
@@ -102,13 +108,62 @@ function coercer(kind: OutputKind): (v: unknown) => unknown {
 }
 
 const OPS = new Set([
-  "literal", "get", "has", "id", "geometry-type", "zoom", "properties",
-  "==", "!=", "<", "<=", ">", ">=", "all", "any", "!", "none", "in",
-  "match", "case", "coalesce", "interpolate", "step",
-  "+", "-", "*", "/", "%", "^", "abs", "min", "max", "round", "floor", "ceil", "sqrt", "ln", "log10", "log2",
-  "sin", "cos", "tan", "pi", "e",
-  "concat", "upcase", "downcase", "length", "slice", "to-string", "to-number", "to-boolean", "to-color",
-  "rgb", "rgba", "typeof",
+  "literal",
+  "get",
+  "has",
+  "id",
+  "geometry-type",
+  "zoom",
+  "properties",
+  "==",
+  "!=",
+  "<",
+  "<=",
+  ">",
+  ">=",
+  "all",
+  "any",
+  "!",
+  "none",
+  "in",
+  "match",
+  "case",
+  "coalesce",
+  "interpolate",
+  "step",
+  "+",
+  "-",
+  "*",
+  "/",
+  "%",
+  "^",
+  "abs",
+  "min",
+  "max",
+  "round",
+  "floor",
+  "ceil",
+  "sqrt",
+  "ln",
+  "log10",
+  "log2",
+  "sin",
+  "cos",
+  "tan",
+  "pi",
+  "e",
+  "concat",
+  "upcase",
+  "downcase",
+  "length",
+  "slice",
+  "to-string",
+  "to-number",
+  "to-boolean",
+  "to-color",
+  "rgb",
+  "rgba",
+  "typeof",
 ]);
 
 function constant(v: unknown): Node {
@@ -536,7 +591,9 @@ function buildInterpolate(
   }
   const type = args[0];
   if (!Array.isArray(type) || typeof type[0] !== "string") {
-    throw new ExpressionError(`${scope.path}: "interpolate" type must be ["linear"], ["exponential", base] or ["cubic-bezier", x1, y1, x2, y2]`);
+    throw new ExpressionError(
+      `${scope.path}: "interpolate" type must be ["linear"], ["exponential", base] or ["cubic-bezier", x1, y1, x2, y2]`,
+    );
   }
   let curve: (t: number, lo: number, hi: number, x: number) => number;
   if (type[0] === "linear") {
