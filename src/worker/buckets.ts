@@ -122,6 +122,11 @@ export class LineBuilder {
   readonly indices = new IndexBuilder();
   vertexCount = 0;
   private readonly options: LineOptions;
+  private pts = new Float64Array(512);
+  private dirs = new Float64Array(512);
+  private lens = new Float64Array(256);
+  private pairLeft = -1;
+  private pairRight = -1;
 
   constructor(options: LineOptions) {
     this.options = options;
