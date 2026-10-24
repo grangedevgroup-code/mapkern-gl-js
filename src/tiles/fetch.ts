@@ -35,7 +35,10 @@ export async function fetchBytes(
   params: RequestParameters,
   signal: AbortSignal,
   timeoutMs: number,
+  kind: ResourceKind = "tile",
 ): Promise<FetchResult> {
+  const handler = protocolFor(params.url);
+  if (handler) return fetchWithProtocol(handler, { ...params, kind }, signal);
   const timeout = new AbortController();
   const onAbort = () => timeout.abort(signal.reason);
   if (signal.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
