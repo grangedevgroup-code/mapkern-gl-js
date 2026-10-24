@@ -19,8 +19,16 @@ export interface InputHost {
   interrupt(): void;
   changed(): void;
   gesture(active: boolean): void;
-  ease(target: { zoom?: number; bearing?: number; pitch?: number; panBy?: [number, number] }, around: [number, number] | null, duration: number): void;
-  pointerEvent(type: "click" | "dblclick" | "contextmenu" | "mousemove" | "mousedown" | "mouseup" | "mouseout", event: MouseEvent, point: [number, number]): void;
+  ease(
+    target: { zoom?: number; bearing?: number; pitch?: number; panBy?: [number, number] },
+    around: [number, number] | null,
+    duration: number,
+  ): void;
+  pointerEvent(
+    type: "click" | "dblclick" | "contextmenu" | "mousemove" | "mousedown" | "mouseup" | "mouseout",
+    event: MouseEvent,
+    point: [number, number],
+  ): void;
 }
 
 interface Pointer {
@@ -38,7 +46,17 @@ type Mode =
   | { kind: "press"; pointer: number; rotate: boolean }
   | { kind: "pan"; pointer: number; anchor: [number, number] }
   | { kind: "rotate"; pointer: number; lastX: number; lastY: number; moved: boolean }
-  | { kind: "touch2"; ids: [number, number]; start: TwoFinger; zoom0: number; bearing0: number; pitch0: number; anchor: [number, number] | null; sub: "undecided" | "pinch" | "pitch"; rotating: boolean };
+  | {
+      kind: "touch2";
+      ids: [number, number];
+      start: TwoFinger;
+      zoom0: number;
+      bearing0: number;
+      pitch0: number;
+      anchor: [number, number] | null;
+      sub: "undecided" | "pinch" | "pitch";
+      rotating: boolean;
+    };
 
 interface TwoFinger {
   dist: number;
@@ -94,7 +112,9 @@ export class InputHandlers {
     this.listen(el, "dblclick", (e) => this.onDoubleClick(e as MouseEvent));
     this.listen(el, "contextmenu", (e) => this.onContextMenu(e as MouseEvent));
     this.listen(el, "keydown", (e) => this.onKeyDown(e as KeyboardEvent));
-    this.listen(el, "mouseout", (e) => this.host.pointerEvent("mouseout", e as MouseEvent, this.point(e as MouseEvent)));
+    this.listen(el, "mouseout", (e) =>
+      this.host.pointerEvent("mouseout", e as MouseEvent, this.point(e as MouseEvent)),
+    );
     this.listen(window, "blur", () => this.cancel());
   }
 
@@ -176,7 +196,15 @@ export class InputHandlers {
     if (e.pointerType === "mouse" && e.button !== 0 && e.button !== 2) return;
     this.host.interrupt();
     this.stopMomentum();
-    const pointer: Pointer = { id: e.pointerId, type: e.pointerType, x, y, startX: x, startY: y, startTime: e.timeStamp };
+    const pointer: Pointer = {
+      id: e.pointerId,
+      type: e.pointerType,
+      x,
+      y,
+      startX: x,
+      startY: y,
+      startTime: e.timeStamp,
+    };
     this.pointers.set(e.pointerId, pointer);
     try {
       this.host.element.setPointerCapture(e.pointerId);
@@ -211,7 +239,13 @@ export class InputHandlers {
       if (Math.hypot(x - pointer.startX, y - pointer.startY) < CLICK_TOLERANCE) return;
       if (mode.rotate) {
         if (!this.options.dragRotate) return;
-        this.mode = { kind: "rotate", pointer: e.pointerId, lastX: pointer.startX, lastY: pointer.startY, moved: false };
+        this.mode = {
+          kind: "rotate",
+          pointer: e.pointerId,
+          lastX: pointer.startX,
+          lastY: pointer.startY,
+          moved: false,
+        };
         this.host.gesture(true);
       } else {
         if (!this.options.dragPan) return;
@@ -359,9 +393,20 @@ export class InputHandlers {
       const d1 = now.y1 - s.y1;
       const scaleChange = Math.abs(Math.log(now.dist / s.dist));
       const flat = Math.abs(Math.sin(s.angle)) < 0.5;
-      if (this.options.touchPitch && flat && Math.sign(d0) === Math.sign(d1) && Math.abs(d0) > 8 && Math.abs(d1) > 8 && scaleChange < 0.08) {
+      if (
+        this.options.touchPitch &&
+        flat &&
+        Math.sign(d0) === Math.sign(d1) &&
+        Math.abs(d0) > 8 &&
+        Math.abs(d1) > 8 &&
+        scaleChange < 0.08
+      ) {
         mode.sub = "pitch";
-      } else if (scaleChange > 0.04 || Math.hypot(now.midX - s.midX, now.midY - s.midY) > 6 || Math.abs(angleDelta(now.angle, s.angle)) > 0.1) {
+      } else if (
+        scaleChange > 0.04 ||
+        Math.hypot(now.midX - s.midX, now.midY - s.midY) > 6 ||
+        Math.abs(angleDelta(now.angle, s.angle)) > 0.1
+      ) {
         mode.sub = "pinch";
       } else {
         return;
@@ -433,7 +478,12 @@ export class InputHandlers {
     const point = this.point(e);
     const now = performance.now();
     if (!this.wheel) {
-      this.wheel = { target: transform.zoom, anchorScreen: point, anchorWorld: transform.unproject(point[0], point[1]), last: now };
+      this.wheel = {
+        target: transform.zoom,
+        anchorScreen: point,
+        anchorWorld: transform.unproject(point[0], point[1]),
+        last: now,
+      };
       this.host.gesture(true);
     } else if (Math.hypot(point[0] - this.wheel.anchorScreen[0], point[1] - this.wheel.anchorScreen[1]) > 2) {
       this.wheel.anchorScreen = point;
