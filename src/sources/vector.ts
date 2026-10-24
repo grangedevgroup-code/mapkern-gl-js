@@ -152,7 +152,7 @@ export class VectorSource implements MapSource {
       this.ctx.scheduler,
       {
         fadeDuration: 0,
-        backstopLevels: 2,
+        backstopLevels: [2, 4],
         maxRetries: 3,
         cacheBytes: this.ctx.cacheBytes,
         failureCooldownMs: 120000,
