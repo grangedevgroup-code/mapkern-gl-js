@@ -1,0 +1,12 @@
+node_modules/
+/dist/
+/data/
+/out/
+/test/browser/output/
+/benchmarks/reports/local/
+*.log
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
