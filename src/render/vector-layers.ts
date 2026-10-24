@@ -58,6 +58,7 @@ export class VectorPainter {
   private prepare(program: Program, layer: StyleLayer, zoom: number, paint: PaintUniform[]): void {
     const gl = this.gl.gl;
     const ctx = { zoom };
+    this.boundStride = -1;
     for (const p of paint) {
       const loc = program.uniforms.get(p.uniform) ?? null;
       const value = layer.paintValue<unknown>(p.name, ctx);
