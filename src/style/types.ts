@@ -26,10 +26,12 @@ export interface VectorSourceSpec extends TileSourceBase {
   promoteId?: string;
 }
 
+export type DemEncoding = "terrarium" | "mapbox" | { red: number; green: number; blue: number; offset: number };
+
 export interface DemSourceSpec extends TileSourceBase {
   type: "dem";
   tileSize?: number;
-  encoding?: "terrarium" | "mapbox";
+  encoding?: DemEncoding;
 }
 
 export type GeoJSONData = GeoJSON | string | Blob;
@@ -168,6 +170,7 @@ export interface HillshadeLayerSpec extends LayerBase {
     highlightColor?: Value<Color>;
     accentColor?: Value<Color>;
     illuminationDirection?: number;
+    illuminationAnchor?: "viewport" | "map";
   };
 }
 
