@@ -469,11 +469,11 @@ export class InputHandlers {
         break;
       case "+":
       case "=":
-        this.host.ease({ zoom: Math.round(transform.zoom) + (e.shiftKey && e.key === "=" ? 1 : 1) }, null, duration);
+        this.host.ease({ zoom: transform.zoom + 1 }, null, duration);
         break;
       case "-":
       case "_":
-        this.host.ease({ zoom: Math.round(transform.zoom) - 1 }, null, duration);
+        this.host.ease({ zoom: transform.zoom - 1 }, null, duration);
         break;
       default:
         handled = false;
