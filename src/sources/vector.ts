@@ -303,6 +303,7 @@ export class VectorSource implements MapSource, VectorTileSource {
       y: tile.y,
       layers: programs,
       overzoom: tile.z >= set.maxZoom,
+      promoteId: this.spec.promoteId ?? null,
     };
     const decoded = await ctx
       .workers()
