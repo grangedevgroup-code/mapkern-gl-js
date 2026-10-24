@@ -57,7 +57,13 @@ export class WorkerPool {
     for (const worker of this.workers) worker?.postMessage(message);
   }
 
-  send<T>(type: string, payload: unknown, transfer: Transferable[] = [], signal?: AbortSignal, affinity?: number): Promise<T> {
+  send<T>(
+    type: string,
+    payload: unknown,
+    transfer: Transferable[] = [],
+    signal?: AbortSignal,
+    affinity?: number,
+  ): Promise<T> {
     if (this.destroyed) return Promise.reject(new MapletError("worker", "The worker pool has been destroyed"));
     if (!this.factory) return Promise.reject(new MapletError("worker", "Web Workers are not available"));
     if (signal?.aborted) return Promise.reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
