@@ -368,6 +368,97 @@ export class LineBuilder {
   }
 }
 
+export const EXTRUSION_STRIDE = 12;
+
+export class ExtrusionBuilder {
+  readonly vertices = new Growable(8192);
+  readonly indices = new IndexBuilder();
+  vertexCount = 0;
+  private readonly extent: number;
+  private readonly coords: number[] = [];
+  private readonly holes: number[] = [];
+  private readonly tris: number[] = [];
+
+  constructor(extent: number) {
+    this.extent = extent;
+  }
+
+  addPolygon(rings: Int32Array[], feature: number): void {
+    if (rings.length === 0) return;
+    const outward = ringArea(rings[0]!) >= 0 ? 1 : -1;
+    const coords = this.coords;
+    const holes = this.holes;
+    coords.length = 0;
+    holes.length = 0;
+    for (let r = 0; r < rings.length; r++) {
+      const ring = rings[r]!;
+      let n = ring.length / 2;
+      if (n > 1 && ring[0] === ring[ring.length - 2] && ring[1] === ring[ring.length - 1]) n--;
+      if (n < 3) {
+        if (r === 0) return;
+        continue;
+      }
+      if (r > 0) holes.push(coords.length / 2);
+      for (let i = 0; i < n; i++) coords.push(ring[i * 2]!, ring[i * 2 + 1]!);
+      this.addWalls(ring, n, outward, feature);
+    }
+    const base = this.vertexCount;
+    const count = coords.length / 2;
+    for (let i = 0; i < count; i++) this.vertex(coords[i * 2]!, coords[i * 2 + 1]!, 0, 0, 127, true, feature);
+    const tris = this.tris;
+    tris.length = 0;
+    triangulate(coords, holes, tris);
+    for (let t = 0; t < tris.length; t += 3) this.indices.push(base + tris[t]!, base + tris[t + 1]!, base + tris[t + 2]!);
+  }
+
+  private addWalls(ring: Int32Array, n: number, outward: number, feature: number): void {
+    const e = this.extent;
+    for (let i = 0; i < n; i++) {
+      const ax = ring[i * 2]!;
+      const ay = ring[i * 2 + 1]!;
+      const j = (i + 1) % n;
+      const bx = ring[j * 2]!;
+      const by = ring[j * 2 + 1]!;
+      if ((ax < 0 && bx < 0) || (ax > e && bx > e) || (ay < 0 && by < 0) || (ay > e && by > e)) continue;
+      const dx = bx - ax;
+      const dy = by - ay;
+      const len = Math.hypot(dx, dy);
+      if (len === 0) continue;
+      const nx = Math.round(((dy / len) * outward) * 127);
+      const ny = Math.round(((-dx / len) * outward) * 127);
+      const v = this.vertexCount;
+      this.vertex(ax, ay, nx, ny, 0, false, feature);
+      this.vertex(ax, ay, nx, ny, 0, true, feature);
+      this.vertex(bx, by, nx, ny, 0, false, feature);
+      this.vertex(bx, by, nx, ny, 0, true, feature);
+      this.indices.push(v, v + 2, v + 1);
+      this.indices.push(v + 1, v + 2, v + 3);
+    }
+  }
+
+  private vertex(x: number, y: number, nx: number, ny: number, nz: number, top: boolean, feature: number): void {
+    this.vertices.reserve(EXTRUSION_STRIDE);
+    const v = this.vertices.view;
+    const o = this.vertices.length;
+    v.setInt16(o, clamp16(x), true);
+    v.setInt16(o + 2, clamp16(y), true);
+    v.setInt8(o + 4, nx);
+    v.setInt8(o + 5, ny);
+    v.setInt8(o + 6, nz);
+    v.setInt8(o + 7, top ? 127 : 0);
+    v.setUint32(o + 8, feature, true);
+    this.vertices.length = o + EXTRUSION_STRIDE;
+    this.vertexCount++;
+  }
+}
+
+function ringArea(ring: Int32Array): number {
+  let sum = 0;
+  const n = ring.length;
+  for (let i = 0, j = n - 2; i < n; j = i, i += 2) sum += (ring[j]! - ring[i]!) * (ring[i + 1]! + ring[j + 1]!);
+  return sum / 2;
+}
+
 export class CircleBuilder {
   readonly vertices = new Growable(2048);
   readonly indices = new IndexBuilder();
