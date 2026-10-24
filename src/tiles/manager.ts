@@ -470,7 +470,7 @@ export class TileManager<D> {
       this.events.failure(failure, tile);
     } finally {
       if (tile.controller === controller) tile.controller = null;
-      if (this.jobs.get(tile.key)?.job) this.jobs.delete(tile.key);
+      this.release(tile, handle);
       if (!this.destroyed) this.events.changed();
     }
   }
