@@ -1,3 +1,5 @@
+import type { GeoJSON } from "../geo/geojson.ts";
+
 export type Expression = readonly [string, ...unknown[]];
 export type Value<T> = T | Expression;
 
@@ -31,7 +33,7 @@ export interface DemSourceSpec extends TileSourceBase {
 
 export interface GeoJSONSourceSpec {
   type: "geojson";
-  data: GeoJSON.GeoJSON | string;
+  data: GeoJSON | string;
   maxZoom?: number;
   tolerance?: number;
   buffer?: number;
