@@ -681,6 +681,19 @@ function classifyArea(tags: Tags, out: Classified[]): void {
   }
 }
 
+const DETAIL_KEYS = new Set(["oneway", "surface", "layer"]);
+const NAME_KEYS = new Set(["name", "name_en"]);
+
+export function propsAtZoom(layer: string, props: Props, z: number): Props {
+  if ((layer !== "road" && layer !== "railway") || z >= 13) return props;
+  const out: Props = {};
+  for (const key in props) {
+    if (DETAIL_KEYS.has(key) || (z < 12 && NAME_KEYS.has(key))) continue;
+    out[key] = props[key]!;
+  }
+  return out;
+}
+
 export function boundaryLevel(tags: Tags): number | null {
   if (tags.boundary !== "administrative") return null;
   const level = Number(tags.admin_level);
