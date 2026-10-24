@@ -74,6 +74,19 @@ export function layerProgram(layer: StyleLayer): LayerProgram | null {
     layout.join = layer.fixed<string>("join");
     layout.miterLimit = layer.fixed<number>("miterLimit");
   }
+  if (type === "symbol") {
+    const raw = (layer.spec as { layout?: Record<string, unknown> }).layout ?? {};
+    layout.text = raw.text ?? "";
+    layout.size = raw.size ?? 14;
+    layout.priority = raw.priority ?? 0;
+    layout.placement = layer.fixed<string>("placement");
+    layout.spacing = layer.fixed<number>("spacing");
+    layout.transform = layer.fixed<string>("transform");
+    for (const name of ["text", "size", "priority"]) {
+      const c = layer.layoutProperty<unknown>(name);
+      if (c.featureDependent) for (const k of c.properties) keys.add(k);
+    }
+  }
   const spec = layer.spec as { filter?: unknown; sortKey?: unknown };
   return {
     id: layer.id,
