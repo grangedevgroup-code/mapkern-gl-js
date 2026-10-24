@@ -1,5 +1,12 @@
 import { MapletError } from "../core/errors.ts";
-import { clampLatitude, EARTH_CIRCUMFERENCE, mercatorX, mercatorY } from "../geo/mercator.ts";
+import {
+  clampLatitude,
+  EARTH_CIRCUMFERENCE,
+  latFromMercatorY,
+  lngFromMercatorX,
+  mercatorX,
+  mercatorY,
+} from "../geo/mercator.ts";
 import type { Rect } from "../geo/tile.ts";
 import { MAX_TILE_ZOOM, quadkey, tmsY } from "../geo/tile.ts";
 import type { TileSourceBase } from "../style/types.ts";
@@ -128,6 +135,12 @@ function absolutize(url: string, base: string | undefined): string {
   } catch {
     return url;
   }
+}
+
+export function lngLatBounds(set: TileSet | null): [number, number, number, number] | null {
+  const b = set?.bounds;
+  if (!b) return null;
+  return [lngFromMercatorX(b.x0), latFromMercatorY(b.y1), lngFromMercatorX(b.x1), latFromMercatorY(b.y0)];
 }
 
 export function boundsRect(value: unknown): Rect | null {
