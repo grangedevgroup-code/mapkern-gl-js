@@ -29,6 +29,11 @@ interface Laid {
   offsetY: number;
 }
 
+export interface LabelTerrain {
+  height(x: number, y: number): number;
+  hidden(x: number, y: number, z: number): boolean;
+}
+
 interface Label {
   key: string;
   dedupe: string;
@@ -37,7 +42,9 @@ interface Label {
   line: boolean;
   wx: number;
   wy: number;
+  wz: number;
   path: Float64Array | null;
+  heights: Float64Array | null;
   anchorDist: number;
   laid: Laid;
   scale: number;
@@ -154,6 +161,7 @@ export class LabelRenderer {
     now: number,
     cameraVersion: number,
     pixelRatio: number,
+    terrain: LabelTerrain | null = null,
   ): boolean {
     const parts: string[] = [];
     for (const { layer, manager } of inputs) {
@@ -167,7 +175,7 @@ export class LabelRenderer {
     const structureChanged = structure !== this.placedStructure;
     const cameraChanged = cameraVersion !== this.placedCamera;
     if (structureChanged || this.pendingGlyphs || (cameraChanged && now - this.lastPlacement >= PLACE_INTERVAL)) {
-      this.place(transform, inputs, now);
+      this.place(transform, inputs, now, terrain);
       this.placedStructure = structure;
       this.placedCamera = cameraVersion;
       this.lastPlacement = now;
@@ -365,7 +373,12 @@ export class LabelRenderer {
     return { glyphs, width, height, offsetX, offsetY };
   }
 
-  private place(transform: Transform, inputs: readonly SymbolLayerInput[], now: number): void {
+  private place(
+    transform: Transform,
+    inputs: readonly SymbolLayerInput[],
+    now: number,
+    terrain: LabelTerrain | null,
+  ): void {
     const grid = new CollisionGrid(transform.width, transform.height);
     const placed = new Map<string, [number, number][]>();
     const visible = new Set<string>();
@@ -423,11 +436,13 @@ export class LabelRenderer {
           if (tx < clip.x0 || tx >= clip.x1 || ty < clip.y0 || ty >= clip.y1) continue;
           const wx = piece.wrap + (tile.x + tx) / n;
           const wy = (tile.y + ty) / n;
-          const p = transform.project(wx, wy);
+          const wz = terrain ? terrain.height(wx, wy) : 0;
+          const p = transform.project(wx, wy, wz * ws);
           const depth = p.w / transform.cameraToCenterDistance;
           if (p.w <= 0 || depth > 2.2) continue;
           if (p.x < -margin || p.y < -margin || p.x > transform.width + margin || p.y > transform.height + margin)
             continue;
+          if (terrain?.hidden(wx, wy, wz)) continue;
           const laid = this.layout(layer, text, isLine, budget);
           if (!laid) continue;
           if (!featureReady) {
@@ -446,6 +461,7 @@ export class LabelRenderer {
           const prior = placed.get(dedupeKey);
           if (prior?.some(([x, y]) => Math.hypot(x - p.x, y - p.y) < minDist)) continue;
           let path: Float64Array | null = null;
+          let heights: Float64Array | null = null;
           let boxes: number[];
           if (isLine && pathData.length >= 4) {
             path = new Float64Array(pathData.length);
@@ -453,7 +469,11 @@ export class LabelRenderer {
               path[k] = piece.wrap + (tile.x + pathData[k]! / extent) / n;
               path[k + 1] = (tile.y + pathData[k + 1]! / extent) / n;
             }
-            const quads = layoutAlongPath(transform, path, anchors[a + 2]! / extent / n, laid, scale);
+            if (terrain) {
+              heights = new Float64Array(path.length / 2);
+              for (let k = 0; k < heights.length; k++) heights[k] = terrain.height(path[k * 2]!, path[k * 2 + 1]!);
+            }
+            const quads = layoutAlongPath(transform, path, anchors[a + 2]! / extent / n, laid, scale, heights);
             if (!quads) continue;
             boxes = [];
             for (const q of quads) {
@@ -488,7 +508,9 @@ export class LabelRenderer {
           if (existing) {
             existing.wx = wx;
             existing.wy = wy;
+            existing.wz = wz;
             existing.path = path;
+            existing.heights = heights;
             existing.anchorDist = anchors[a + 2]! / extent / n;
             existing.laid = laid;
             existing.scale = scale;
@@ -511,7 +533,9 @@ export class LabelRenderer {
               line: isLine,
               wx,
               wy,
+              wz,
               path,
+              heights,
               anchorDist: anchors[a + 2]! / extent / n,
               laid,
               scale,
@@ -574,7 +598,7 @@ export class LabelRenderer {
       if (label.opacity <= 0) continue;
       const s = label.scale;
       if (label.line && label.path) {
-        const quads = layoutAlongPath(transform, label.path, label.anchorDist, label.laid, s);
+        const quads = layoutAlongPath(transform, label.path, label.anchorDist, label.laid, s, label.heights);
         if (!quads) continue;
         visible++;
         for (const q of quads) {
@@ -596,7 +620,7 @@ export class LabelRenderer {
         }
         continue;
       }
-      const p = transform.project(label.wx, label.wy);
+      const p = transform.project(label.wx, label.wy, label.wz * transform.worldSize);
       if (p.w <= 0) continue;
       visible++;
       const ax = Math.round((p.x + label.laid.offsetX * s) * pixelRatio) / pixelRatio;
@@ -677,6 +701,7 @@ function layoutAlongPath(
   anchorDist: number,
   laid: Laid,
   scale: number,
+  heights: Float64Array | null,
 ): PathGlyph[] | null {
   const n = path.length / 2;
   if (n < 2) return null;
@@ -693,8 +718,9 @@ function layoutAlongPath(
     target -= len;
   }
   const screen: number[] = [];
+  const ws = transform.worldSize;
   for (let i = 0; i < n; i++) {
-    const p = transform.project(path[i * 2]!, path[i * 2 + 1]!);
+    const p = transform.project(path[i * 2]!, path[i * 2 + 1]!, (heights?.[i] ?? 0) * ws);
     if (p.w <= 0) return null;
     screen.push(p.x, p.y);
   }
