@@ -11,10 +11,11 @@ export interface PointRecord {
   tags: Tags;
 }
 
-export interface WayRecord {
-  id: number;
+export interface WayBatch {
+  ids: Float64Array;
+  offsets: Uint32Array;
   refs: Float64Array;
-  tags: Tags | null;
+  tags: (Tags | null)[];
 }
 
 export interface RelationRecord {
@@ -25,26 +26,33 @@ export interface RelationRecord {
 
 export type Task =
   | { kind: "nodes"; index: number; blob: BlobRef; bbox: [number, number, number, number] }
-  | { kind: "relations"; index: number; blob: BlobRef }
-  | { kind: "ways"; index: number; blob: BlobRef }
+  | { kind: "ways"; index: number; blob: BlobRef; extra?: boolean }
   | { kind: "missing"; index: number; blob: BlobRef };
 
-export type Result =
-  | { kind: "nodes"; index: number; kinds: BlockKinds; ids: Float64Array; lon: Int32Array; lat: Int32Array; points: PointRecord[]; maxId: number }
-  | { kind: "relations"; index: number; kinds: BlockKinds; relations: RelationRecord[] }
-  | { kind: "ways"; index: number; kinds: BlockKinds; ways: WayRecord[] }
-  | { kind: "missing"; index: number; kinds: BlockKinds; ids: Float64Array; lon: Int32Array; lat: Int32Array }
-  | { kind: "error"; index: number; message: string };
-
-interface Shared {
-  path: string;
+export interface ShareMessage {
+  kind: "share";
   regionNodes: SharedArrayBuffer | null;
   memberWays: SharedArrayBuffer | null;
   missingNodes: SharedArrayBuffer | null;
 }
 
-const shared = workerData as Shared;
-const fd = openSync(shared.path, "r");
+export type Result =
+  | {
+      kind: "nodes";
+      index: number;
+      kinds: BlockKinds;
+      ids: Float64Array;
+      lon: Int32Array;
+      lat: Int32Array;
+      points: PointRecord[];
+      relations: RelationRecord[];
+      maxId: number;
+    }
+  | { kind: "ways"; index: number; kinds: BlockKinds; ways: WayBatch }
+  | { kind: "missing"; index: number; kinds: BlockKinds; ids: Float64Array; lon: Int32Array; lat: Int32Array }
+  | { kind: "error"; index: number; message: string };
+
+const fd = openSync((workerData as { path: string }).path, "r");
 let region: Uint8Array | null = null;
 let members: Uint8Array | null = null;
 let missing: Uint8Array | null = null;
@@ -91,8 +99,17 @@ function run(task: Task): Result {
       const [minLon, minLat, maxLon, maxLat] = task.bbox;
       const grow = new Grow();
       const points: PointRecord[] = [];
+      const relations: RelationRecord[] = [];
       let maxId = 0;
       const kinds = visitBlock(data, {
+        relations: {
+          relation(id, m, tags) {
+            if (!isRelevantRelation(tags)) return;
+            const kept = keepTags(tags);
+            if (!kept) return;
+            relations.push({ id, tags: kept, members: m.filter((x) => x.type === 1) });
+          },
+        },
         nodes: {
           wantTags: true,
           node(id, lon, lat, tags) {
@@ -106,48 +123,56 @@ function run(task: Task): Result {
           },
         },
       });
-      return { kind: "nodes", index: task.index, kinds, ...grow.done(), points, maxId };
-    }
-    case "relations": {
-      const relations: RelationRecord[] = [];
-      const kinds = visitBlock(data, {
-        relations: {
-          relation(id, m, tags) {
-            if (!isRelevantRelation(tags)) return;
-            const kept = keepTags(tags);
-            if (!kept) return;
-            relations.push({ id, tags: kept, members: m.filter((x) => x.type === 1) });
-          },
-        },
-      });
-      return { kind: "relations", index: task.index, kinds, relations };
+      return { kind: "nodes", index: task.index, kinds, ...grow.done(), points, relations, maxId };
     }
     case "ways": {
-      region ??= shared.regionNodes ? new Uint8Array(shared.regionNodes) : null;
-      members ??= shared.memberWays ? new Uint8Array(shared.memberWays) : null;
-      const ways: WayRecord[] = [];
+      const ids: number[] = [];
+      const offsets: number[] = [0];
+      const tagList: (Tags | null)[] = [];
+      let refBuf = new Float64Array(4096);
+      let refCount = 0;
       const kinds = visitBlock(data, {
         ways: {
           way(id, refs, tags) {
-            const member = has(members, id);
-            const relevant = isRelevantWay(tags);
-            if (!member && !relevant) return;
-            let inside = false;
-            for (let i = 0; i < refs.length; i++) {
-              if (has(region, refs[i]!)) {
-                inside = true;
-                break;
+            if (task.extra) {
+              if (!has(members, id)) return;
+            } else {
+              const member = has(members, id);
+              const relevant = isRelevantWay(tags);
+              if (!member && !relevant) return;
+              let inside = false;
+              for (let i = 0; i < refs.length; i++) {
+                if (has(region, refs[i]!)) {
+                  inside = true;
+                  break;
+                }
               }
+              if (!inside) return;
             }
-            if (!inside) return;
-            ways.push({ id, refs, tags: relevant ? keepTags(tags) : null });
+            if (refCount + refs.length > refBuf.length) {
+              let size = refBuf.length * 2;
+              while (size < refCount + refs.length) size *= 2;
+              const next = new Float64Array(size);
+              next.set(refBuf.subarray(0, refCount));
+              refBuf = next;
+            }
+            refBuf.set(refs, refCount);
+            refCount += refs.length;
+            ids.push(id);
+            offsets.push(refCount);
+            tagList.push(keepTags(tags));
           },
         },
       });
+      const ways: WayBatch = {
+        ids: Float64Array.from(ids),
+        offsets: Uint32Array.from(offsets),
+        refs: refBuf.slice(0, refCount),
+        tags: tagList,
+      };
       return { kind: "ways", index: task.index, kinds, ways };
     }
     case "missing": {
-      missing ??= shared.missingNodes ? new Uint8Array(shared.missingNodes) : null;
       const grow = new Grow();
       const kinds = visitBlock(data, {
         nodes: {
@@ -162,20 +187,36 @@ function run(task: Task): Result {
   }
 }
 
-parentPort?.on("message", (task: Task | { kind: "close" }) => {
+parentPort?.on("message", (task: Task | ShareMessage | { kind: "close" }) => {
   if (task.kind === "close") {
     closeSync(fd);
     parentPort?.close();
+    return;
+  }
+  if (task.kind === "share") {
+    region = task.regionNodes ? new Uint8Array(task.regionNodes) : null;
+    members = task.memberWays ? new Uint8Array(task.memberWays) : null;
+    missing = task.missingNodes ? new Uint8Array(task.missingNodes) : null;
     return;
   }
   let result: Result;
   try {
     result = run(task);
   } catch (error) {
-    result = { kind: "error", index: task.index, message: error instanceof Error ? (error.stack ?? error.message) : String(error) };
+    result = {
+      kind: "error",
+      index: task.index,
+      message: error instanceof Error ? (error.stack ?? error.message) : String(error),
+    };
   }
   const transfer: ArrayBuffer[] = [];
-  if (result.kind === "nodes" || result.kind === "missing") transfer.push(result.ids.buffer as ArrayBuffer, result.lon.buffer as ArrayBuffer, result.lat.buffer as ArrayBuffer);
-  if (result.kind === "ways") for (const w of result.ways) transfer.push(w.refs.buffer as ArrayBuffer);
+  if (result.kind === "nodes" || result.kind === "missing")
+    transfer.push(result.ids.buffer as ArrayBuffer, result.lon.buffer as ArrayBuffer, result.lat.buffer as ArrayBuffer);
+  if (result.kind === "ways")
+    transfer.push(
+      result.ways.ids.buffer as ArrayBuffer,
+      result.ways.offsets.buffer as ArrayBuffer,
+      result.ways.refs.buffer as ArrayBuffer,
+    );
   parentPort?.postMessage(result, transfer);
 });
