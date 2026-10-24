@@ -1,9 +1,17 @@
-import * as mat4 from "../geo/mat4.ts";
 import type { Mat4, Vec4 } from "../geo/mat4.ts";
-import { TILE_SIZE, clampLatitude, latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY, worldSize } from "../geo/mercator.ts";
+import * as mat4 from "../geo/mat4.ts";
 import type { LngLat } from "../geo/mercator.ts";
-import { MAX_TILE_ZOOM } from "../geo/tile.ts";
+import {
+  clampLatitude,
+  latFromMercatorY,
+  lngFromMercatorX,
+  mercatorX,
+  mercatorY,
+  TILE_SIZE,
+  worldSize,
+} from "../geo/mercator.ts";
 import type { TileSlot } from "../geo/tile.ts";
+import { MAX_TILE_ZOOM } from "../geo/tile.ts";
 
 export interface CoverOptions {
   tileSize: number;
@@ -23,7 +31,7 @@ export interface Point {
 }
 
 const DEG = Math.PI / 180;
-const DEFAULT_FOV = 2 * Math.atan(0.375) / DEG;
+const DEFAULT_FOV = (2 * Math.atan(0.375)) / DEG;
 const MAX_GROUND_ANGLE = 88 * DEG;
 
 export class Transform {
@@ -75,7 +83,7 @@ export class Transform {
   }
 
   get scale(): number {
-    return Math.pow(2, this.z);
+    return 2 ** this.z;
   }
 
   get worldSize(): number {
@@ -207,15 +215,19 @@ export class Transform {
     mat4.scale(this.unitMatrix, this.pixelMatrix, ws, ws, 1);
     const bearing = this.bearingDeg * DEG;
     const horizontal = d * Math.sin(pitch);
-    this.cameraPos = [this.cx * ws - Math.sin(bearing) * horizontal, this.cy * ws + Math.cos(bearing) * horizontal, camHeight];
+    this.cameraPos = [
+      this.cx * ws - Math.sin(bearing) * horizontal,
+      this.cy * ws + Math.cos(bearing) * horizontal,
+      camHeight,
+    ];
   }
 
   tileMatrix(z: number, x: number, y: number, wrap: number, extent: number, out: Float32Array): Float32Array {
     this.update();
     const ws = this.worldSize;
-    const tileWorld = ws / Math.pow(2, z);
+    const tileWorld = ws / 2 ** z;
     const m = scratchMatrix;
-    mat4.translate(m, this.pixelMatrix, (wrap * Math.pow(2, z) + x) * tileWorld, y * tileWorld, 0);
+    mat4.translate(m, this.pixelMatrix, (wrap * 2 ** z + x) * tileWorld, y * tileWorld, 0);
     mat4.scale(m, m, tileWorld / extent, tileWorld / extent, 1);
     return mat4.toFloat32(m, out);
   }
@@ -240,8 +252,12 @@ export class Transform {
     const inv = this.pixelMatrixInverse;
     const a = mat4.transformVec4([0, 0, 0, 0], inv, nx, ny, -1, 1);
     const b = mat4.transformVec4([0, 0, 0, 0], inv, nx, ny, 1, 1);
-    const ax = a[0] / a[3], ay = a[1] / a[3], az = a[2] / a[3];
-    const bx = b[0] / b[3], by = b[1] / b[3], bz = b[2] / b[3];
+    const ax = a[0] / a[3],
+      ay = a[1] / a[3],
+      az = a[2] / a[3];
+    const bx = b[0] / b[3],
+      by = b[1] / b[3],
+      bz = b[2] / b[3];
     return { origin: [ax, ay, az], dir: [bx - ax, by - ay, bz - az] };
   }
 
@@ -260,7 +276,8 @@ export class Transform {
     const ws = this.worldSize;
     const camHeight = this.cameraPos[2];
     const maxHorizontal = camHeight * Math.tan(MAX_GROUND_ANGLE);
-    const hx = dir[0], hy = dir[1];
+    const hx = dir[0],
+      hy = dir[1];
     const hl = Math.hypot(hx, hy);
     if (dir[2] < -1e-12) {
       const t = -origin[2] / dir[2];
@@ -272,10 +289,7 @@ export class Transform {
       if (dist <= maxHorizontal) return [gx / ws, gy / ws];
     }
     if (hl < 1e-12) return [this.cx, this.cy];
-    return [
-      (this.cameraPos[0] + (hx / hl) * maxHorizontal) / ws,
-      (this.cameraPos[1] + (hy / hl) * maxHorizontal) / ws,
-    ];
+    return [(this.cameraPos[0] + (hx / hl) * maxHorizontal) / ws, (this.cameraPos[1] + (hy / hl) * maxHorizontal) / ws];
   }
 
   unprojectLngLat(px: number, py: number): LngLat | null {
@@ -297,7 +311,8 @@ export class Transform {
 
   footprint(): [number, number][] {
     this.update();
-    const w = this.width, h = this.height;
+    const w = this.width,
+      h = this.height;
     const pts: [number, number][] = [
       this.unprojectClamped(0, 0),
       this.unprojectClamped(w / 2, 0),
@@ -320,7 +335,8 @@ export class Transform {
     const cam = this.cameraPos;
     const d = this.cameraDistance;
     const limit = options.maxTiles ?? 2000;
-    let minX = Infinity, maxX = -Infinity;
+    let minX = Infinity,
+      maxX = -Infinity;
     for (const p of poly) {
       minX = Math.min(minX, p[0]);
       maxX = Math.max(maxX, p[0]);
@@ -335,25 +351,37 @@ export class Transform {
     const stack: TileSlot[] = wraps.map((wrap) => ({ z: 0, x: 0, y: 0, wrap }));
     while (stack.length > 0) {
       const t = stack.pop()!;
-      const n = Math.pow(2, t.z);
-      const x0 = t.wrap + t.x / n, x1 = t.wrap + (t.x + 1) / n;
-      const y0 = t.y / n, y1 = (t.y + 1) / n;
+      const n = 2 ** t.z;
+      const x0 = t.wrap + t.x / n,
+        x1 = t.wrap + (t.x + 1) / n;
+      const y0 = t.y / n,
+        y1 = (t.y + 1) / n;
       if (!polygonIntersectsRect(poly, x0, y0, x1, y1)) continue;
       const px = Math.min(Math.max(cam[0], x0 * ws), x1 * ws) - cam[0];
       const py = Math.min(Math.max(cam[1], y0 * ws), y1 * ws) - cam[1];
       const dist = Math.hypot(px, py, cam[2]);
       let wanted = centerTileZoom + Math.log2(d / Math.max(dist, 1e-9));
       wanted = Math.min(wanted, centerTileZoom);
-      const target = Math.max(minZoom, Math.min(maxZoom, options.round ? Math.round(wanted) : Math.floor(wanted + 1e-9)));
+      const target = Math.max(
+        minZoom,
+        Math.min(maxZoom, options.round ? Math.round(wanted) : Math.floor(wanted + 1e-9)),
+      );
       if (t.z >= target) {
-        const cxw = (x0 + x1) / 2 * ws - cam[0];
-        const cyw = (y0 + y1) / 2 * ws - cam[1];
+        const cxw = ((x0 + x1) / 2) * ws - cam[0];
+        const cyw = ((y0 + y1) / 2) * ws - cam[1];
         out.push({ z: t.z, x: t.x, y: t.y, wrap: t.wrap, distance: Math.hypot(cxw, cyw, cam[2]) });
         if (out.length >= limit) break;
         continue;
       }
-      const z = t.z + 1, x = t.x * 2, y = t.y * 2;
-      stack.push({ z, x, y, wrap: t.wrap }, { z, x: x + 1, y, wrap: t.wrap }, { z, x, y: y + 1, wrap: t.wrap }, { z, x: x + 1, y: y + 1, wrap: t.wrap });
+      const z = t.z + 1,
+        x = t.x * 2,
+        y = t.y * 2;
+      stack.push(
+        { z, x, y, wrap: t.wrap },
+        { z, x: x + 1, y, wrap: t.wrap },
+        { z, x, y: y + 1, wrap: t.wrap },
+        { z, x: x + 1, y: y + 1, wrap: t.wrap },
+      );
     }
     out.sort((a, b) => a.distance - b.distance);
     return out;
@@ -383,8 +411,17 @@ export function convexHull(points: [number, number][]): [number, number][] {
   return lower.concat(upper);
 }
 
-export function polygonIntersectsRect(poly: [number, number][], x0: number, y0: number, x1: number, y1: number): boolean {
-  let pminX = Infinity, pmaxX = -Infinity, pminY = Infinity, pmaxY = -Infinity;
+export function polygonIntersectsRect(
+  poly: [number, number][],
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): boolean {
+  let pminX = Infinity,
+    pmaxX = -Infinity,
+    pminY = Infinity,
+    pmaxY = -Infinity;
   for (const p of poly) {
     if (p[0] < pminX) pminX = p[0];
     if (p[0] > pmaxX) pmaxX = p[0];
@@ -392,19 +429,26 @@ export function polygonIntersectsRect(poly: [number, number][], x0: number, y0: 
     if (p[1] > pmaxY) pmaxY = p[1];
   }
   if (pmaxX < x0 || pminX > x1 || pmaxY < y0 || pminY > y1) return false;
-  const corners: [number, number][] = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  const corners: [number, number][] = [
+    [x0, y0],
+    [x1, y0],
+    [x1, y1],
+    [x0, y1],
+  ];
   for (let i = 0; i < poly.length; i++) {
     const a = poly[i]!;
     const b = poly[(i + 1) % poly.length]!;
     const nx = b[1] - a[1];
     const ny = a[0] - b[0];
-    let pMin = Infinity, pMax = -Infinity;
+    let pMin = Infinity,
+      pMax = -Infinity;
     for (const p of poly) {
       const v = p[0] * nx + p[1] * ny;
       if (v < pMin) pMin = v;
       if (v > pMax) pMax = v;
     }
-    let rMin = Infinity, rMax = -Infinity;
+    let rMin = Infinity,
+      rMax = -Infinity;
     for (const c of corners) {
       const v = c[0] * nx + c[1] * ny;
       if (v < rMin) rMin = v;
