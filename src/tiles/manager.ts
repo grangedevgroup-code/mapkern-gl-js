@@ -230,12 +230,6 @@ export class TileManager<D> {
     return false;
   }
 
-  invalidateGpu(): void {
-    for (const tile of this.tiles.values()) {
-      if (tile.state === "ready" && tile.data && this.loader.needsUpload(tile.data)) tile.transition("prepared");
-    }
-  }
-
   reload(): void {
     for (const tile of [...this.tiles.values()]) this.drop(tile);
     this.pieces = [];
