@@ -1,5 +1,5 @@
 import type { VectorFeature } from "../formats/mvt.ts";
-import { classifyRings, decodeTile } from "../formats/mvt.ts";
+import { classifyRings, decodeTile, numericId } from "../formats/mvt.ts";
 import type { Compiled, FeatureContext, GeometryType } from "../style/expression.ts";
 import { compile } from "../style/expression.ts";
 import { CircleBuilder, FillBuilder, LineBuilder } from "./buckets.ts";
@@ -29,6 +29,7 @@ export interface VectorTileRequest {
   y: number;
   layers: LayerProgram[];
   overzoom: boolean;
+  promoteId: string | null;
 }
 
 export interface Geometry {
@@ -108,7 +109,32 @@ export async function buildVectorTile(
   const started = performance.now();
   const data = await inflate(request.bytes);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-  return buildBuckets(decodeTile(data), request.z, request.layers, request.overzoom, started);
+  const layers = decodeTile(data);
+  const source = request.promoteId === null ? layers : promoteIds(layers, request.promoteId);
+  return buildBuckets(source, request.z, request.layers, request.overzoom, started);
+}
+
+function promoteIds(layers: ReadonlyMap<string, FeatureLayer>, key: string): Map<string, FeatureLayer> {
+  const out = new Map<string, FeatureLayer>();
+  for (const [name, layer] of layers) {
+    out.set(name, {
+      name: layer.name,
+      extent: layer.extent,
+      length: layer.length,
+      feature: (index) => {
+        const feature = layer.feature(index);
+        return {
+          id: numericId(feature.property(key)),
+          type: feature.type,
+          extent: feature.extent,
+          properties: () => feature.properties(),
+          property: (k) => feature.property(k),
+          geometry: () => feature.geometry(),
+        };
+      },
+    });
+  }
+  return out;
 }
 
 export function buildBuckets(
