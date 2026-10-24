@@ -544,7 +544,10 @@ export class TileManager<D> {
       this.consecutiveFailures++;
       tile.failure = failure;
       const now = performance.now();
-      if (failure.retryable && tile.attempts <= this.options.maxRetries) {
+      const retry = failure.retryable && tile.attempts <= this.options.maxRetries;
+      if (refreshing) {
+        tile.retryAt = now + (retry ? retryDelay(tile.attempts, failure) : this.options.failureCooldownMs);
+      } else if (retry) {
         tile.transition("queued");
         tile.retryAt = now + retryDelay(tile.attempts, failure);
       } else {
