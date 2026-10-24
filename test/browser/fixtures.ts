@@ -14,6 +14,20 @@ function tile(z: number, x: number, y: number): Buffer {
   return png;
 }
 
+export function square(size: number, color: string): unknown {
+  const ring = [
+    [-size, -size],
+    [size, -size],
+    [size, size],
+    [-size, size],
+    [-size, -size],
+  ];
+  return {
+    type: "FeatureCollection",
+    features: [{ type: "Feature", properties: { color }, geometry: { type: "Polygon", coordinates: [ring] } }],
+  };
+}
+
 export const fixtureRoute: Route = async (req, res, url) => {
   const path = url.pathname;
   if (path === "/fixture/stats") {
@@ -25,6 +39,11 @@ export const fixtureRoute: Route = async (req, res, url) => {
     hits.clear();
     res.writeHead(204);
     res.end();
+    return true;
+  }
+  if (path === "/fixture/geojson/square.json") {
+    res.writeHead(200, { "content-type": "application/geo+json", "cache-control": "no-store" });
+    res.end(JSON.stringify(square(10, "#0000ff")));
     return true;
   }
   const m = /^\/fixture\/(raster|slow\/(\d+)\/(\d+)|fail\/(\d+)\/(\d+))\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(path);
