@@ -200,14 +200,19 @@ class TileFeature implements VectorFeature {
 }
 
 function writePoints(item: Item, grid: Grid): Int32Array[] {
-  const out: number[] = [];
+  let total = 0;
+  for (const part of item.parts) total += part.points.length / 3;
+  if (total === 0) return [];
+  const out = new Int32Array(total * 2);
+  let k = 0;
   for (const part of item.parts) {
     const p = part.points;
     for (let i = 0; i < p.length; i += 3) {
-      out.push(Math.round(p[i]! * grid.scale - grid.ox), Math.round(p[i + 1]! * grid.scale - grid.oy));
+      out[k++] = Math.round(p[i]! * grid.scale - grid.ox);
+      out[k++] = Math.round(p[i + 1]! * grid.scale - grid.oy);
     }
   }
-  return out.length > 0 ? [Int32Array.from(out)] : [];
+  return [out];
 }
 
 function writeLines(item: Item, grid: Grid, tolerance: number): Int32Array[] {
@@ -241,26 +246,31 @@ function writePolygons(item: Item, grid: Grid, tolerance: number): Int32Array[] 
   return out;
 }
 
+let scratch = new Int32Array(4096);
+
 function quantize(points: Float64Array, sq: number, grid: Grid, closed: boolean): Int32Array {
   const n = points.length / 3;
+  if (scratch.length < n * 2 + 2) scratch = new Int32Array(n * 4 + 2);
+  const out = scratch;
   const end = closed ? n - 1 : n;
-  const out: number[] = [];
-  let px = Number.NaN;
-  let py = Number.NaN;
+  let k = 0;
   for (let i = 0; i < end; i++) {
     if (i !== 0 && i !== n - 1 && !(points[i * 3 + 2]! > sq)) continue;
     const x = Math.round(points[i * 3]! * grid.scale - grid.ox);
     const y = Math.round(points[i * 3 + 1]! * grid.scale - grid.oy);
-    if (x === px && y === py) continue;
-    out.push(x, y);
-    px = x;
-    py = y;
+    if (k >= 2 && x === out[k - 2] && y === out[k - 1]) continue;
+    out[k++] = x;
+    out[k++] = y;
   }
   if (closed) {
-    while (out.length >= 4 && out[out.length - 2] === out[0] && out[out.length - 1] === out[1]) out.length -= 2;
-    if (out.length >= 2) out.push(out[0]!, out[1]!);
+    while (k >= 4 && out[k - 2] === out[0] && out[k - 1] === out[1]) k -= 2;
+    if (k >= 2) {
+      out[k] = out[0]!;
+      out[k + 1] = out[1]!;
+      k += 2;
+    }
   }
-  return Int32Array.from(out);
+  return out.slice(0, k);
 }
 
 function reverseInts(ring: Int32Array): Int32Array {
@@ -284,13 +294,17 @@ function clipPoints(item: Item, r: Rect): Part[] {
   const out: Part[] = [];
   for (const part of item.parts) {
     const p = part.points;
-    const kept: number[] = [];
+    const kept = new Float64Array(p.length);
+    let k = 0;
     for (let i = 0; i < p.length; i += 3) {
       const x = p[i]!;
       const y = p[i + 1]!;
-      if (x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1) kept.push(x, y, ALWAYS_KEEP);
+      if (x < r.x0 || x > r.x1 || y < r.y0 || y > r.y1) continue;
+      kept[k++] = x;
+      kept[k++] = y;
+      kept[k++] = ALWAYS_KEEP;
     }
-    if (kept.length > 0) out.push({ points: Float64Array.from(kept), outer: true, size: 0 });
+    if (k > 0) out.push({ points: k === kept.length ? kept : kept.slice(0, k), outer: true, size: 0 });
   }
   return out;
 }
