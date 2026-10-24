@@ -1,236 +1,175 @@
-# API reference
+# API
 
-Everything below is exported from the package root:
+Everything is exported from the package root:
 
 ```js
 import { Map, NavigationControl, ScaleControl, lightStyle, addProtocol } from "maplet-gl";
 ```
 
-Positions are `[longitude, latitude]` arrays. Methods that take a position also accept `{ lng, lat }`.
+Positions are always `[longitude, latitude]`. Anywhere a position goes in, `{ lng, lat }` works too.
 
-## Map
+## Creating a map
 
 ```js
-const map = new Map(options);
+const map = new Map({
+  container: "map",
+  style: lightStyle({ url: "seattle.pmtiles" }),
+  center: [-122.335, 47.608],
+  zoom: 12,
+});
 ```
 
-### Options
+`container` is an element or its id, and it needs a size. `style` is a [style](style.md) object or the URL of one. Everything else is optional:
 
-| Option | Default | Meaning |
+| Option | Default | |
 | --- | --- | --- |
-| `container` | | Required. An element or the id of one. It needs a width and height |
-| `style` | | A [style](style.md) object or the URL of a style JSON file |
-| `center` | `[0, 0]` | Starting position. Falls back to the style's `center` |
-| `zoom` | 0 | Starting zoom. Falls back to the style's `zoom` |
-| `bearing` | 0 | Rotation in degrees, clockwise from north |
-| `pitch` | 0 | Tilt in degrees, 0 looks straight down |
-| `minZoom`, `maxZoom` | 0, 22 | Zoom limits |
-| `minPitch`, `maxPitch` | 0, 60 | Tilt limits |
-| `renderWorldCopies` | `true` | Repeat the world to the east and west when zoomed out |
-| `interactive` | `true` | `false` turns off all mouse, touch and keyboard handling |
-| `dragPan`, `dragRotate`, `scrollZoom`, `doubleClickZoom`, `touchZoomRotate`, `touchPitch`, `keyboard` | `true` | Turn single interactions off |
-| `pixelRatio` | the screen's | Drawing resolution. Use a lower value to save power |
-| `maxPixelRatio` | 2 | Upper limit for the screen's pixel ratio |
-| `antialias` | `false` | Multisample antialiasing. Costs memory and power |
-| `preserveDrawingBuffer` | `false` | Keep the last frame so it can be read back, for example with `canvas.toDataURL()` |
-| `fadeDuration` | 200 | Fade-in time for new raster tiles, in milliseconds |
-| `tileCacheSize` | 192 | Memory for decoded tiles, in megabytes. The minimum is 16 |
-| `maxParallelRequests` | 24 | Tile requests in flight at once |
-| `requestTimeout` | 30000 | Milliseconds before a request is given up and retried |
-| `prefetch` | `true` | Load tiles along camera moves before they are needed |
-| `transformRequest` | | `(url, kind) => ({ url, headers, credentials })`. Changes requests, for example to add an API key. `kind` is `"style"`, `"source"`, `"tile"`, `"glyphs"` or `"image"` |
-| `attributionControl` | `true` | `false` removes it. `{ custom: "text" }` adds your own credit |
-| `workerCount` | cores minus one, at most 4 | Number of Web Workers |
-| `workerUrl` | | URL of `dist/maplet-worker.js`. Use it when your Content Security Policy does not allow `blob:` workers |
-| `reducedMotion` | the system setting | `true` makes camera animations jump |
-| `locale` | | Replaces control labels: `{ zoomIn, zoomOut, resetNorth, map }` |
+| `center`, `zoom`, `bearing`, `pitch` | from the style, else 0 | Where the map starts. Bearing turns the map clockwise from north; pitch tilts it, 0 looks straight down |
+| `minZoom`, `maxZoom` | 0, 22 | |
+| `minPitch`, `maxPitch` | 0, 60 | |
+| `interactive` | `true` | `false` ignores mouse, touch and keyboard |
+| `dragPan`, `dragRotate`, `scrollZoom`, `doubleClickZoom`, `touchZoomRotate`, `touchPitch`, `keyboard` | `true` | Switch off single interactions |
+| `renderWorldCopies` | `true` | Repeat the world sideways when zoomed far out |
+| `pixelRatio` | the screen's, up to `maxPixelRatio` | A lower value saves battery |
+| `maxPixelRatio` | 2 | |
+| `antialias` | `false` | Smoother edges at the cost of memory |
+| `preserveDrawingBuffer` | `false` | Keep the last frame around, for example for `canvas.toDataURL()` |
+| `fadeDuration` | 200 | Fade-in for new raster tiles, in ms |
+| `tileCacheSize` | 192 | Memory for tiles, in MB |
+| `maxParallelRequests` | 24 | |
+| `requestTimeout` | 30000 | In ms. A timed-out request is retried |
+| `prefetch` | `true` | Load tiles ahead of camera animations |
+| `transformRequest` | | `(url, kind) => ({ url, headers, credentials })`, for adding API keys or headers |
+| `attributionControl` | `true` | `false` hides it; `{ custom: "..." }` adds your own credit |
+| `workerCount` | cores minus one, up to 4 | |
+| `workerUrl` | | URL of `dist/maplet-worker.js`, for sites whose Content Security Policy blocks `blob:` workers |
+| `reducedMotion` | the system setting | `true` turns camera animations into jumps |
+| `locale` | | Your own control labels: `{ zoomIn, zoomOut, resetNorth, map }` |
 
-### Camera
+When you're done with a map, call `map.remove()`. It stops drawing and frees the workers and GPU memory.
 
-| Method | Meaning |
-| --- | --- |
-| `getCenter()` | `[lng, lat]` |
-| `getZoom()`, `getBearing()`, `getPitch()` | Current values |
-| `getBounds()` | `[[west, south], [east, north]]` of the visible area |
-| `setCenter(lngLat)`, `setZoom(zoom)`, `setBearing(degrees)`, `setPitch(degrees)` | Move without animation |
-| `jumpTo({ center, zoom, bearing, pitch, around })` | Change several values at once without animation |
-| `easeTo({ center, zoom, bearing, pitch, around, duration, easing })` | Animate. `duration` defaults to 500 ms |
-| `flyTo({ center, zoom, bearing, pitch, speed, curve, duration, maxDuration })` | Zoom out, move and zoom in again along a smooth path |
-| `panBy([x, y], options)`, `panTo(lngLat, options)` | Move by pixels or to a position |
-| `zoomTo(zoom, options)`, `zoomIn(options)`, `zoomOut(options)` | Animated zoom |
-| `rotateTo(degrees, options)`, `resetNorth(options)` | Animated rotation |
-| `fitBounds(bounds, { padding, maxZoom, bearing, pitch, linear, duration })` | Show a box. `bounds` is `[[west, south], [east, north]]` or `[west, south, east, north]` |
-| `cameraForBounds(bounds, options)` | The camera that `fitBounds` would use, without moving |
-| `stop()` | End any animation |
-| `isMoving()` | `true` during animations and gestures |
-| `setMinZoom(zoom)`, `setMaxZoom(zoom)`, `setMaxPitch(degrees)`, `getMinZoom()`, `getMaxZoom()` | Limits |
-| `project(lngLat)` | Screen position `{ x, y }` in CSS pixels |
-| `unproject([x, y])` | `[lng, lat]` under a screen position, or `null` above the horizon |
+## Moving the camera
 
-Animation options are `duration` in milliseconds, `easing` (a function from 0..1 to 0..1) and `animate: false` to jump.
+```js
+map.jumpTo({ center: [-122.35, 47.62], zoom: 14 });
+map.easeTo({ zoom: 15, pitch: 45, bearing: -20, duration: 800 });
+map.flyTo({ center: [-122.68, 45.52], zoom: 12 });
+map.fitBounds([[-122.45, 47.48], [-122.22, 47.74]], { padding: 40 });
+```
 
-### Style, sources and layers
+`jumpTo` moves at once, `easeTo` animates (500 ms unless you pass `duration`), and `flyTo` zooms out, travels and zooms back in. All three take `center`, `zoom`, `bearing` and `pitch`, plus `around` to zoom around a fixed point. `flyTo` also takes `speed`, `curve` and `maxDuration`. `fitBounds` accepts `[[west, south], [east, north]]` or `[west, south, east, north]`, with `padding`, `maxZoom` and `linear` if you'd rather ease than fly. `cameraForBounds()` tells you where `fitBounds` would go without moving.
 
-| Method | Meaning |
-| --- | --- |
-| `setStyle(style)` | Replace the style. Takes an object or a URL |
-| `getStyle()` | The current style as a plain object |
-| `isStyleLoaded()` | `true` when every source has loaded its metadata |
-| `addSource(id, source)`, `removeSource(id)` | A source can only be removed when no layer uses it |
-| `getSource(id)` | The source object. See [GeoJSON sources](#geojson-sources) |
-| `addLayer(layer, beforeId)` | Adds on top, or below the layer `beforeId` |
-| `removeLayer(id)`, `moveLayer(id, beforeId)` | |
-| `getLayer(id)`, `getLayerIds()` | |
-| `setPaintProperty(layerId, name, value)`, `setLayoutProperty(layerId, name, value)` | |
-| `setFilter(layerId, filter)` | `null` removes the filter |
-| `setLayerVisibility(layerId, visible)` | |
-| `setLayerZoomRange(layerId, minZoom, maxZoom)` | |
-| `getAttributions()` | Credits of the current sources |
+There are shortcuts too: `panBy([x, y])`, `panTo(lngLat)`, `zoomTo(zoom)`, `zoomIn()`, `zoomOut()`, `rotateTo(bearing)` and `resetNorth()`. They take the same animation options: `duration`, `easing` (a function from 0..1 to 0..1) and `animate: false`.
 
-Style edits that change which features are drawn rebuild the affected tiles in the background. The old tiles stay on screen until the new ones are ready.
+To read the camera, use `getCenter()`, `getZoom()`, `getBearing()`, `getPitch()` and `getBounds()`, which returns `[[west, south], [east, north]]`. `setCenter()`, `setZoom()`, `setBearing()` and `setPitch()` move without animation. `isMoving()` is true during animations and gestures, and `stop()` ends an animation.
 
-### Controls
+`project(lngLat)` gives the screen position of a place in CSS pixels, and `unproject([x, y])` does the opposite. It returns `null` for points above the horizon on a tilted map.
 
-| Method | Meaning |
-| --- | --- |
-| `addControl(control, position)` | `position` is `"top-left"`, `"top-right"`, `"bottom-left"` or `"bottom-right"` |
-| `removeControl(control)` | |
+People can drag to pan, scroll or pinch to zoom, and double-click to zoom in. Dragging with the right mouse button, or with Ctrl held, rotates and tilts. On touch screens, twisting two fingers rotates and sliding two fingers up or down tilts. With keyboard focus, the arrow keys pan, Shift with the arrows rotates and tilts, and `+` and `-` zoom.
 
-### Other
+## Changing the style
 
-| Method | Meaning |
-| --- | --- |
-| `getContainer()`, `getCanvas()`, `getCanvasContainer()` | DOM elements |
-| `resize()` | Call after the container changes size, if you need it before the next frame. Maplet watches the size itself |
-| `getPixelRatio()`, `setPixelRatio(ratio)` | `setPixelRatio(undefined)` goes back to the screen's ratio |
-| `triggerRepaint()` | Draw one more frame |
-| `loaded()` | `true` when the style and visible tiles have loaded |
-| `getDiagnostics()` | See [Diagnostics](#diagnostics) |
-| `remove()` | Stops the map and frees its memory, workers and GPU resources |
-| `on(type, listener)`, `off(type, listener)` | Events |
-| `once(type, listener)` | Listens once. Returns a promise for the event, so `await map.once("idle")` works |
+```js
+map.addSource("route", { type: "geojson", data: "route.geojson" });
+map.addLayer({ id: "route", type: "line", source: "route", paint: { color: "#2f6fdb", width: 5 } });
+map.setPaintProperty("route", "width", 8);
+map.setFilter("route", ["==", ["get", "kind"], "bike"]);
+```
+
+`addLayer(layer, beforeId)` puts the layer on top, or under `beforeId` if you give one. The rest work as you'd expect: `removeLayer`, `moveLayer`, `getLayer`, `getLayerIds`, `setLayoutProperty`, `setLayerVisibility`, `setLayerZoomRange`, `removeSource` (only once no layer uses it) and `getSource`. `setFilter(id, null)` removes a filter.
+
+`setStyle()` swaps the whole style and `getStyle()` returns the current one as a plain object.
+
+When an edit changes which features a layer draws, Maplet rebuilds the tiles in the background and keeps the old ones on screen until the new ones are ready.
+
+## GeoJSON
+
+GeoJSON sources can be updated while the map runs:
+
+```js
+const vehicles = map.getSource("vehicles");
+vehicles.setData(latestPositions);
+```
+
+The current data stays on screen until the new tiles are ready, and if you call `setData` faster than Maplet can keep up, it skips straight to the newest data. You can pass a URL instead of an object, which is the better choice for big files because the parsing then happens in a worker.
+
+The source also has `getData()`, `bounds` (`[west, south, east, north]`, or `null` when empty) and `featureCount`.
 
 ## Events
 
-| Event | When |
-| --- | --- |
-| `styleload` | A style has been applied |
-| `load` | The first frame with the style has been drawn |
-| `idle` | Visible tiles have loaded and nothing is moving |
-| `render` | After each frame |
-| `resize` | The map changed size |
-| `remove` | `remove()` was called |
-| `movestart`, `move`, `moveend` | The camera moved. `originalEvent` is set when a person caused it |
-| `zoomstart`, `zoom`, `zoomend`, `rotatestart`, `rotate`, `rotateend`, `pitchstart`, `pitch`, `pitchend` | The same, for each kind of change |
-| `click`, `dblclick`, `contextmenu`, `mousemove`, `mousedown`, `mouseup`, `mouseout` | Pointer events with `point` (`{ x, y }`) and `lngLat`. Call `preventDefault()` in `dblclick` to stop the zoom |
-| `sourcedata` | A source loaded (`kind: "metadata"`), got new data (`kind: "content"`) or failed (`kind: "error"`). Has `sourceId` |
-| `error` | Something failed. `event.error` is a `MapletError` |
-| `contextlost`, `contextrestored` | The browser dropped and restored the WebGL context. Maplet reloads what it needs |
-
-## GeoJSON sources
-
-`map.getSource(id)` returns a GeoJSON source for `type: "geojson"`.
-
 ```js
-const source = map.getSource("vehicles");
-if (source?.type === "geojson") {
-  source.setData(latestPositions);
-}
+map.on("click", (event) => console.log(event.lngLat, event.point));
+map.on("moveend", () => console.log(map.getCenter(), map.getZoom()));
+map.on("error", (event) => console.warn(event.error.message));
+
+await map.once("idle");
 ```
 
-| Member | Meaning |
-| --- | --- |
-| `setData(data)` | Replace the data with a GeoJSON object or a URL. The current data stays on screen until the new tiles are ready. Calls in quick succession are merged |
-| `getData()` | The data or URL last passed in |
-| `bounds` | `[west, south, east, north]` of the data, or `null` when it is empty |
-| `featureCount` | Number of features |
+`once` returns a promise, so you can await it. `off(type, listener)` removes a listener.
 
-A `sourcedata` event with `kind: "content"` fires when new data has been applied.
+- `styleload`: a style has been applied. `load`: the first frame with it has been drawn.
+- `idle`: everything on screen has loaded and nothing is moving.
+- `render` after every frame, `resize` when the map changes size, `remove` when it's removed.
+- `movestart`, `move` and `moveend` whenever the camera changes. There are also `zoom`, `rotate` and `pitch` versions of all three. `originalEvent` is set when a person caused the move.
+- `click`, `dblclick`, `contextmenu`, `mousemove`, `mousedown`, `mouseup` and `mouseout` carry `point` (`{ x, y }`) and `lngLat`. Call `event.preventDefault()` in `dblclick` to stop the zoom.
+- `sourcedata` when a source loads (`kind: "metadata"`), gets new data (`"content"`) or fails (`"error"`).
+- `error` with a `MapletError` in `event.error`.
+- `contextlost` and `contextrestored` if the browser drops the GPU context. Maplet reloads what it needs on its own.
+
+## Errors
+
+Errors come with a `code`, a readable `message` and a `detail` object. If you don't listen for `error`, they're logged to the console.
+
+`invalid-style` means the style has problems (`detail.issues` lists them all) and `invalid-option` means a bad map option or argument. `source-error` is a source that couldn't load, and `tile-error` a tile that still failed after its retries (`detail.tile` says which one). Requests fail with `network`, `http` or `auth`; 401 and 403 answers aren't retried. `decode` means data arrived but couldn't be read. `webgl-unavailable`, `shader-compile`, `context-lost` and `worker` point at the browser or GPU.
 
 ## Controls
 
 ```js
-map.addControl(new NavigationControl({ showZoom: true, showCompass: true }), "top-right");
-map.addControl(new ScaleControl({ maxWidth: 100, unit: "metric" }), "bottom-left");
+map.addControl(new NavigationControl());
+map.addControl(new ScaleControl({ unit: "imperial" }), "bottom-left");
 ```
 
-| Control | Options |
-| --- | --- |
-| `NavigationControl` | `showZoom`, `showCompass`. The compass resets the bearing and tilt |
-| `ScaleControl` | `maxWidth` in pixels, `unit` `"metric"` or `"imperial"` |
-| `AttributionControl` | `custom`: extra credit text. Added by default |
+`NavigationControl` has zoom buttons and a compass that turns the map back north and flat. Pass `showZoom: false` or `showCompass: false` to leave one out. `ScaleControl` takes `unit` (`"metric"` or `"imperial"`) and `maxWidth` in pixels. The attribution control is added for you.
 
-A custom control is any object with `onAdd(map)`, which returns an element, and `onRemove(map)`:
+The second argument is the corner: `"top-left"`, `"top-right"`, `"bottom-left"` or `"bottom-right"`. `removeControl()` takes it away again.
+
+Your own control is any object with `onAdd(map)`, which returns an element, and `onRemove(map)`:
 
 ```js
 class HomeButton {
   onAdd(map) {
     const button = document.createElement("button");
-    button.textContent = "Home";
     button.className = "maplet-control";
+    button.textContent = "Home";
     button.onclick = () => map.flyTo({ center: [-122.335, 47.608], zoom: 12 });
     return button;
   }
   onRemove() {}
 }
+
 map.addControl(new HomeButton(), "top-left");
 ```
 
-## Custom protocols
+## Your own tile protocol
 
-`addProtocol(scheme, handler)` lets a source URL like `mytiles://roads/{z}/{x}/{y}` be answered by your own code, for example from IndexedDB or a file the user picked.
+`addProtocol` lets you answer requests for a made-up URL scheme yourself, for example to serve tiles from IndexedDB or from a file someone picked:
 
 ```js
-addProtocol("mytiles", async (request, signal) => {
-  const bytes = await readTileFromSomewhere(request.url, signal);
+addProtocol("local", async (request, signal) => {
+  const bytes = await readTile(request.url, signal);
   return bytes ?? null;
 });
+
+map.addSource("offline", { type: "vector", tiles: ["local://roads/{z}/{x}/{y}"] });
 ```
 
-The handler receives `{ url, kind, headers, credentials }` and an `AbortSignal`. It returns an `ArrayBuffer`, a `Uint8Array`, `{ data, contentType }`, or `null` when there is no tile. `removeProtocol(scheme)` removes it. The `pmtiles://` protocol is built in.
-
-## Errors
-
-Errors arrive as `error` events carrying a `MapletError` with a `code`, a readable `message` and a `detail` object. Without an `error` listener, Maplet logs them to the console.
-
-| Code | Meaning |
-| --- | --- |
-| `webgl-unavailable` | The browser cannot create a WebGL2 context |
-| `shader-compile` | A shader did not compile. Please report it with your browser and GPU |
-| `invalid-option` | A map option or method argument is wrong |
-| `invalid-style` | The style has problems. `detail.issues` lists them |
-| `source-error` | A source could not load its metadata or data |
-| `tile-error` | A tile failed after its retries. `detail.tile` says which |
-| `network`, `http` | A request failed |
-| `auth` | The server answered 401 or 403. These are not retried |
-| `decode` | Data arrived but could not be read |
-| `context-lost` | The WebGL context was lost |
-| `worker` | A Web Worker failed |
+Return an `ArrayBuffer` or `Uint8Array`, or `null` when there's no tile. `removeProtocol("local")` undoes it. `pmtiles://` is built in.
 
 ## Diagnostics
 
-`map.getDiagnostics()` returns numbers that help find performance problems:
+`map.getDiagnostics()` returns numbers for tracking down slow maps: frame times (`p50`, `p95`, `p99` and `max` over the last 240 frames), draw calls, requests in flight, worker queue length, `blankRatio` (how much of the screen is still waiting for data) and per-source tile counts with retries, cancellations and cache size.
 
-| Field | Meaning |
-| --- | --- |
-| `frames` | Frames drawn so far |
-| `frameTime` | `p50`, `p95`, `p99` and `max` time spent on the map per frame, in milliseconds, over the last 240 frames |
-| `longFrames` | Frames that took more than 50 ms |
-| `drawCalls`, `renderedPieces` | Work in the last frame |
-| `requests` | Requests `active` and `queued` |
-| `workers` | Worker pool `size` and `queued` tasks |
-| `sources` | Tile counts per source: ready, loading, failed, cached bytes, retries, cancelled requests and blank area |
-| `blankRatio` | Share of the screen with no data drawn yet, 0 to 1 |
-| `canvas` | Size and pixel ratio |
-| `contextLost` | `true` while the WebGL context is lost |
+## Other helpers
 
-## Helpers
+`lightStyle(options)` is the built-in street style, described at the end of the [style guide](style.md#the-built-in-style). `validateStyle(style)` returns a list of `{ path, message }` problems. `distanceMeters(a, b)` measures between two positions, `metersPerPixel(latitude, zoom)` tells you how much ground one pixel covers, and `lngLatToWorld` and `worldToLngLat` convert to and from Web Mercator coordinates between 0 and 1. `version` is the library version.
 
-| Function | Meaning |
-| --- | --- |
-| `lightStyle(options)` | The built-in style. See the [style reference](style.md#the-built-in-style) |
-| `validateStyle(style)` | Returns a list of `{ path, message }` problems, empty when the style is valid |
-| `distanceMeters(a, b)` | Great circle distance between two positions |
-| `metersPerPixel(latitude, zoom)` | Ground size of one CSS pixel |
-| `lngLatToWorld(lng, lat)`, `worldToLngLat(x, y)` | Convert to and from Web Mercator coordinates from 0 to 1 |
-| `version` | The library version |
+A few smaller methods round things out: `getContainer()`, `getCanvas()`, `resize()` (you rarely need it, the map watches its size), `getPixelRatio()`, `setPixelRatio()`, `triggerRepaint()`, `loaded()`, `getAttributions()`, `setMinZoom()`, `setMaxZoom()` and `setMaxPitch()`.
