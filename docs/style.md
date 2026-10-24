@@ -66,7 +66,7 @@ Image tiles in any format the browser can decode: PNG, JPEG, WebP or AVIF.
 { "type": "raster", "tiles": ["https://example.com/imagery/{z}/{x}/{y}.jpg"], "tileSize": 256, "maxZoom": 19 }
 ```
 
-It takes the same keys as `vector` except `promoteId`, plus `tileSize` (default 256), the size of one tile in pixels.
+It takes the same keys as `vector` except `promoteId`, plus `tileSize` (default 256), the size of one tile in pixels. The default `maxZoom` for raster sources is 22.
 
 ### `geojson`
 
