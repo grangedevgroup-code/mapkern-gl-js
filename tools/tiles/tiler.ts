@@ -197,14 +197,15 @@ function encode(z: number, x: number, y: number, feats: TileFeature[], options: 
       }
     }
     if (parts.length === 0) continue;
-    let list = layers.get(f.layer);
-    if (!list) {
-      list = [];
-      layers.set(f.layer, list);
+    add(f.layer, { id: f.id, type: f.type, parts, props: f.props }, f.sortKey);
+  }
+  for (const { feature, lines } of groups.values()) {
+    const parts: Int32Array[] = [];
+    for (const line of mergeLines(lines)) {
+      const q = quantize(simplify(line, tolerance, false));
+      if (q.length >= 4) parts.push(q);
     }
-    const encoded: EncodedFeature = { id: f.id, type: f.type, parts, props: f.props };
-    sortKeys.set(encoded, f.sortKey);
-    list.push(encoded);
+    if (parts.length > 0) add(feature.layer, { id: feature.id, type: 2, parts, props: feature.props }, feature.sortKey);
   }
   if (layers.size === 0) return null;
   const out: EncodedLayer[] = [];
