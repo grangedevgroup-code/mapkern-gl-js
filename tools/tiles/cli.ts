@@ -54,11 +54,12 @@ const FIELDS: Record<string, Record<string, string>> = {
 const HELP = `Build a vector tile archive (.pmtiles) from an OpenStreetMap .osm.pbf file.
 
 Usage:
-  npm run tiles -- --input <file.osm.pbf> --bbox <west,south,east,north> --output <file.pmtiles>
+  npm run tiles -- --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.pmtiles>
 
 Options:
   --input     OpenStreetMap PBF file, for example a Geofabrik extract
-  --bbox      Area to build, in degrees: west,south,east,north
+  --bbox      Area to build, in degrees: west,south,east,north.
+              Write it as --bbox=-123.4,46.8,-121.7,48.1 when it starts with a minus sign.
   --output    Output .pmtiles file
   --maxzoom   Highest zoom level to build (default 14)
   --name      Name stored in the archive metadata
