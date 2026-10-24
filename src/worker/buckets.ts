@@ -161,26 +161,30 @@ export class LineBuilder {
   }
 
   addLine(points: Int32Array, feature: number, closedHint = false): void {
-    const pts: number[] = [];
+    if (this.pts.length < points.length) this.pts = new Float64Array(points.length * 2);
+    const pts = this.pts;
+    let n = 0;
     for (let i = 0; i < points.length; i += 2) {
       const x = points[i]!;
       const y = points[i + 1]!;
-      const n = pts.length;
       if (n >= 2 && pts[n - 2] === x && pts[n - 1] === y) continue;
-      pts.push(x, y);
+      pts[n++] = x;
+      pts[n++] = y;
     }
-    let count = pts.length / 2;
+    let count = n / 2;
     if (count < 2) return;
-    let closed = closedHint || (count > 2 && pts[0] === pts[pts.length - 2] && pts[1] === pts[pts.length - 1]);
-    if (closed && pts[0] === pts[pts.length - 2] && pts[1] === pts[pts.length - 1]) {
-      pts.length -= 2;
-      count--;
-    }
+    const loops = pts[0] === pts[n - 2] && pts[1] === pts[n - 1];
+    let closed = closedHint || (count > 2 && loops);
+    if (closed && loops) count--;
     if (count < 2) return;
     if (closed && count < 3) closed = false;
     const segments = closed ? count : count - 1;
-    const dirs = new Float64Array(segments * 2);
-    const lens = new Float64Array(segments);
+    if (this.lens.length < segments) {
+      this.lens = new Float64Array(segments * 2);
+      this.dirs = new Float64Array(segments * 4);
+    }
+    const dirs = this.dirs;
+    const lens = this.lens;
     for (let s = 0; s < segments; s++) {
       const a = s;
       const b = (s + 1) % count;
@@ -191,21 +195,15 @@ export class LineBuilder {
       dirs[s * 2] = len > 0 ? dx / len : 1;
       dirs[s * 2 + 1] = len > 0 ? dy / len : 0;
     }
-    const simple = (s0: number, s1: number) => {
-      const dot = dirs[s0 * 2]! * dirs[s1 * 2]! + dirs[s0 * 2 + 1]! * dirs[s1 * 2 + 1]!;
-      if (this.options.join === "miter") {
-        const cosHalf = Math.sqrt(Math.max(0, (1 + dot) / 2));
-        return cosHalf > 1e-6 && 1 / cosHalf <= this.options.miterLimit;
-      }
-      return dot >= this.options.roundLimit;
-    };
     let pairL = -1;
     let pairR = -1;
     let firstL = -1;
     let firstR = -1;
     let dist = 0;
-    if (closed && simple(segments - 1, 0)) {
-      [pairL, pairR] = this.miterPair(pts[0]!, pts[1]!, segments - 1, 0, dirs, 0, feature);
+    if (closed && this.simple(segments - 1, 0)) {
+      this.miterPair(pts[0]!, pts[1]!, segments - 1, 0, 0, feature);
+      pairL = this.pairLeft;
+      pairR = this.pairRight;
       firstL = pairL;
       firstR = pairR;
     }
