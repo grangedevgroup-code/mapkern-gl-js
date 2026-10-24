@@ -54,6 +54,48 @@ void main() {
 `,
 };
 
+export const fillOutlineShader = {
+  name: "fill-outline",
+  vertex: `
+layout(location = 0) in vec2 a_pos;
+layout(location = 4) in uint a_feature;
+uniform mat4 u_matrix;
+uniform vec2 u_translate;
+uniform vec2 u_world;
+uniform vec4 u_color;
+uniform int u_color_slot;
+uniform int u_color_comp;
+uniform float u_opacity;
+uniform int u_opacity_slot;
+uniform int u_opacity_comp;
+${paintChunk}
+out vec2 v_pos;
+out vec2 v_screen;
+out vec4 v_color;
+void main() {
+  vec4 color = paintValue(a_feature, u_color_slot, u_color_comp, u_color);
+  float opacity = paintValue(a_feature, u_opacity_slot, u_opacity_comp, vec4(u_opacity)).x;
+  v_color = vec4(color.rgb * color.a, color.a) * opacity;
+  v_pos = a_pos;
+  gl_Position = u_matrix * vec4(a_pos + u_translate, 0.0, 1.0);
+  v_screen = (gl_Position.xy / gl_Position.w + 1.0) * 0.5 * u_world;
+}
+`,
+  fragment: `
+${clipChunk}
+in vec2 v_pos;
+in vec2 v_screen;
+in vec4 v_color;
+out vec4 fragColor;
+void main() {
+  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
+  float dist = length(v_screen - gl_FragCoord.xy);
+  float alpha = 1.0 - smoothstep(0.0, 1.0, dist);
+  fragColor = v_color * alpha;
+}
+`,
+};
+
 export const lineShader = {
   name: "line",
   vertex: `
@@ -104,7 +146,7 @@ void main() {
   v_color = vec4(color.rgb * color.a, color.a) * opacity * coverage;
   v_half = half_width;
   v_edge = edge;
-  v_side = a_side.xy * outset;
+  v_side = a_side.xy * 2.0 * outset;
   v_square = a_side.z;
   v_dist = a_dist / u_units_per_px;
   vec2 pos = a_pos + u_translate + a_extrude * (1.0 / 2048.0) * outset * u_units_per_px;
