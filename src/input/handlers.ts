@@ -126,6 +126,10 @@ export class InputHandlers {
     return this.inertia !== null || this.wheel !== null;
   }
 
+  get wheelTarget(): { zoom: number; point: [number, number] } | null {
+    return this.wheel ? { zoom: this.wheel.target, point: this.wheel.anchorScreen } : null;
+  }
+
   step(now: number): boolean {
     let busy = false;
     if (this.inertia) {
