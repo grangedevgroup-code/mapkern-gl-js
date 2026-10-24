@@ -17,7 +17,11 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      "style": {
+        "noNonNullAssertion": "off",
+        "useExponentiationOperator": "error"
+      }
     }
   },
   "javascript": {
