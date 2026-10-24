@@ -1,3 +1,5 @@
+export type { MapletErrorCode } from "./core/errors.ts";
+export { MapletError } from "./core/errors.ts";
 export type {
   AnimationOptions,
   BoundsLike,
@@ -15,18 +17,16 @@ export type {
   UiText,
 } from "./core/map.ts";
 export { MapletMap as Map } from "./core/map.ts";
-export type { MapletErrorCode } from "./core/errors.ts";
-export { MapletError } from "./core/errors.ts";
+export type { Feature, FeatureCollection, GeoJSON, Geometry } from "./geo/geojson.ts";
 export type { LngLat, LngLatLike, LngLatObject } from "./geo/mercator.ts";
 export { distanceMeters, lngLatToWorld, metersPerPixel, worldToLngLat } from "./geo/mercator.ts";
-export type { Feature, FeatureCollection, GeoJSON, Geometry } from "./geo/geojson.ts";
 export type * from "./style/types.ts";
 export type { StyleIssue } from "./style/validate.ts";
 export { validateStyle } from "./style/validate.ts";
-export type { ProtocolHandler, ProtocolRequest, ProtocolResult } from "./tiles/protocols.ts";
-export { addProtocol, removeProtocol } from "./tiles/protocols.ts";
 export type { RequestParameters, ResourceKind, TransformRequest } from "./tiles/fetch.ts";
 export type { TileStats } from "./tiles/manager.ts";
+export type { ProtocolHandler, ProtocolRequest, ProtocolResult } from "./tiles/protocols.ts";
+export { addProtocol, removeProtocol } from "./tiles/protocols.ts";
 export type {
   AttributionOptions,
   Control,
