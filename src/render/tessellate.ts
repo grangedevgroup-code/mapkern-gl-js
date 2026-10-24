@@ -16,7 +16,10 @@ export function triangulate(coords: ArrayLike<number>, holeStarts: readonly numb
   let outer = ring(coords, 0, outerEnd, true);
   if (!outer || outer.next === outer.prev) return;
   if (holeStarts.length > 0) outer = attachHoles(coords, holeStarts, vertexCount, outer);
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   if (vertexCount > 80) {
     for (let i = 0; i < outerEnd; i++) {
       const x = coords[i * 2]!;
@@ -87,7 +90,16 @@ function cross(a: Vertex, b: Vertex, c: Vertex): number {
   return (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
 }
 
-function inTriangle(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, px: number, py: number): boolean {
+function inTriangle(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number,
+  px: number,
+  py: number,
+): boolean {
   return (
     (cx - px) * (ay - py) - (ax - px) * (cy - py) >= 0 &&
     (ax - px) * (by - py) - (bx - px) * (ay - py) >= 0 &&
@@ -257,15 +269,16 @@ function cureIntersections(start: Vertex, out: number[]): Vertex {
 }
 
 function locallyInside(a: Vertex, b: Vertex): boolean {
-  return cross(a.prev, a, a.next) < 0
-    ? cross(a, b, a.next) >= 0 && cross(a, a.prev, b) >= 0
-    : cross(a, b, a.prev) < 0 || cross(a, a.next, b) < 0;
+  return cross(a.prev, a, a.next) > 0
+    ? cross(a, a.next, b) >= 0 && cross(a, a.prev, b) <= 0
+    : cross(a, a.next, b) >= 0 || cross(a, a.prev, b) <= 0;
 }
 
 function intersectsPolygon(a: Vertex, b: Vertex): boolean {
   let p = a;
   do {
-    if (p.i !== a.i && p.next.i !== a.i && p.i !== b.i && p.next.i !== b.i && segmentsCross(p, p.next, a, b)) return true;
+    if (p.i !== a.i && p.next.i !== a.i && p.i !== b.i && p.next.i !== b.i && segmentsCross(p, p.next, a, b))
+      return true;
     p = p.next;
   } while (p !== a);
   return false;
@@ -277,7 +290,11 @@ function middleInside(a: Vertex, b: Vertex): boolean {
   const px = (a.x + b.x) / 2;
   const py = (a.y + b.y) / 2;
   do {
-    if (p.y > py !== p.next.y > py && p.next.y !== p.y && px < ((p.next.x - p.x) * (py - p.y)) / (p.next.y - p.y) + p.x) {
+    if (
+      p.y > py !== p.next.y > py &&
+      p.next.y !== p.y &&
+      px < ((p.next.x - p.x) * (py - p.y)) / (p.next.y - p.y) + p.x
+    ) {
       inside = !inside;
     }
     p = p.next;
@@ -344,7 +361,12 @@ function fan(start: Vertex, out: number[]): void {
   }
 }
 
-function attachHoles(coords: ArrayLike<number>, holeStarts: readonly number[], vertexCount: number, outer: Vertex): Vertex {
+function attachHoles(
+  coords: ArrayLike<number>,
+  holeStarts: readonly number[],
+  vertexCount: number,
+  outer: Vertex,
+): Vertex {
   const holes: Vertex[] = [];
   for (let h = 0; h < holeStarts.length; h++) {
     const start = holeStarts[h]!;
@@ -385,42 +407,43 @@ function findBridge(hole: Vertex, outer: Vertex): Vertex | null {
   let qx = Infinity;
   let m: Vertex | null = null;
   do {
-    if (hy <= p.y && hy >= p.next.y && p.next.y !== p.y) {
+    if (hy >= p.y && hy <= p.next.y && p.next.y !== p.y) {
       const x = p.x + ((hy - p.y) * (p.next.x - p.x)) / (p.next.y - p.y);
       if (x >= hx && x < qx) {
         qx = x;
         m = p.x > p.next.x ? p : p.next;
-        if (x === hx) return m;
+        if (x === hx) return hy === p.y ? p : hy === p.next.y ? p.next : m;
       }
     }
     p = p.next;
   } while (p !== outer);
   if (!m) return null;
+  if (m.x === qx && m.y === hy) return m;
   const stop = m;
   const mx = m.x;
   const my = m.y;
-  let bestAngle = Infinity;
+  const above = my > hy;
+  let bestTan = Infinity;
+  let bestDist = Infinity;
   p = m;
   do {
-    if (
-      hx >= p.x &&
-      p.x >= mx &&
-      hx !== p.x &&
-      inTriangle(hy < my ? hx : qx, hy, mx, my, hy < my ? qx : hx, hy, p.x, p.y)
-    ) {
-      const tan = Math.abs(hy - p.y) / (hx - p.x);
-      if (locallyInside(p, hole) && (tan < bestAngle || (tan === bestAngle && (p.x > m.x || (p.x === m.x && sectorContains(m, p)))))) {
-        m = p;
-        bestAngle = tan;
+    if (p.x > hx && p.x <= mx && p !== stop) {
+      const inside = above
+        ? inTriangle(hx, hy, qx, hy, mx, my, p.x, p.y)
+        : inTriangle(qx, hy, hx, hy, mx, my, p.x, p.y);
+      if (inside && locallyInside(p, hole)) {
+        const tan = Math.abs(p.y - hy) / (p.x - hx);
+        const dist = p.x - hx;
+        if (tan < bestTan || (tan === bestTan && dist < bestDist)) {
+          m = p;
+          bestTan = tan;
+          bestDist = dist;
+        }
       }
     }
     p = p.next;
   } while (p !== stop);
   return m;
-}
-
-function sectorContains(m: Vertex, p: Vertex): boolean {
-  return cross(m.prev, m, p.prev) < 0 && cross(p.next, m, m.next) < 0;
 }
 
 export function triangleArea(coords: ArrayLike<number>, indices: ArrayLike<number>): number {
@@ -429,7 +452,11 @@ export function triangleArea(coords: ArrayLike<number>, indices: ArrayLike<numbe
     const a = indices[t]! * 2;
     const b = indices[t + 1]! * 2;
     const c = indices[t + 2]! * 2;
-    sum += Math.abs((coords[b]! - coords[a]!) * (coords[c + 1]! - coords[a + 1]!) - (coords[c]! - coords[a]!) * (coords[b + 1]! - coords[a + 1]!)) / 2;
+    sum +=
+      Math.abs(
+        (coords[b]! - coords[a]!) * (coords[c + 1]! - coords[a + 1]!) -
+          (coords[c]! - coords[a]!) * (coords[b + 1]! - coords[a + 1]!),
+      ) / 2;
   }
   return sum;
 }
