@@ -187,15 +187,19 @@ export class TileManager<D> {
       inBounds.push(slot);
       this.want(slot.z, slot.x, slot.y, i, now);
     }
-    if (this.options.backstopLevels > 0) {
+    const levels = [...this.options.backstopLevels].sort((a, b) => b - a);
+    for (let l = 0; l < levels.length; l++) {
+      const level = levels[l]!;
+      if (level <= 0) continue;
       let order = 0;
+      const base = -10000 * (levels.length - l);
       for (const slot of inBounds) {
-        const z = Math.max(this.tiling.minZoom, slot.z - this.options.backstopLevels);
+        const z = Math.max(this.tiling.minZoom, slot.z - level);
         if (z >= slot.z) continue;
         const p = parentTile(slot, slot.z - z);
         const existing = this.tiles.get(tileKey(p.z, p.x, p.y));
         if (existing?.wanted) continue;
-        this.want(p.z, p.x, p.y, -1000 + order++, now);
+        this.want(p.z, p.x, p.y, base + order++, now);
       }
     }
     let prefetched = 0;
