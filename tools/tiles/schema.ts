@@ -135,7 +135,20 @@ function brunnel(tags: Tags): string | null {
   return null;
 }
 
-const AREA_KEYS = ["building", "landuse", "leisure", "amenity", "shop", "tourism", "historic", "aeroway", "place", "building:part", "office", "craft"];
+const AREA_KEYS = [
+  "building",
+  "landuse",
+  "leisure",
+  "amenity",
+  "shop",
+  "tourism",
+  "historic",
+  "aeroway",
+  "place",
+  "building:part",
+  "office",
+  "craft",
+];
 const LINEAR_NATURAL = new Set(["coastline", "cliff", "tree_row", "ridge", "arete", "valley", "earth_bank", "gully"]);
 
 export function isArea(tags: Tags): boolean {
@@ -147,7 +160,13 @@ export function isArea(tags: Tags): boolean {
   if (tags.water) return true;
   if (tags.highway) return tags.highway === "pedestrian" && tags.area === "yes";
   if (tags.railway) return tags.railway === "platform" || tags.railway === "station";
-  if (tags.man_made) return tags.man_made !== "pier" && tags.man_made !== "breakwater" && tags.man_made !== "embankment" && tags.man_made !== "pipeline";
+  if (tags.man_made)
+    return (
+      tags.man_made !== "pier" &&
+      tags.man_made !== "breakwater" &&
+      tags.man_made !== "embankment" &&
+      tags.man_made !== "pipeline"
+    );
   if (tags.boundary) return tags.boundary === "protected_area" || tags.boundary === "national_park";
   return AREA_KEYS.some((k) => tags[k] !== undefined);
 }
@@ -264,7 +283,20 @@ const PLACE: Record<string, [number, number]> = {
   isolated_dwelling: [13, 14],
 };
 
-const POI_KEYS = ["amenity", "shop", "tourism", "leisure", "historic", "office", "craft", "man_made", "railway", "aeroway", "public_transport", "sport"];
+const POI_KEYS = [
+  "amenity",
+  "shop",
+  "tourism",
+  "leisure",
+  "historic",
+  "office",
+  "craft",
+  "man_made",
+  "railway",
+  "aeroway",
+  "public_transport",
+  "sport",
+];
 
 const MAJOR_POI: Record<string, number> = {
   hospital: 12,
@@ -284,16 +316,66 @@ const MAJOR_POI: Record<string, number> = {
   school: 14,
 };
 
-const POI_SKIP = new Set(["yes", "no", "bench", "waste_basket", "bicycle_parking", "parking_space", "parking_entrance", "vending_machine", "post_box", "telephone", "drinking_water", "toilets", "recycling", "waste_disposal", "grit_bin", "clock", "hunting_stand", "loading_dock", "survey_point", "street_lamp", "utility_pole", "pole", "tower", "mast", "manhole", "flagpole", "water_tap"]);
+const POI_SKIP = new Set([
+  "yes",
+  "no",
+  "bench",
+  "waste_basket",
+  "bicycle_parking",
+  "parking_space",
+  "parking_entrance",
+  "vending_machine",
+  "post_box",
+  "telephone",
+  "drinking_water",
+  "toilets",
+  "recycling",
+  "waste_disposal",
+  "grit_bin",
+  "clock",
+  "hunting_stand",
+  "loading_dock",
+  "survey_point",
+  "street_lamp",
+  "utility_pole",
+  "pole",
+  "tower",
+  "mast",
+  "manhole",
+  "flagpole",
+  "water_tap",
+]);
 
 function poiClass(tags: Tags): [string, string] | null {
   for (const key of POI_KEYS) {
     const value = tags[key];
     if (!value || POI_SKIP.has(value)) continue;
-    if (key === "railway" && value !== "station" && value !== "halt" && value !== "tram_stop" && value !== "subway_entrance") continue;
+    if (
+      key === "railway" &&
+      value !== "station" &&
+      value !== "halt" &&
+      value !== "tram_stop" &&
+      value !== "subway_entrance"
+    )
+      continue;
     if (key === "aeroway" && value !== "aerodrome" && value !== "helipad" && value !== "terminal") continue;
-    if (key === "man_made" && value !== "lighthouse" && value !== "windmill" && value !== "observatory" && value !== "pier") continue;
-    if (key === "leisure" && (value === "pitch" || value === "track" || value === "playground" || value === "picnic_table" || value === "firepit" || value === "swimming_pool")) {
+    if (
+      key === "man_made" &&
+      value !== "lighthouse" &&
+      value !== "windmill" &&
+      value !== "observatory" &&
+      value !== "pier"
+    )
+      continue;
+    if (
+      key === "leisure" &&
+      (value === "pitch" ||
+        value === "track" ||
+        value === "playground" ||
+        value === "picnic_table" ||
+        value === "firepit" ||
+        value === "swimming_pool")
+    ) {
       if (!tags.name) continue;
     }
     return [key, value];
@@ -350,10 +432,17 @@ function classifyPoint(tags: Tags, out: Classified[]): void {
     const ele = num(tags.ele);
     const props = named(tags, { class: tags.natural });
     if (ele !== null) props.ele = Math.round(ele);
-    out.push({ layer: "mountain_peak", minZoom: ele !== null && ele > 2500 ? 8 : ele !== null && ele > 1000 ? 10 : 12, props });
+    out.push({
+      layer: "mountain_peak",
+      minZoom: ele !== null && ele > 2500 ? 8 : ele !== null && ele > 1000 ? 10 : 12,
+      props,
+    });
     return;
   }
-  if ((tags.natural === "bay" || tags.natural === "strait" || tags.place === "sea" || tags.place === "ocean") && tags.name) {
+  if (
+    (tags.natural === "bay" || tags.natural === "strait" || tags.place === "sea" || tags.place === "ocean") &&
+    tags.name
+  ) {
     out.push({ layer: "water_name", minZoom: 8, props: named(tags, { class: tags.natural ?? tags.place ?? "bay" }) });
     return;
   }
@@ -376,7 +465,8 @@ function classifyLine(tags: Tags, out: Classified[]): void {
       const [cls, minZoom] = road;
       const props = named(tags, { class: cls });
       if (highway.endsWith("_link")) props.ramp = 1;
-      if (cls === "path" || cls === "service") props.subclass = highway === "service" ? (tags.service ?? "service") : highway;
+      if (cls === "path" || cls === "service")
+        props.subclass = highway === "service" ? (tags.service ?? "service") : highway;
       const b = brunnel(tags);
       if (b) props.brunnel = b;
       if (tags.oneway === "yes" || tags.oneway === "1" || tags.junction === "roundabout") props.oneway = 1;
@@ -384,7 +474,10 @@ function classifyLine(tags: Tags, out: Classified[]): void {
       const layer = Number(tags.layer);
       if (Number.isInteger(layer) && layer !== 0) props.layer = Math.max(-5, Math.min(5, layer));
       if (tags.ref) props.ref = tags.ref;
-      if (tags.surface) props.surface = /^(paved|asphalt|concrete|paving_stones|sett|chipseal|metal|wood)/.test(tags.surface) ? "paved" : "unpaved";
+      if (tags.surface)
+        props.surface = /^(paved|asphalt|concrete|paving_stones|sett|chipseal|metal|wood)/.test(tags.surface)
+          ? "paved"
+          : "unpaved";
       const service = tags.service;
       const minor = service === "parking_aisle" || service === "driveway" || service === "drive-through";
       out.push({ layer: "road", minZoom: minor ? 14 : minZoom, props, sortKey: roadSort(cls, props) });
@@ -407,7 +500,16 @@ function classifyLine(tags: Tags, out: Classified[]): void {
   }
   const waterway = tags.waterway;
   if (waterway) {
-    const minZoom = waterway === "river" ? 8 : waterway === "canal" ? 11 : waterway === "stream" ? 13 : waterway === "ditch" || waterway === "drain" ? 14 : -1;
+    const minZoom =
+      waterway === "river"
+        ? 8
+        : waterway === "canal"
+          ? 11
+          : waterway === "stream"
+            ? 13
+            : waterway === "ditch" || waterway === "drain"
+              ? 14
+              : -1;
     if (minZoom >= 0) {
       const props = named(tags, { class: waterway });
       const b = brunnel(tags);
@@ -428,26 +530,54 @@ function classifyLine(tags: Tags, out: Classified[]): void {
 }
 
 function roadSort(cls: string, props: Props): number {
-  const order: Record<string, number> = { path: 1, track: 2, service: 3, minor: 4, tertiary: 5, secondary: 6, primary: 7, trunk: 8, motorway: 9 };
+  const order: Record<string, number> = {
+    path: 1,
+    track: 2,
+    service: 3,
+    minor: 4,
+    tertiary: 5,
+    secondary: 6,
+    primary: 7,
+    trunk: 8,
+    motorway: 9,
+  };
   const layer = typeof props.layer === "number" ? props.layer : 0;
   const ramp = props.ramp ? -0.5 : 0;
-  return layer * 20 + (props.brunnel === "bridge" ? 10 : props.brunnel === "tunnel" ? -10 : 0) + (order[cls] ?? 0) + ramp;
+  return (
+    layer * 20 + (props.brunnel === "bridge" ? 10 : props.brunnel === "tunnel" ? -10 : 0) + (order[cls] ?? 0) + ramp
+  );
 }
 
 function classifyArea(tags: Tags, out: Classified[]): void {
   const natural = tags.natural;
   const landuse = tags.landuse;
   const water = tags.water;
-  if (natural === "water" || water || landuse === "reservoir" || landuse === "basin" || tags.waterway === "riverbank" || tags.waterway === "dock") {
-    const cls = WATER_CLASSES[water ?? (landuse === "reservoir" ? "reservoir" : landuse === "basin" ? "basin" : "lake")] ?? "lake";
+  if (
+    natural === "water" ||
+    water ||
+    landuse === "reservoir" ||
+    landuse === "basin" ||
+    tags.waterway === "riverbank" ||
+    tags.waterway === "dock"
+  ) {
+    const cls =
+      WATER_CLASSES[water ?? (landuse === "reservoir" ? "reservoir" : landuse === "basin" ? "basin" : "lake")] ??
+      "lake";
     const props: Props = { class: tags.waterway === "riverbank" ? "river" : cls };
     if (tags.intermittent === "yes") props.intermittent = 1;
     out.push({ layer: "water", minZoom: 4, minPixels: 6, props });
-    if (tags.name) out.push({ layer: "water_name", minZoom: 9, minPixels: 6000, props: named(tags, { class: props.class as string }) });
+    if (tags.name)
+      out.push({
+        layer: "water_name",
+        minZoom: 9,
+        minPixels: 6000,
+        props: named(tags, { class: props.class as string }),
+      });
     return;
   }
   if (natural === "bay" || natural === "strait") {
-    if (tags.name) out.push({ layer: "water_name", minZoom: 8, minPixels: 8000, props: named(tags, { class: natural }) });
+    if (tags.name)
+      out.push({ layer: "water_name", minZoom: 8, minPixels: 8000, props: named(tags, { class: natural }) });
     return;
   }
   const building = tags.building ?? tags["building:part"];
@@ -457,7 +587,8 @@ function classifyArea(tags: Tags, out: Classified[]): void {
     const levels = num(tags["building:levels"]);
     const roofLevels = num(tags["roof:levels"]) ?? 0;
     if (height !== null && height > 0 && height < 1000) props.height = Math.round(height * 10) / 10;
-    else if (levels !== null && levels > 0 && levels < 200) props.height = Math.round((levels + roofLevels) * 3.2 * 10) / 10;
+    else if (levels !== null && levels > 0 && levels < 200)
+      props.height = Math.round((levels + roofLevels) * 3.2 * 10) / 10;
     const minHeight = num(tags.min_height);
     const minLevel = num(tags["building:min_level"]);
     if (minHeight !== null && minHeight > 0) props.min_height = Math.round(minHeight * 10) / 10;
@@ -478,17 +609,37 @@ function classifyArea(tags: Tags, out: Classified[]): void {
   const amenity = tags.amenity;
   const boundary = tags.boundary;
   if (boundary === "national_park" || boundary === "protected_area" || leisure === "nature_reserve") {
-    const cls = boundary === "national_park" ? "national_park" : leisure === "nature_reserve" ? "nature_reserve" : "protected_area";
+    const cls =
+      boundary === "national_park"
+        ? "national_park"
+        : leisure === "nature_reserve"
+          ? "nature_reserve"
+          : "protected_area";
     out.push({ layer: "park", minZoom: 5, minPixels: 400, props: named(tags, { class: cls }) });
-    if (tags.name) out.push({ layer: "poi", minZoom: 8, minPixels: 40000, props: named(tags, { class: "park", subclass: cls, rank: 9 }) });
+    if (tags.name)
+      out.push({
+        layer: "poi",
+        minZoom: 8,
+        minPixels: 40000,
+        props: named(tags, { class: "park", subclass: cls, rank: 9 }),
+      });
     return;
   }
   let use: string | null = null;
   if (landuse && LANDUSE[landuse]) use = LANDUSE[landuse]!;
-  else if (leisure === "park" || leisure === "garden" || leisure === "dog_park" || leisure === "playground" || leisure === "common") use = "park";
-  else if (leisure === "pitch" || leisure === "sports_centre" || leisure === "track" || leisure === "stadium") use = "pitch";
+  else if (
+    leisure === "park" ||
+    leisure === "garden" ||
+    leisure === "dog_park" ||
+    leisure === "playground" ||
+    leisure === "common"
+  )
+    use = "park";
+  else if (leisure === "pitch" || leisure === "sports_centre" || leisure === "track" || leisure === "stadium")
+    use = "pitch";
   else if (leisure === "golf_course") use = "golf";
-  else if (amenity === "school" || amenity === "college" || amenity === "university" || amenity === "kindergarten") use = "school";
+  else if (amenity === "school" || amenity === "college" || amenity === "university" || amenity === "kindergarten")
+    use = "school";
   else if (amenity === "hospital" || amenity === "clinic") use = "hospital";
   else if (amenity === "parking") use = "parking";
   else if (amenity === "grave_yard") use = "cemetery";
@@ -499,17 +650,34 @@ function classifyArea(tags: Tags, out: Classified[]): void {
   else if (tags.highway === "pedestrian" || tags.place === "square") use = "pedestrian";
   if (use) {
     const minZoom = use === "parking" || use === "pier" || use === "pedestrian" ? 13 : use === "apron" ? 12 : 6;
-    out.push({ layer: use === "apron" ? "aeroway" : "landuse", minZoom, minPixels: use === "airport" ? 200 : 60, props: { class: use } });
+    out.push({
+      layer: use === "apron" ? "aeroway" : "landuse",
+      minZoom,
+      minPixels: use === "airport" ? 200 : 60,
+      props: { class: use },
+    });
   }
   if (tags.place === "island" || tags.place === "islet") {
-    if (tags.name) out.push({ layer: "place", minZoom: tags.place === "island" ? 9 : 12, minPixels: 3000, props: named(tags, { class: tags.place, rank: tags.place === "island" ? 9 : 12 }) });
+    if (tags.name)
+      out.push({
+        layer: "place",
+        minZoom: tags.place === "island" ? 9 : 12,
+        minPixels: 3000,
+        props: named(tags, { class: tags.place, rank: tags.place === "island" ? 9 : 12 }),
+      });
     return;
   }
   const poi = poiClass(tags);
   if (poi && tags.name) {
     const [cls, sub] = poi;
     const rank = poiRank(cls, sub, tags);
-    if (rank <= 14) out.push({ layer: "poi", minZoom: rank, minPixels: rank <= 12 ? 2000 : 200, props: named(tags, { class: cls, subclass: sub, rank }) });
+    if (rank <= 14)
+      out.push({
+        layer: "poi",
+        minZoom: rank,
+        minPixels: rank <= 12 ? 2000 : 200,
+        props: named(tags, { class: cls, subclass: sub, rank }),
+      });
   }
 }
 
