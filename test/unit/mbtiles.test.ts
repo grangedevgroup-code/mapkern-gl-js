@@ -185,3 +185,51 @@ test("files that are not MBTiles are rejected clearly", async () => {
   other.close();
   await assert.rejects(new MBTilesArchive(new FileRanges(fake), fake).tile(0, 0, 0, signal), /no index/);
 });
+
+test("MBTiles files convert to PMTiles with every tile intact", async () => {
+  const { convertMbtiles } = await import("../../tools/tiles/convert.ts");
+  const { PMTilesArchive } = await import("../../src/sources/pmtiles.ts");
+  const water = new TextEncoder().encode("same water tile");
+  const path = create(
+    "convert.mbtiles",
+    4096,
+    [
+      "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+      "CREATE UNIQUE INDEX tile_index on tiles (zoom_level, tile_column, tile_row)",
+    ],
+    (db) => {
+      const insert = db.prepare("INSERT INTO tiles VALUES (?, ?, ?, ?)");
+      db.exec("BEGIN");
+      for (let z = 0; z <= 8; z++) {
+        const n = 2 ** z;
+        for (let x = 0; x < n; x++) {
+          for (let y = 0; y < n; y++) insert.run(z, x, n - 1 - y, x % 3 === 0 ? water : tileBytes(z, x, y));
+        }
+      }
+      db.exec("COMMIT");
+    },
+  );
+  const output = join(dir, "convert.pmtiles");
+  const result = await convertMbtiles(path, output);
+  assert.equal(result.tiles, 87381);
+  const ranges = new FileRanges(output);
+  const archive = new PMTilesArchive({ key: output, read: (offset, length) => ranges.read(offset, length) });
+  const header = await archive.header(signal);
+  assert.equal(header.minZoom, 0);
+  assert.equal(header.maxZoom, 8);
+  assert.ok(header.leafLength > 0, "large archives use leaf directories");
+  assert.ok(header.tileContents < 87381, "repeated tiles are stored once");
+  for (const [z, x, y] of [
+    [0, 0, 0],
+    [4, 3, 9],
+    [8, 255, 0],
+    [8, 1, 200],
+    [8, 0, 17],
+  ] as const) {
+    const expected = x % 3 === 0 ? water : tileBytes(z, x, y);
+    assert.deepEqual(await archive.tile(z, x, y, signal), expected, `tile ${z}/${x}/${y}`);
+  }
+  const metadata = await archive.metadata(signal);
+  assert.equal(metadata.name, "Test tiles");
+  assert.ok(Array.isArray(metadata.vector_layers));
+});
