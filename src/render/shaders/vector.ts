@@ -34,7 +34,13 @@ uniform int u_opacity_comp;
 ${paintChunk}
 out vec2 v_pos;
 out vec4 v_color;
+#ifdef PICK
+flat out highp uint v_feature;
+#endif
 void main() {
+#ifdef PICK
+  v_feature = a_feature;
+#endif
   vec4 color = paintValue(a_feature, u_color_slot, u_color_comp, u_color);
   float opacity = paintValue(a_feature, u_opacity_slot, u_opacity_comp, vec4(u_opacity)).x;
   v_color = vec4(color.rgb * color.a, color.a) * opacity;
@@ -46,10 +52,20 @@ void main() {
 ${clipChunk}
 in vec2 v_pos;
 in vec4 v_color;
+#ifdef PICK
+uniform highp uint u_draw;
+flat in highp uint v_feature;
+out highp uvec4 pickColor;
+#else
 out vec4 fragColor;
+#endif
 void main() {
   if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
+#ifdef PICK
+  pickColor = uvec4(u_draw, v_feature, 0u, 1u);
+#else
   fragColor = v_color;
+#endif
 }
 `,
 };
@@ -72,7 +88,13 @@ ${paintChunk}
 out vec2 v_pos;
 out vec2 v_screen;
 out vec4 v_color;
+#ifdef PICK
+flat out highp uint v_feature;
+#endif
 void main() {
+#ifdef PICK
+  v_feature = a_feature;
+#endif
   vec4 color = paintValue(a_feature, u_color_slot, u_color_comp, u_color);
   float opacity = paintValue(a_feature, u_opacity_slot, u_opacity_comp, vec4(u_opacity)).x;
   v_color = vec4(color.rgb * color.a, color.a) * opacity;
@@ -86,12 +108,22 @@ ${clipChunk}
 in vec2 v_pos;
 in vec2 v_screen;
 in vec4 v_color;
+#ifdef PICK
+uniform highp uint u_draw;
+flat in highp uint v_feature;
+out highp uvec4 pickColor;
+#else
 out vec4 fragColor;
+#endif
 void main() {
   if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
   float dist = length(v_screen - gl_FragCoord.xy);
   float alpha = 1.0 - smoothstep(0.0, 1.0, dist);
+#ifdef PICK
+  pickColor = uvec4(u_draw, v_feature, 0u, 1u);
+#else
   fragColor = v_color * alpha;
+#endif
 }
 `,
 };
@@ -129,7 +161,13 @@ out float v_half;
 out float v_edge;
 out float v_dist;
 out vec4 v_color;
+#ifdef PICK
+flat out highp uint v_feature;
+#endif
 void main() {
+#ifdef PICK
+  v_feature = a_feature;
+#endif
   vec4 color = paintValue(a_feature, u_color_slot, u_color_comp, u_color);
   float opacity = paintValue(a_feature, u_opacity_slot, u_opacity_comp, vec4(u_opacity)).x;
   float width = max(paintValue(a_feature, u_width_slot, u_width_comp, vec4(u_width)).x, u_min_width);
@@ -166,7 +204,13 @@ in float v_half;
 in float v_edge;
 in float v_dist;
 in vec4 v_color;
+#ifdef PICK
+uniform highp uint u_draw;
+flat in highp uint v_feature;
+out highp uvec4 pickColor;
+#else
 out vec4 fragColor;
+#endif
 void main() {
   if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
   float d = v_square > 0.5 ? max(abs(v_side.x), abs(v_side.y)) : length(v_side);
@@ -188,8 +232,16 @@ void main() {
     }
     alpha *= on;
   }
+#ifdef PICK
+  if (alpha < 0.5) discard;
+#else
   if (alpha <= 0.0) discard;
+#endif
+#ifdef PICK
+  pickColor = uvec4(u_draw, v_feature, 0u, 1u);
+#else
   fragColor = v_color * alpha;
+#endif
 }
 `,
 };
@@ -229,7 +281,13 @@ out float v_edge;
 out vec4 v_fill;
 out vec4 v_strokeColor;
 out vec2 v_pos;
+#ifdef PICK
+flat out highp uint v_feature;
+#endif
 void main() {
+#ifdef PICK
+  v_feature = a_feature;
+#endif
   vec4 color = paintValue(a_feature, u_color_slot, u_color_comp, u_color);
   vec4 stroke = paintValue(a_feature, u_stroke_color_slot, u_stroke_color_comp, u_stroke_color);
   float opacity = paintValue(a_feature, u_opacity_slot, u_opacity_comp, vec4(u_opacity)).x;
@@ -258,15 +316,29 @@ in float v_edge;
 in vec4 v_fill;
 in vec4 v_strokeColor;
 in vec2 v_pos;
+#ifdef PICK
+uniform highp uint u_draw;
+flat in highp uint v_feature;
+out highp uvec4 pickColor;
+#else
 out vec4 fragColor;
+#endif
 void main() {
   if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
   float d = length(v_offset);
   float outer = v_radius + v_stroke;
   float alpha = clamp((outer + v_edge * 0.5 - d) / v_edge, 0.0, 1.0);
+#ifdef PICK
+  if (alpha < 0.5) discard;
+#else
   if (alpha <= 0.0) discard;
+#endif
   float t = v_stroke > 0.0 ? clamp((d - v_radius + v_edge * 0.5) / v_edge, 0.0, 1.0) : 0.0;
+#ifdef PICK
+  pickColor = uvec4(u_draw, v_feature, 0u, 1u);
+#else
   fragColor = mix(v_fill, v_strokeColor, t) * alpha;
+#endif
 }
 `,
 };
@@ -293,7 +365,13 @@ uniform int u_base_comp;
 ${paintChunk}
 out vec2 v_pos;
 out vec4 v_color;
+#ifdef PICK
+flat out highp uint v_feature;
+#endif
 void main() {
+#ifdef PICK
+  v_feature = a_feature;
+#endif
   vec4 color = paintValue(a_feature, u_color_slot, u_color_comp, u_color);
   float height = max(paintValue(a_feature, u_height_slot, u_height_comp, vec4(u_height)).x, 0.0);
   float base = clamp(paintValue(a_feature, u_base_slot, u_base_comp, vec4(u_base)).x, 0.0, height);
@@ -309,10 +387,20 @@ void main() {
 ${clipChunk}
 in vec2 v_pos;
 in vec4 v_color;
+#ifdef PICK
+uniform highp uint u_draw;
+flat in highp uint v_feature;
+out highp uvec4 pickColor;
+#else
 out vec4 fragColor;
+#endif
 void main() {
   if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
+#ifdef PICK
+  pickColor = uvec4(u_draw, v_feature, 0u, 1u);
+#else
   fragColor = v_color;
+#endif
 }
 `,
 };
