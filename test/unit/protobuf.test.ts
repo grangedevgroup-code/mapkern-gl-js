@@ -3,7 +3,22 @@ import { test } from "node:test";
 import { BYTES, Reader, VARINT, Writer } from "../../src/formats/protobuf.ts";
 
 test("varints round trip across the 32-bit boundary", () => {
-  const values = [0, 1, 127, 128, 300, 2 ** 21, 2 ** 28 - 1, 2 ** 28, 2 ** 31, 2 ** 32 - 1, 2 ** 32, 2 ** 32 + 5, 13_000_000_123, 2 ** 53 - 1];
+  const values = [
+    0,
+    1,
+    127,
+    128,
+    300,
+    2 ** 21,
+    2 ** 28 - 1,
+    2 ** 28,
+    2 ** 31,
+    2 ** 32 - 1,
+    2 ** 32,
+    2 ** 32 + 5,
+    13_000_000_123,
+    2 ** 53 - 1,
+  ];
   const w = new Writer(4);
   for (const v of values) w.varint(v);
   const r = new Reader(w.finish());
@@ -32,7 +47,9 @@ test("negative int32 and int64 use ten-byte two's complement", () => {
 
 test("truncated and oversized varints throw", () => {
   assert.throws(() => new Reader(new Uint8Array([0x80, 0x80, 0x80, 0x80, 0x80])).varint());
-  assert.throws(() => new Reader(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01])).varint());
+  assert.throws(() =>
+    new Reader(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01])).varint(),
+  );
 });
 
 test("messages, strings and packed fields", () => {
