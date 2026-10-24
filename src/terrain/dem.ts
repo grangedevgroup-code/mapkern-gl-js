@@ -1,4 +1,4 @@
-export type DemEncoding = "terrarium" | "mapbox" | { red: number; green: number; blue: number; offset: number };
+import type { DemEncoding } from "../style/types.ts";
 
 export type Unpack = readonly [number, number, number, number];
 
