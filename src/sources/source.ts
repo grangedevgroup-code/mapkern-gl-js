@@ -1,6 +1,7 @@
 import type { Transform } from "../camera/transform.ts";
 import type { MapletError } from "../core/errors.ts";
 import type { GL } from "../render/gl.ts";
+import type { StyleLayer } from "../style/layer.ts";
 import type { SourceSpec } from "../style/types.ts";
 import type { TransformRequest } from "../tiles/fetch.ts";
 import type { TileStats } from "../tiles/manager.ts";
@@ -36,4 +37,5 @@ export interface MapSource {
   stats(): TileStats | null;
   reload(): void;
   destroy(): void;
+  setLayers?(layers: readonly StyleLayer[]): void;
 }
