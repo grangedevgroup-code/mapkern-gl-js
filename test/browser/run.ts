@@ -357,6 +357,35 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "KML from a URL and CSV from a file both turn into map features",
+    async run({ page, base, shot }) {
+      const style = JSON.stringify({
+        version: 1,
+        sources: { g: { type: "geojson", data: `${base}/fixture/formats/places.kml` } },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "dots", type: "circle", source: "g", paint: { color: "#00ff00", radius: 12 } },
+        ],
+      });
+      await createMap(page, style, { zoom: 4 });
+      const west = 400 - (10 / 360) * 8192;
+      const kml = await pixel(page, west, 300);
+      if (!near(kml, GREEN, 8)) fail(`expected the KML point at ${west},300, got ${kml}`);
+      await page.evaluate(
+        `void window.map.getSource("g").setData(new File(["name;lat;lon\\nEast;0;10\\n"], "east.csv", { type: "text/csv" }))`,
+      );
+      await idle(page);
+      await shot("csv");
+      const east = 400 + (10 / 360) * 8192;
+      const csv = await pixel(page, east, 300);
+      if (!near(csv, GREEN, 8)) fail(`expected the CSV point at ${east},300, got ${csv}`);
+      const gone = await pixel(page, west, 300);
+      if (!near(gone, WHITE, 8)) fail(`expected the KML point to be replaced, got ${gone}`);
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
     name: "extruded buildings show a lit roof above a shaded wall",
     async run({ page, shot }) {
       const block = square(0.001, "#3366cc");
