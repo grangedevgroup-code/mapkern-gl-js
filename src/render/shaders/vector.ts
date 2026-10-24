@@ -1,3 +1,5 @@
+import { demChunk } from "./terrain.ts";
+
 const paintChunk = `
 uniform highp sampler2D u_paint;
 uniform int u_paint_width;
@@ -363,6 +365,10 @@ uniform float u_base;
 uniform int u_base_slot;
 uniform int u_base_comp;
 ${paintChunk}
+#ifdef TERRAIN
+uniform float u_extent;
+${demChunk}
+#endif
 out vec2 v_pos;
 out vec4 v_color;
 #ifdef PICK
@@ -380,7 +386,11 @@ void main() {
   float shade = a_normal.z > 0.5 ? 1.0 : (0.66 + 0.3 * lambert) * (top ? 1.0 : 0.86);
   v_color = vec4(color.rgb * shade * color.a, color.a) * u_opacity;
   v_pos = a_pos;
-  gl_Position = u_matrix * vec4(a_pos, (top ? height : base) * u_pixels_per_meter, 1.0);
+  float z = (top ? height : base) * u_pixels_per_meter;
+#ifdef TERRAIN
+  z += groundPixels(clamp(a_pos / u_extent, 0.0, 1.0));
+#endif
+  gl_Position = u_matrix * vec4(a_pos, z, 1.0);
 }
 `,
   fragment: `
