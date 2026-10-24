@@ -371,22 +371,20 @@ export class CircleBuilder {
     this.vertices.reserve(CIRCLE_STRIDE * 4);
     const v = this.vertices.view;
     const base = this.vertexCount;
-    for (const [cx, cy] of [
-      [-1, -1],
-      [1, -1],
-      [1, 1],
-      [-1, 1],
-    ] as const) {
-      const o = this.vertices.length;
-      v.setInt16(o, clamp16(x), true);
-      v.setInt16(o + 2, clamp16(y), true);
-      v.setInt8(o + 4, cx * 127);
-      v.setInt8(o + 5, cy * 127);
+    const px = clamp16(x);
+    const py = clamp16(y);
+    let o = this.vertices.length;
+    for (let k = 0; k < 4; k++) {
+      v.setInt16(o, px, true);
+      v.setInt16(o + 2, py, true);
+      v.setInt8(o + 4, CORNER_X[k]!);
+      v.setInt8(o + 5, CORNER_Y[k]!);
       v.setInt8(o + 6, 0);
       v.setInt8(o + 7, 0);
       v.setUint32(o + 8, feature, true);
-      this.vertices.length = o + CIRCLE_STRIDE;
+      o += CIRCLE_STRIDE;
     }
+    this.vertices.length = o;
     this.vertexCount += 4;
     this.indices.push(base, base + 1, base + 2);
     this.indices.push(base, base + 2, base + 3);
