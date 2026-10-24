@@ -26,6 +26,7 @@ export interface VectorTileRequest {
   x: number;
   y: number;
   layers: LayerProgram[];
+  overzoom: boolean;
 }
 
 export interface FeatureRecord {
@@ -111,7 +112,8 @@ export async function buildVectorTile(
   const zoom = request.z;
   const views = new Map<string, FeatureView[]>();
   for (const program of request.layers) {
-    if (zoom < Math.floor(program.minZoom) || zoom >= program.maxZoom) continue;
+    if (program.maxZoom <= zoom) continue;
+    if (!request.overzoom && program.minZoom >= zoom + 1) continue;
     const source = sourceLayer(layers, program.sourceLayer);
     if (!source) continue;
     let list = views.get(source.name);
