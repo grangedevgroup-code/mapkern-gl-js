@@ -1,3 +1,4 @@
+import { ringArea } from "../formats/mvt.ts";
 import { triangulate } from "../render/tessellate.ts";
 
 export const LINE_STRIDE = 20;
@@ -408,7 +409,8 @@ export class ExtrusionBuilder {
     const tris = this.tris;
     tris.length = 0;
     triangulate(coords, holes, tris);
-    for (let t = 0; t < tris.length; t += 3) this.indices.push(base + tris[t]!, base + tris[t + 1]!, base + tris[t + 2]!);
+    for (let t = 0; t < tris.length; t += 3)
+      this.indices.push(base + tris[t]!, base + tris[t + 1]!, base + tris[t + 2]!);
   }
 
   private addWalls(ring: Int32Array, n: number, outward: number, feature: number): void {
@@ -424,8 +426,8 @@ export class ExtrusionBuilder {
       const dy = by - ay;
       const len = Math.hypot(dx, dy);
       if (len === 0) continue;
-      const nx = Math.round(((dy / len) * outward) * 127);
-      const ny = Math.round(((-dx / len) * outward) * 127);
+      const nx = Math.round((dy / len) * outward * 127);
+      const ny = Math.round((-dx / len) * outward * 127);
       const v = this.vertexCount;
       this.vertex(ax, ay, nx, ny, 0, false, feature);
       this.vertex(ax, ay, nx, ny, 0, true, feature);
@@ -450,13 +452,6 @@ export class ExtrusionBuilder {
     this.vertices.length = o + EXTRUSION_STRIDE;
     this.vertexCount++;
   }
-}
-
-function ringArea(ring: Int32Array): number {
-  let sum = 0;
-  const n = ring.length;
-  for (let i = 0, j = n - 2; i < n; j = i, i += 2) sum += (ring[j]! - ring[i]!) * (ring[i + 1]! + ring[j + 1]!);
-  return sum / 2;
 }
 
 export class CircleBuilder {
