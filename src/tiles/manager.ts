@@ -389,8 +389,7 @@ export class TileManager<D> {
   }
 
   private startJob(tile: Tile<D>): void {
-    let handle: JobHandle | undefined;
-    handle = this.scheduler.enqueue({
+    const handle: JobHandle = this.scheduler.enqueue({
       group: this.id,
       priority: tile.priority,
       run: () => this.load(tile, handle),
