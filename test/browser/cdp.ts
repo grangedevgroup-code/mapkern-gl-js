@@ -1,6 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,7 +24,9 @@ export function findChrome(): string | null {
   if (env && existsSync(env)) return env;
   const candidates: string[] = [];
   if (process.platform === "win32") {
-    const roots = [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter(Boolean) as string[];
+    const roots = [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter(
+      Boolean,
+    ) as string[];
     for (const root of roots) {
       candidates.push(join(root, "Google", "Chrome", "Application", "chrome.exe"));
       candidates.push(join(root, "Chromium", "Application", "chrome.exe"));
@@ -32,14 +34,26 @@ export function findChrome(): string | null {
     }
     const pw = process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "ms-playwright") : "";
     if (pw && existsSync(pw)) {
-      for (const dir of readdirSync(pw).filter((d) => d.startsWith("chromium-")).sort().reverse()) {
+      for (const dir of readdirSync(pw)
+        .filter((d) => d.startsWith("chromium-"))
+        .sort()
+        .reverse()) {
         candidates.push(join(pw, dir, "chrome-win", "chrome.exe"), join(pw, dir, "chrome-win64", "chrome.exe"));
       }
     }
   } else if (process.platform === "darwin") {
-    candidates.push("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Chromium.app/Contents/MacOS/Chromium");
+    candidates.push(
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    );
   } else {
-    candidates.push("/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser", "/snap/bin/chromium");
+    candidates.push(
+      "/usr/bin/google-chrome",
+      "/usr/bin/google-chrome-stable",
+      "/usr/bin/chromium",
+      "/usr/bin/chromium-browser",
+      "/snap/bin/chromium",
+    );
   }
   return candidates.find((c) => existsSync(c)) ?? null;
 }
@@ -117,7 +131,11 @@ export class Browser {
     return new Browser(proc, socket, profile);
   }
 
-  send<T = Record<string, unknown>>(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<T> {
+  send<T = Record<string, unknown>>(
+    method: string,
+    params: Record<string, unknown> = {},
+    sessionId?: string,
+  ): Promise<T> {
     const id = this.nextId++;
     const message: Record<string, unknown> = { id, method, params };
     if (sessionId) message.sessionId = sessionId;
@@ -211,7 +229,10 @@ export class Page {
       this.browser.on("Runtime.consoleAPICalled", (params, sessionId) => {
         if (sessionId !== this.sessionId) return;
         const args = (params.args as { value?: unknown; description?: string }[]) ?? [];
-        this.console.push({ type: String(params.type), text: args.map((a) => (a.value !== undefined ? String(a.value) : (a.description ?? ""))).join(" ") });
+        this.console.push({
+          type: String(params.type),
+          text: args.map((a) => (a.value !== undefined ? String(a.value) : (a.description ?? ""))).join(" "),
+        });
       }),
       this.browser.on("Runtime.exceptionThrown", (params, sessionId) => {
         if (sessionId !== this.sessionId) return;
@@ -241,12 +262,14 @@ export class Page {
   }
 
   async evaluate<T>(expression: string): Promise<T> {
-    const result = await this.send<{ result: { value?: T; description?: string }; exceptionDetails?: { exception?: { description?: string }; text?: string } }>(
-      "Runtime.evaluate",
-      { expression, awaitPromise: true, returnByValue: true },
-    );
+    const result = await this.send<{
+      result: { value?: T; description?: string };
+      exceptionDetails?: { exception?: { description?: string }; text?: string };
+    }>("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
     if (result.exceptionDetails) {
-      throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? "evaluation failed");
+      throw new Error(
+        result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? "evaluation failed",
+      );
     }
     return result.result.value as T;
   }
@@ -265,7 +288,12 @@ export class Page {
     writeFileSync(path, Buffer.from(data, "base64"));
   }
 
-  async mouse(type: "mousePressed" | "mouseReleased" | "mouseMoved" | "mouseWheel", x: number, y: number, extra: Record<string, unknown> = {}): Promise<void> {
+  async mouse(
+    type: "mousePressed" | "mouseReleased" | "mouseMoved" | "mouseWheel",
+    x: number,
+    y: number,
+    extra: Record<string, unknown> = {},
+  ): Promise<void> {
     await this.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1, ...extra });
   }
 
