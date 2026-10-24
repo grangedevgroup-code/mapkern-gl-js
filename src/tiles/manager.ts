@@ -117,13 +117,16 @@ export class TileManager<D> {
   }
 
   get hasPendingUploads(): boolean {
-    for (const tile of this.tiles.values()) if (tile.state === "prepared" && tile.wanted) return true;
+    for (const tile of this.tiles.values()) {
+      if ((tile.state === "prepared" && tile.wanted) || tile.next !== null) return true;
+    }
     return false;
   }
 
   get isLoaded(): boolean {
     for (const tile of this.tiles.values()) {
-      if (tile.wanted && tile.priority < 10000 && tile.isLoading) return false;
+      if (!tile.wanted || tile.priority >= 10000) continue;
+      if (tile.isLoading || (this.isOutdated(tile) && tile.failure === null)) return false;
     }
     return true;
   }
@@ -133,12 +136,14 @@ export class TileManager<D> {
       loading = 0,
       failed = 0,
       empty = 0,
+      refreshing = 0,
       bytes = 0;
     for (const tile of this.tiles.values()) {
       if (tile.state === "ready") ready++;
       else if (tile.isLoading) loading++;
       else if (tile.state === "failed") failed++;
       else if (tile.state === "empty") empty++;
+      if (this.isOutdated(tile) || tile.next !== null) refreshing++;
       bytes += tile.bytes;
     }
     const area = this.viewArea > 0 ? this.viewArea : 1;
@@ -148,6 +153,7 @@ export class TileManager<D> {
       loading,
       failed,
       empty,
+      refreshing,
       bytes,
       visibleSlots: this.visibleCount,
       pieces: this.pieces.length,
