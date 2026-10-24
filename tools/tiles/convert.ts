@@ -61,7 +61,12 @@ export async function convertMbtiles(
     if (writer.count === 0) throw new Error(`${input} has no tiles`);
     const format = (meta.format ?? "").toLowerCase();
     const tileType = TYPES[format] ?? (gzipped > 0 ? TileType.mvt : TileType.unknown);
-    const bounds = (meta.bounds ?? "-180,-85.0511,180,85.0511").split(",").map(Number) as [number, number, number, number];
+    const bounds = (meta.bounds ?? "-180,-85.0511,180,85.0511").split(",").map(Number) as [
+      number,
+      number,
+      number,
+      number,
+    ];
     const center = (meta.center ?? "").split(",").map(Number);
     const metadata: Record<string, unknown> = {};
     for (const key of ["name", "description", "attribution", "version", "type"]) {
@@ -74,11 +79,21 @@ export async function convertMbtiles(
         log("warning: the metadata json field is not valid JSON and was left out");
       }
     }
+    for (const [key, actual] of [
+      ["minzoom", minZoom],
+      ["maxzoom", maxZoom],
+    ] as const) {
+      const stated = meta[key];
+      if (stated !== undefined && stated !== "" && Number(stated) !== actual) {
+        log(`warning: the metadata says ${key} ${stated} but the tiles go to ${actual}; using ${actual}`);
+      }
+    }
+    const tiles = writer.count;
     const result = writer.write(output, {
       tileType,
       tileCompression: gzipped > 0 && plain === 0 ? Compression.gzip : Compression.none,
-      minZoom: Number.isFinite(Number(meta.minzoom)) && meta.minzoom !== undefined ? Number(meta.minzoom) : minZoom,
-      maxZoom: Number.isFinite(Number(meta.maxzoom)) && meta.maxzoom !== undefined ? Number(meta.maxzoom) : maxZoom,
+      minZoom,
+      maxZoom,
       bounds: bounds.length === 4 && bounds.every(Number.isFinite) ? bounds : [-180, -85.0511, 180, 85.0511],
       center:
         center.length >= 2 && center.every(Number.isFinite)
@@ -86,8 +101,9 @@ export async function convertMbtiles(
           : [(bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2, minZoom],
       metadata,
     });
-    if (gzipped > 0 && plain > 0) log("warning: some tiles are gzipped and some are not; the archive says they are not");
-    return { tiles: writer.count, bytes: result.bytes };
+    if (gzipped > 0 && plain > 0)
+      log("warning: some tiles are gzipped and some are not; the archive says they are not");
+    return { tiles, bytes: result.bytes };
   } finally {
     ranges.close();
   }
