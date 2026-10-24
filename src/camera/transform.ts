@@ -3,6 +3,7 @@ import * as mat4 from "../geo/mat4.ts";
 import type { LngLat } from "../geo/mercator.ts";
 import {
   clampLatitude,
+  EARTH_CIRCUMFERENCE,
   latFromMercatorY,
   lngFromMercatorX,
   mercatorX,
@@ -60,6 +61,10 @@ export class Transform {
   private cameraPos: [number, number, number] = [0, 0, 1];
   private farZ = 1;
   private nearZ = 1;
+  private elevationMeters = 0;
+  private groundMeters = 0;
+  private elevationPx = 0;
+  private groundPx = 0;
   private readonly tmp: Vec4 = [0, 0, 0, 0];
 
   get center(): LngLat {
@@ -100,6 +105,23 @@ export class Transform {
     return this.cameraPos;
   }
 
+  get elevation(): number {
+    return this.elevationMeters;
+  }
+
+  get ground(): number {
+    return this.groundMeters;
+  }
+
+  get pixelsPerMeter(): number {
+    return (this.worldSize * Math.cosh(Math.PI * (1 - 2 * this.cy))) / EARTH_CIRCUMFERENCE;
+  }
+
+  get centerElevationPixels(): number {
+    this.update();
+    return this.elevationPx;
+  }
+
   get far(): number {
     this.update();
     return this.farZ;
@@ -124,6 +146,8 @@ export class Transform {
     t.z = this.z;
     t.bearingDeg = this.bearingDeg;
     t.pitchDeg = this.pitchDeg;
+    t.elevationMeters = this.elevationMeters;
+    t.groundMeters = this.groundMeters;
     t.dirty = true;
     return t;
   }
@@ -176,6 +200,49 @@ export class Transform {
     this.dirty = true;
   }
 
+  setElevation(meters: number): void {
+    if (!Number.isFinite(meters) || meters === this.elevationMeters) return;
+    this.elevationMeters = meters;
+    this.dirty = true;
+  }
+
+  setGround(meters: number): void {
+    if (!Number.isFinite(meters) || meters === this.groundMeters) return;
+    this.groundMeters = meters;
+    this.dirty = true;
+  }
+
+  setElevationKeepCamera(meters: number): void {
+    if (!Number.isFinite(meters) || meters === this.elevationMeters) return;
+    this.update();
+    const ws = this.worldSize;
+    const camX = this.cameraPos[0] / ws;
+    const camY = this.cameraPos[1] / ws;
+    const camZ = this.cameraPos[2] / ws;
+    const pitch = this.pitchDeg * DEG;
+    const bearing = this.bearingDeg * DEG;
+    const fx = Math.sin(pitch) * Math.sin(bearing);
+    const fy = -Math.sin(pitch) * Math.cos(bearing);
+    let x = this.cx;
+    let y = this.cy;
+    let distance = 0;
+    for (let i = 0; i < 6; i++) {
+      const height = (meters * Math.cosh(Math.PI * (1 - 2 * y))) / EARTH_CIRCUMFERENCE;
+      distance = (camZ - height) / Math.cos(pitch);
+      const nx = camX + fx * distance;
+      const ny = camY + fy * distance;
+      const settled = Math.abs(ny - y) < 1e-15;
+      x = nx;
+      y = ny;
+      if (settled) break;
+    }
+    if (!(distance > 0) || y < 0 || y > 1) return;
+    this.elevationMeters = meters;
+    this.setCenterWorld(x, y);
+    this.setZoom(Math.log2(this.cameraDistance / distance / TILE_SIZE));
+    this.dirty = true;
+  }
+
   setZoomRange(minZoom: number, maxZoom: number): void {
     this.minZoom = Math.max(0, Math.min(minZoom, maxZoom));
     this.maxZoom = Math.min(MAX_TILE_ZOOM, Math.max(minZoom, maxZoom));
@@ -196,9 +263,12 @@ export class Transform {
     const d = this.height / 2 / Math.tan(fovRad / 2);
     this.cameraDistance = d;
     const ws = this.worldSize;
+    const ppm = (ws * Math.cosh(Math.PI * (1 - 2 * this.cy))) / EARTH_CIRCUMFERENCE;
+    this.elevationPx = this.elevationMeters * ppm;
+    this.groundPx = Math.min(this.groundMeters * ppm, this.elevationPx);
     const camHeight = d * Math.cos(pitch);
     const topAngle = Math.min(pitch + fovRad / 2, MAX_GROUND_ANGLE);
-    const groundAlongTopRay = camHeight / Math.cos(topAngle);
+    const groundAlongTopRay = (camHeight + this.elevationPx - this.groundPx) / Math.cos(topAngle);
     const farDepth = groundAlongTopRay * Math.cos(fovRad / 2);
     this.farZ = farDepth * 1.01 + 1;
     this.nearZ = Math.max(d / 100, 0.01);
@@ -209,7 +279,7 @@ export class Transform {
     mat4.rotateX(v, v, -pitch);
     mat4.rotateZ(v, v, this.bearingDeg * DEG);
     mat4.scale(v, v, 1, -1, 1);
-    mat4.translate(v, v, -this.cx * ws, -this.cy * ws, 0);
+    mat4.translate(v, v, -this.cx * ws, -this.cy * ws, -this.elevationPx);
     mat4.multiply(this.pixelMatrix, this.projMatrix, v);
     mat4.invert(this.pixelMatrixInverse, this.pixelMatrix);
     mat4.scale(this.unitMatrix, this.pixelMatrix, ws, ws, 1);
@@ -218,7 +288,7 @@ export class Transform {
     this.cameraPos = [
       this.cx * ws - Math.sin(bearing) * horizontal,
       this.cy * ws + Math.cos(bearing) * horizontal,
-      camHeight,
+      camHeight + this.elevationPx,
     ];
   }
 
@@ -261,26 +331,27 @@ export class Transform {
     return { origin: [ax, ay, az], dir: [bx - ax, by - ay, bz - az] };
   }
 
-  unproject(px: number, py: number, groundZ = 0): [number, number] | null {
+  unproject(px: number, py: number, groundZ?: number): [number, number] | null {
     const { origin, dir } = this.screenRay(px, py);
     if (dir[2] >= -1e-12) return null;
-    const t = (groundZ - origin[2]) / dir[2];
+    const t = ((groundZ ?? this.elevationPx) - origin[2]) / dir[2];
     if (t < 0) return null;
     const ws = this.worldSize;
     return [(origin[0] + dir[0] * t) / ws, (origin[1] + dir[1] * t) / ws];
   }
 
-  unprojectClamped(px: number, py: number): [number, number] {
+  unprojectClamped(px: number, py: number, groundZ?: number): [number, number] {
     this.update();
     const { origin, dir } = this.screenRay(px, py);
     const ws = this.worldSize;
-    const camHeight = this.cameraPos[2];
+    const plane = groundZ ?? this.elevationPx;
+    const camHeight = Math.max(0, this.cameraPos[2] - plane);
     const maxHorizontal = camHeight * Math.tan(MAX_GROUND_ANGLE);
     const hx = dir[0],
       hy = dir[1];
     const hl = Math.hypot(hx, hy);
     if (dir[2] < -1e-12) {
-      const t = -origin[2] / dir[2];
+      const t = (plane - origin[2]) / dir[2];
       const gx = origin[0] + dir[0] * t;
       const gy = origin[1] + dir[1] * t;
       const ddx = gx - this.cameraPos[0];
@@ -298,27 +369,28 @@ export class Transform {
     return [lngFromMercatorX(w[0]), latFromMercatorY(w[1])];
   }
 
-  setLocationAtPoint(world: [number, number], px: number, py: number): void {
-    const now = this.unprojectClamped(px, py);
+  setLocationAtPoint(world: [number, number], px: number, py: number, meters?: number): void {
+    const now = this.unprojectClamped(px, py, meters === undefined ? undefined : meters * this.pixelsPerMeter);
     this.setCenterWorld(this.cx + world[0] - now[0], this.cy + world[1] - now[1]);
   }
 
-  zoomAround(zoom: number, px: number, py: number): void {
-    const anchor = this.unproject(px, py);
+  zoomAround(zoom: number, px: number, py: number, meters?: number): void {
+    const anchor = this.unproject(px, py, meters === undefined ? undefined : meters * this.pixelsPerMeter);
     this.setZoom(zoom);
-    if (anchor) this.setLocationAtPoint(anchor, px, py);
+    if (anchor) this.setLocationAtPoint(anchor, px, py, meters);
   }
 
   footprint(): [number, number][] {
     this.update();
     const w = this.width,
       h = this.height;
+    const g = this.groundPx;
     const pts: [number, number][] = [
-      this.unprojectClamped(0, 0),
-      this.unprojectClamped(w / 2, 0),
-      this.unprojectClamped(w, 0),
-      this.unprojectClamped(w, h),
-      this.unprojectClamped(0, h),
+      this.unprojectClamped(0, 0, g),
+      this.unprojectClamped(w / 2, 0, g),
+      this.unprojectClamped(w, 0, g),
+      this.unprojectClamped(w, h, g),
+      this.unprojectClamped(0, h, g),
     ];
     return convexHull(pts);
   }
@@ -339,7 +411,7 @@ export class Transform {
     const bearing = this.bearingDeg * DEG;
     const dirX = Math.sin(pitch) * Math.sin(bearing);
     const dirY = -Math.sin(pitch) * Math.cos(bearing);
-    const baseDepth = cam[2] * Math.cos(pitch);
+    const baseDepth = (cam[2] - this.groundPx) * Math.cos(pitch);
     const minDepth = this.nearZ;
     let minX = Infinity,
       maxX = -Infinity;
@@ -374,7 +446,7 @@ export class Transform {
       if (t.z >= target) {
         const cxw = ((x0 + x1) / 2) * ws - cam[0];
         const cyw = ((y0 + y1) / 2) * ws - cam[1];
-        out.push({ z: t.z, x: t.x, y: t.y, wrap: t.wrap, distance: Math.hypot(cxw, cyw, cam[2]) });
+        out.push({ z: t.z, x: t.x, y: t.y, wrap: t.wrap, distance: Math.hypot(cxw, cyw, cam[2] - this.groundPx) });
         continue;
       }
       const z = t.z + 1,
