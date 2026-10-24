@@ -5,6 +5,7 @@ import type { RGBA } from "../style/color.ts";
 import type { EvalContext, GeometryType } from "../style/expression.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { RenderPiece, TileManager } from "../tiles/manager.ts";
+import type { Tile } from "../tiles/tile.ts";
 import type { FontSpec, GlyphMetrics } from "./glyphs.ts";
 import { cssFamily, GLYPH_SIZE, GlyphAtlas, needsWholeShaping, SDF_RADIUS, splitGraphemes } from "./glyphs.ts";
 import { textShader } from "./shader.ts";
@@ -46,6 +47,18 @@ interface Label {
   opacity: number;
   target: number;
   seen: number;
+  tile: Tile<VectorTile>;
+  revision: number;
+  bucket: VectorBucket;
+  feature: number;
+  boxes: number[];
+}
+
+export interface LabelHit {
+  layer: StyleLayer;
+  tile: Tile<VectorTile>;
+  bucket: VectorBucket;
+  feature: number;
 }
 
 const FADE_MS = 180;
@@ -178,6 +191,22 @@ export class LabelRenderer {
   }
 
   private lastFrame: number | undefined;
+
+  hits(box: { x0: number; y0: number; x1: number; y1: number }, accept: (layer: StyleLayer) => boolean): LabelHit[] {
+    const out: LabelHit[] = [];
+    for (const label of this.labels.values()) {
+      if (label.target !== 1 || label.opacity <= 0 || !accept(label.layer)) continue;
+      if (label.tile.isEvicted || label.tile.revision !== label.revision) continue;
+      const b = label.boxes;
+      for (let i = 0; i < b.length; i += 4) {
+        if (b[i]! <= box.x1 && b[i + 2]! >= box.x0 && b[i + 1]! <= box.y1 && b[i + 3]! >= box.y0) {
+          out.push({ layer: label.layer, tile: label.tile, bucket: label.bucket, feature: label.feature });
+          break;
+        }
+      }
+    }
+    return out;
+  }
 
   draw(transform: Transform, pixelRatio: number): number {
     if (this.glyphCount === 0) return 0;
@@ -468,6 +497,11 @@ export class LabelRenderer {
             existing.haloWidth = haloWidth;
             existing.target = 1;
             existing.seen = now;
+            existing.tile = tile;
+            existing.revision = tile.revision;
+            existing.bucket = bucket;
+            existing.feature = fi;
+            existing.boxes = boxes;
           } else {
             this.labels.set(key, {
               key,
@@ -487,6 +521,11 @@ export class LabelRenderer {
               opacity: 0,
               target: 1,
               seen: now,
+              tile,
+              revision: tile.revision,
+              bucket,
+              feature: fi,
+              boxes,
             });
           }
           if (!isLine) break;
