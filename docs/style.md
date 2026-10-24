@@ -265,9 +265,7 @@ Colors interpolate too.
 
 ### Types
 
-`to-string`, `to-number`, `to-boolean`, `to-color`, `rgb`, `rgba`, `typeof`, `string`, `number`, `boolean`, `color`
-
-`["string", value, fallback]` and the other type checks return the first argument that has the right type.
+`to-string`, `to-number`, `to-boolean`, `to-color`, `rgb`, `rgba`, `typeof`
 
 ## Filters
 
