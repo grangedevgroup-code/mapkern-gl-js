@@ -45,7 +45,7 @@ Each tile has the layers below. Use the layer name as `sourceLayer` when you wri
 | `aeroway` | 10 | `class` is `runway`, `taxiway` or `apron` |
 | `road` | 4 | See below |
 | `railway` | 9 | `class` is `rail`, `light_rail`, `subway`, `tram`, `narrow_gauge`, `monorail`, `funicular` or `preserved`. Also `name`, `brunnel`, `service`, `layer` |
-| `building` | 13 | `height` and `min_height` in meters when OpenStreetMap has them. `part` is 1 for building parts |
+| `building` | 12 | `height` and `min_height` in meters when OpenStreetMap has them. `part` is 1 for building parts |
 | `place` | 2 | City, town and neighborhood points. `class` is the OpenStreetMap place type, plus `name`, `rank`, `capital` and `population` |
 | `poi` | 8 | Shops, cafes, schools and so on. `class` is the OpenStreetMap key (`amenity`, `shop`, `tourism`...) and `subclass` its value (`cafe`, `bakery`...). Also `name` and `rank` |
 | `water_name` | 8 | Points for naming lakes, bays and seas |
