@@ -3,6 +3,7 @@ import type { GpuGeometry, VectorBucket, VectorTile } from "../sources/vector.ts
 import { dataDrivenPaint } from "../sources/vector.ts";
 import type { RGBA } from "../style/color.ts";
 import type { StyleLayer } from "../style/layer.ts";
+import type { Terrain } from "../terrain/terrain.ts";
 import type { RenderPiece, TileManager } from "../tiles/manager.ts";
 import type { GL, Program, ProgramSource } from "./gl.ts";
 import type { FrameInput, PaintStats } from "./painter.ts";
@@ -49,6 +50,8 @@ const PICK = ["PICK"];
 const PICKING: ReadonlyMap<ProgramSource, ProgramSource> = new Map(
   [fillShader, lineShader, circleShader, extrusionShader].map((s) => [s, { ...s, defines: PICK }]),
 );
+const EXTRUSION_TERRAIN: ProgramSource = { ...extrusionShader, defines: ["TERRAIN"] };
+const EXTRUSION_TERRAIN_PICK: ProgramSource = { ...extrusionShader, defines: ["PICK", "TERRAIN"] };
 
 function normalize(x: number, y: number, z: number): [number, number, number] {
   const len = Math.hypot(x, y, z);
@@ -92,7 +95,9 @@ export class VectorPainter {
 
   private program(source: ProgramSource, pick: PickPass | undefined): Program {
     const g = this.gl;
-    const program = g.program(pick ? (PICKING.get(source) ?? source) : source);
+    const program = g.program(
+      source === EXTRUSION_TERRAIN && pick ? EXTRUSION_TERRAIN_PICK : pick ? (PICKING.get(source) ?? source) : source,
+    );
     g.use(program);
     g.setBlend(pick ? "none" : "premultiplied");
     return program;
@@ -163,6 +168,25 @@ export class VectorPainter {
       clip.x1 * extent,
       clip.y1 * extent,
     );
+  }
+
+  private bindGround(program: Program, terrain: Terrain, piece: RenderPiece<VectorTile>, extent: number): void {
+    const g = this.gl;
+    const gl = g.gl;
+    const tile = piece.tile;
+    const found = terrain.demFor(tile.z, tile.x, tile.y);
+    const data = found?.tile.data ?? null;
+    const texture = data ? terrain.source.elevationTexture(data) : null;
+    g.bindTexture(2, texture ?? flatDem(g));
+    gl.activeTexture(gl.TEXTURE0);
+    const r = found?.rect ?? { x0: 0, y0: 0, x1: 1, y1: 1 };
+    const n = 2 ** tile.z;
+    const u = program.uniforms;
+    gl.uniform4f(u.get("u_dem_rect") ?? null, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+    gl.uniform1f(u.get("u_dem_size") ?? null, data ? data.grid.size : 1);
+    gl.uniform1f(u.get("u_has_dem") ?? null, texture ? 1 : 0);
+    gl.uniform2f(u.get("u_rows") ?? null, tile.y / n, (tile.y + 1) / n);
+    gl.uniform1f(u.get("u_extent") ?? null, extent);
   }
 
   private drawGeometry(g: GpuGeometry, stats: PaintStats): void {
@@ -306,9 +330,15 @@ export class VectorPainter {
     const zoom = transform.zoom;
     const opacity = layer.paintValue<number>("opacity", { zoom });
     if (!(opacity > 0)) return;
-    const program = this.program(extrusionShader, pick);
+    const terrain = frame.terrain ?? null;
+    const program = this.program(terrain ? EXTRUSION_TERRAIN : extrusionShader, pick);
     this.prepare(program, layer, zoom, EXTRUSION_PAINT);
     gl.uniform1f(program.uniforms.get("u_opacity") ?? null, Math.min(1, opacity));
+    if (terrain) {
+      gl.uniform1i(program.uniforms.get("u_dem") ?? null, 2);
+      gl.uniform1f(program.uniforms.get("u_world") ?? null, transform.worldSize);
+      gl.uniform1f(program.uniforms.get("u_exaggeration") ?? null, terrain.exaggeration);
+    }
     const b = (transform.bearing * Math.PI) / 180;
     const [sx, sy, sz] = LIGHT;
     gl.uniform3f(
@@ -328,6 +358,7 @@ export class VectorPainter {
         if (!bucket?.main) continue;
         this.bindPaint(program, layer, bucket, zoom, EXTRUSION_PAINT);
         this.tileUniforms(program, frame, piece, bucket, pick);
+        if (terrain) this.bindGround(program, terrain, piece, bucket.extent);
         const lat = latFromMercatorY((piece.tile.y + 0.5) / 2 ** piece.tile.z);
         gl.uniform1f(program.uniforms.get("u_pixels_per_meter") ?? null, 1 / metersPerPixel(lat, zoom));
         this.drawGeometry(bucket.main, stats);
@@ -338,6 +369,17 @@ export class VectorPainter {
     gl.depthFunc(gl.LEQUAL);
     g.setDepth(false, false);
   }
+}
+
+const NO_DEM = new WeakMap<GL, WebGLTexture>();
+
+function flatDem(gl: GL): WebGLTexture {
+  let texture = NO_DEM.get(gl);
+  if (!texture) {
+    texture = gl.createDataTexture(1, 1, "r32f", Float32Array.of(0), false);
+    NO_DEM.set(gl, texture);
+  }
+  return texture;
 }
 
 function multiplyInto(m: Float32Array, a: Float64Array): void {
