@@ -94,7 +94,10 @@ class FeatureView implements FeatureContext {
   }
 }
 
-export async function buildVectorTile(request: VectorTileRequest, signal: AbortSignal): Promise<{ result: VectorTileResult; transfer: Transferable[] }> {
+export async function buildVectorTile(
+  request: VectorTileRequest,
+  signal: AbortSignal,
+): Promise<{ result: VectorTileResult; transfer: Transferable[] }> {
   const started = performance.now();
   const data = await inflate(request.bytes);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
@@ -114,9 +117,13 @@ export async function buildVectorTile(request: VectorTileRequest, signal: AbortS
       for (let i = 0; i < source.length; i++) list.push(new FeatureView(source.feature(i)));
       views.set(source.name, list);
     }
-    const filter = program.filter === null || program.filter === undefined ? null : cachedCompile(`${program.id}.filter`, program.filter, "boolean");
+    const filter =
+      program.filter === null || program.filter === undefined
+        ? null
+        : cachedCompile(`${program.id}.filter`, program.filter, "boolean");
     let selected = filter ? list.filter((f) => filter.evaluate({ zoom, feature: f }) === true) : list.slice();
-    if (program.type === "fill" || program.type === "extrusion") selected = selected.filter((f) => f.feature.type === 3);
+    if (program.type === "fill" || program.type === "extrusion")
+      selected = selected.filter((f) => f.feature.type === 3);
     else if (program.type === "line") selected = selected.filter((f) => f.feature.type === 2 || f.feature.type === 3);
     if (selected.length === 0) continue;
     if (program.sortKey !== null && program.sortKey !== undefined) {
@@ -182,7 +189,10 @@ function buildBucket(program: LayerProgram, source: VectorLayer, selected: Featu
       extent: source.extent,
       features,
       main: geometry(fill.vertices.finish(), fill.indices.finish(), fill.vertexCount),
-      outline: outline.vertexCount > 0 ? geometry(outline.vertices.finish(), outline.indices.finish(), outline.vertexCount) : null,
+      outline:
+        outline.vertexCount > 0
+          ? geometry(outline.vertices.finish(), outline.indices.finish(), outline.vertexCount)
+          : null,
     };
   }
   if (program.type === "line") {
