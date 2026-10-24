@@ -421,6 +421,7 @@ export function lightStyle(options: LightStyleOptions = {}): StyleSpec {
       },
     },
   );
+  if (options.labels !== false) layers.push(...labelLayers());
   return {
     version: 1,
     name: "Maplet Light",
