@@ -5,7 +5,8 @@ import { buildAll } from "../../scripts/build.ts";
 import { startServer } from "../../scripts/server.ts";
 import type { Page } from "./cdp.ts";
 import { Browser } from "./cdp.ts";
-import { fixtureRoute, square, writeMbtilesFixture } from "./fixtures.ts";
+import { latFromMercatorY, mercatorX, mercatorY } from "../../src/geo/mercator.ts";
+import { demHeight, fixtureRoute, HILL, square, writeMbtilesFixture } from "./fixtures.ts";
 import { BORDER, zoomColor } from "./png.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -118,6 +119,22 @@ async function createMap(page: Page, style: string, options: Record<string, unkn
 
 async function pixel(page: Page, x: number, y: number): Promise<RGBA> {
   return page.evaluate<RGBA>(`window.pixel(${x}, ${y})`);
+}
+
+function demStyle(base: string): string {
+  return JSON.stringify({
+    version: 1,
+    sources: { dem: { type: "dem", tiles: [`${base}/fixture/dem/{z}/{x}/{y}.png`], tileSize: 256, maxZoom: 12 } },
+    layers: [
+      { id: "bg", type: "background", paint: { color: "#808080" } },
+      { id: "hs", type: "hillshade", source: "dem" },
+    ],
+  });
+}
+
+async function brightness(page: Page, x: number, y: number): Promise<number> {
+  const c = await pixel(page, x, y);
+  return (c[0] + c[1] + c[2]) / 3;
 }
 
 async function idle(page: Page): Promise<void> {
@@ -577,6 +594,82 @@ const specs: Spec[] = [
         `window.map.queryRenderedFeatures([400, 200]).then((fs) => fs.map((f) => f.layer))`,
       );
       if (wall[0] !== "box") fail(`expected the 3D box first at 400,200, got ${JSON.stringify(wall)}`);
+    },
+  },
+  {
+    name: "hillshade lights the slopes that face the light",
+    async run({ page, base, shot }) {
+      await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
+      await shot("north-up");
+      const flat = await brightness(page, 30, 30);
+      if (Math.abs(flat - 128) > 2) fail(`flat ground should stay uncovered, got ${flat}`);
+      const check = async (litX: number, litY: number, darkX: number, darkY: number, what: string) => {
+        const lit = await brightness(page, litX, litY);
+        const dark = await brightness(page, darkX, darkY);
+        if (!(lit > 138 && dark < 118)) fail(`${what}: expected ${lit} > 138 and ${dark} < 118`);
+      };
+      await check(340, 240, 460, 360, "north-up");
+      await page.evaluate("void window.map.setBearing(180)");
+      await idle(page);
+      await check(340, 240, 460, 360, "rotated with the light fixed to the screen");
+      await page.evaluate(`void window.map.setPaintProperty("hs", "illuminationAnchor", "map")`);
+      await idle(page);
+      await shot("map-anchor");
+      await check(460, 360, 340, 240, "rotated with the light fixed to the map");
+      await page.evaluate(`void window.map.setPaintProperty("hs", "exaggeration", 0)`);
+      await idle(page);
+      const off = await brightness(page, 460, 360);
+      if (Math.abs(off - 128) > 2) fail(`exaggeration 0 should hide the shading, got ${off}`);
+    },
+  },
+  {
+    name: "hillshade tiles join without visible seams",
+    async run({ page, base, shot }) {
+      await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
+      await shot("seams");
+      const seamX = await page.evaluate<number>("window.map.project([2.8125, 2]).x");
+      const seamY = await page.evaluate<number>(`window.map.project([3, ${latFromMercatorY(63 / 128)}]).y`);
+      const roughness = (values: number[]) => {
+        let worst = 0;
+        for (let i = 1; i < values.length - 1; i++) {
+          worst = Math.max(worst, Math.abs(values[i + 1]! - 2 * values[i]! + values[i - 1]!));
+        }
+        return worst;
+      };
+      for (const y of [260, 300, 340]) {
+        const row: number[] = [];
+        for (let x = Math.round(seamX) - 10; x <= Math.round(seamX) + 10; x++) row.push(await brightness(page, x, y));
+        if (roughness(row) > 4) fail(`seam at x=${seamX.toFixed(1)}, row ${y}: ${row.map(Math.round).join(" ")}`);
+      }
+      for (const x of [360, 400, 440]) {
+        const column: number[] = [];
+        for (let y = Math.round(seamY) - 10; y <= Math.round(seamY) + 10; y++) column.push(await brightness(page, x, y));
+        if (roughness(column) > 4)
+          fail(`seam at y=${seamY.toFixed(1)}, column ${x}: ${column.map(Math.round).join(" ")}`);
+      }
+    },
+  },
+  {
+    name: "elevationAt reads heights from loaded elevation tiles",
+    async run({ page, base }) {
+      await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
+      const read = (lng: number, lat: number) =>
+        page.evaluate<number | null>(`window.map.getSource("dem").elevationAt([${lng}, ${lat}])`);
+      for (const [lng, lat] of [HILL, [3.5, 2.3], [2.2, 1.4], [4.1, 2.9]] as const) {
+        const got = await read(lng, lat);
+        const want = demHeight(mercatorX(lng), mercatorY(lat))!;
+        if (got === null || Math.abs(got - want) > 0.5) fail(`elevation at ${lng},${lat}: got ${got}, want ${want}`);
+      }
+      await page.evaluate("void window.map.jumpTo({ center: [20, -20] })");
+      await idle(page);
+      const hole = await read(20, -20);
+      if (hole !== null) fail(`transparent pixels should have no elevation, got ${hole}`);
+      await page.evaluate("void window.map.jumpTo({ center: [100, 0] })");
+      await idle(page);
+      const missing = await read(100, 0);
+      if (missing !== null) fail(`missing tiles should have no elevation, got ${missing}`);
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`missing elevation tiles should not raise errors: ${JSON.stringify(errors)}`);
     },
   },
   {
