@@ -265,6 +265,7 @@ export class Painter {
       Math.sin(LIGHT_ALTITUDE),
     );
     gl.uniform1f(uniform(program, "u_flat"), Math.sin(LIGHT_ALTITUDE));
+    gl.uniform1f(uniform(program, "u_gain"), 1.2 * exaggeration);
     for (const [name, property] of [
       ["u_shadow", "shadowColor"],
       ["u_highlight", "highlightColor"],
@@ -282,7 +283,7 @@ export class Painter {
     const uTexel = uniform(program, "u_texel");
     const uRows = uniform(program, "u_rows");
     const uScale = uniform(program, "u_scale");
-    const vertical = 2 * exaggeration * hillshadeBoost(zoom);
+    const vertical = (0.5 + exaggeration) * hillshadeBoost(zoom);
     for (const piece of manager.pieces) {
       const data = piece.tile.data;
       if (!data?.gradientTexture) continue;
