@@ -746,9 +746,7 @@ const specs: Spec[] = [
       if (Math.hypot(back[0] - DOT[0], back[1] - DOT[1]) > 0.015)
         fail(`unproject of the drawn dot gave ${back}, want ${DOT}`);
       const layersAt = (geometry: string) =>
-        page.evaluate<string[]>(
-          `window.map.queryRenderedFeatures(${geometry}).then((fs) => fs.map((f) => f.layer))`,
-        );
+        page.evaluate<string[]>(`window.map.queryRenderedFeatures(${geometry}).then((fs) => fs.map((f) => f.layer))`);
       const onDot = await layersAt(`[${red[0]}, ${red[1]}]`);
       if (!onDot.includes("dot")) fail(`a query on the drawn dot found ${JSON.stringify(onDot)}`);
       const around = await layersAt(`[[${red[0] - 20}, ${red[1] - 20}], [${red[0] + 20}, ${red[1] + 20}]]`);
