@@ -247,12 +247,23 @@ export class TileManager<D> {
 
   uploadPending(deadline: number, now: number): boolean {
     const pending: Tile<D>[] = [];
-    for (const tile of this.tiles.values()) if (tile.state === "prepared") pending.push(tile);
+    for (const tile of this.tiles.values()) if (tile.state === "prepared" || tile.next !== null) pending.push(tile);
     if (pending.length === 0) return false;
     pending.sort((a, b) => (a.wanted ? a.priority : 1e12) - (b.wanted ? b.priority : 1e12));
     let uploaded = false;
     for (const tile of pending) {
       if (uploaded && performance.now() > deadline) return true;
+      const next = tile.next;
+      if (next !== null) {
+        tile.next = null;
+        this.loader.upload(next);
+        const previous = tile.data;
+        tile.data = next;
+        if (previous) this.loader.release(previous);
+        tile.bytes = this.loader.byteSize(next);
+        uploaded = true;
+        continue;
+      }
       const data = tile.data;
       if (!data) continue;
       this.loader.upload(data);
@@ -267,6 +278,26 @@ export class TileManager<D> {
   reload(): void {
     for (const tile of [...this.tiles.values()]) this.drop(tile);
     this.pieces = [];
+  }
+
+  refresh(): void {
+    this.generation++;
+    for (const tile of [...this.tiles.values()]) {
+      if (!tile.wanted && !tile.retained) {
+        this.drop(tile);
+        continue;
+      }
+      if (tile.state === "ready") {
+        tile.attempts = 0;
+        tile.retryAt = 0;
+        tile.failure = null;
+      } else if (tile.state === "empty" || (tile.state === "failed" && tile.failure?.kind === "decode")) {
+        tile.transition("queued");
+        tile.attempts = 0;
+        tile.retryAt = 0;
+        tile.failure = null;
+      }
+    }
   }
 
   destroy(): void {
