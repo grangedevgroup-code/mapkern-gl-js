@@ -1,3 +1,4 @@
+import type { FeatureFormat } from "../formats/feature-format.ts";
 import type { GeoJSON } from "../geo/geojson.ts";
 
 export type Expression = readonly [string, ...unknown[]];
@@ -31,9 +32,12 @@ export interface DemSourceSpec extends TileSourceBase {
   encoding?: "terrarium" | "mapbox";
 }
 
+export type GeoJSONData = GeoJSON | string | Blob;
+
 export interface GeoJSONSourceSpec {
   type: "geojson";
-  data: GeoJSON | string;
+  data: GeoJSONData;
+  format?: FeatureFormat;
   maxZoom?: number;
   tolerance?: number;
   buffer?: number;
