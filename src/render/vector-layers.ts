@@ -6,6 +6,7 @@ import type { StyleLayer } from "../style/layer.ts";
 import type { Terrain } from "../terrain/terrain.ts";
 import type { RenderPiece, TileManager } from "../tiles/manager.ts";
 import type { GL, Program, ProgramSource } from "./gl.ts";
+import type { PaintBudget } from "./paint-table.ts";
 import type { FrameInput, PaintStats } from "./painter.ts";
 import { circleShader, extrusionShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
 
@@ -53,12 +54,15 @@ const PICKING: ReadonlyMap<ProgramSource, ProgramSource> = new Map(
 const EXTRUSION_TERRAIN: ProgramSource = { ...extrusionShader, defines: ["TERRAIN"] };
 const EXTRUSION_TERRAIN_PICK: ProgramSource = { ...extrusionShader, defines: ["PICK", "TERRAIN"] };
 
+export const WARM_VARIANTS: readonly ProgramSource[] = [EXTRUSION_TERRAIN];
+
 function normalize(x: number, y: number, z: number): [number, number, number] {
   const len = Math.hypot(x, y, z);
   return [x / len, y / len, z / len];
 }
 
 export class VectorPainter {
+  readonly budget: PaintBudget = { deadline: Number.POSITIVE_INFINITY, behind: false };
   private readonly gl: GL;
   private readonly matrix = new Float32Array(16);
   private readonly dash = new Float32Array(8);
@@ -130,11 +134,15 @@ export class VectorPainter {
   ): void {
     const g = this.gl;
     const gl = g.gl;
-    bucket.paint.update(g, layer, bucket.features, dataDrivenPaint(layer.type), zoom);
+    bucket.paint.update(g, layer, bucket.features, dataDrivenPaint(layer.type), zoom, this.budget);
     const stride = bucket.paint.stride;
     if (stride === 0 && this.boundStride === 0) return;
     this.boundStride = stride;
     g.bindTexture(1, bucket.paint.texture);
+    gl.uniform1f(
+      program.uniforms.get("u_zoom_t") ?? null,
+      Math.min(1, Math.max(0, zoom - (Number.isNaN(bucket.paint.base) ? Math.floor(zoom) : bucket.paint.base))),
+    );
     gl.uniform1i(program.uniforms.get("u_paint_width") ?? null, bucket.paint.width);
     gl.uniform1i(program.uniforms.get("u_paint_stride") ?? null, stride);
     for (const p of paint) {
