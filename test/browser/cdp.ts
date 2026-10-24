@@ -110,8 +110,9 @@ export class Browser {
         endpoint = m[1]!;
         break;
       }
-      if (existsSync(portFile)) {
-        const [portText, pathText] = readFileSync(portFile, "utf8").split(/\r?\n/);
+      const contents = readPortFile(portFile);
+      if (contents !== null) {
+        const [portText, pathText] = contents.split(/\r?\n/);
         const port = Number(portText);
         if (
           Number.isInteger(port) &&
