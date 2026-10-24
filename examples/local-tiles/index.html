@@ -23,13 +23,13 @@
       import * as maplet from "../../dist/maplet.js";
 
       const params = new URLSearchParams(location.search);
-      const file = params.get("tiles") ?? "../../data/puget-sound.pmtiles";
+      const file = params.get("tiles") ?? "../../data/seattle.pmtiles";
 
       const map = new maplet.Map({
         container: "map",
         style: maplet.lightStyle({ url: file }),
-        center: [-122.33, 47.6],
-        zoom: 10,
+        center: [-122.335, 47.608],
+        zoom: 12,
       });
       map.addControl(new maplet.NavigationControl());
       map.addControl(new maplet.ScaleControl());
