@@ -93,7 +93,11 @@ function coordinates(node: XmlElement | undefined): Position[] {
   for (const tuple of text.split(/\s+/)) {
     const values = tuple.split(",").map(Number);
     if (values.length >= 2 && Number.isFinite(values[0]) && Number.isFinite(values[1])) {
-      out.push(values.length >= 3 && Number.isFinite(values[2]) ? [values[0]!, values[1]!, values[2]!] : [values[0]!, values[1]!]);
+      out.push(
+        values.length >= 3 && Number.isFinite(values[2])
+          ? [values[0]!, values[1]!, values[2]!]
+          : [values[0]!, values[1]!],
+      );
     }
   }
   return out;
