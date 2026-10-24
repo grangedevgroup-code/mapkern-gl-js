@@ -126,7 +126,11 @@ export class TileManager<D> {
   }
 
   get stats(): TileStats {
-    let ready = 0, loading = 0, failed = 0, empty = 0, bytes = 0;
+    let ready = 0,
+      loading = 0,
+      failed = 0,
+      empty = 0,
+      bytes = 0;
     for (const tile of this.tiles.values()) {
       if (tile.state === "ready") ready++;
       else if (tile.isLoading) loading++;
@@ -417,7 +421,7 @@ export class TileManager<D> {
       const data = await this.loader.load(tile, controller.signal, () => {
         if (tile.state === "fetching") tile.transition("decoding");
       });
-      if (controller.signal.aborted || tile.state === "evicted" || this.destroyed) {
+      if (controller.signal.aborted || tile.isEvicted || this.destroyed) {
         if (data) this.loader.release(data);
         return;
       }
@@ -436,9 +440,9 @@ export class TileManager<D> {
         }
       }
     } catch (error) {
-      if (controller.signal.aborted || tile.state === "evicted" || this.destroyed) return;
+      if (controller.signal.aborted || tile.isEvicted || this.destroyed) return;
       if (isAbortError(error)) {
-        if (tile.state === "fetching" || tile.state === "decoding") tile.transition("queued");
+        if (tile.isInFlight) tile.transition("queued");
         return;
       }
       const failure: TileFailure =
@@ -510,7 +514,10 @@ export class TileManager<D> {
 
 function slotArea(transform: Transform, z: number, x: number, y: number, wrap: number): number {
   const n = 2 ** z;
-  const x0 = wrap + x / n, x1 = wrap + (x + 1) / n, y0 = y / n, y1 = (y + 1) / n;
+  const x0 = wrap + x / n,
+    x1 = wrap + (x + 1) / n,
+    y0 = y / n,
+    y1 = (y + 1) / n;
   const a = transform.project(x0, y0);
   const b = transform.project(x1, y0);
   const c = transform.project(x1, y1);
