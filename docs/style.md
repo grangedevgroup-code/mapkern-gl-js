@@ -28,7 +28,7 @@ osm: { type: "vector", url: "seattle.pmtiles" }
 roads: { type: "vector", tiles: ["https://example.com/tiles/{z}/{x}/{y}.pbf"], maxZoom: 14 }
 ```
 
-`url` can point to a `.pmtiles` file or a TileJSON document. `tiles` takes one or more URL templates. Besides `{z}`, `{x}` and `{y}`, templates understand `{-y}`, `{quadkey}` and `{bbox-epsg-3857}` for servers that number tiles differently.
+`url` can point to a `.pmtiles` or `.mbtiles` file, or to a TileJSON document. Tile files are read with range requests, so the server has to support them, which nearly every static host does. `tiles` takes one or more URL templates. Besides `{z}`, `{x}` and `{y}`, templates understand `{-y}`, `{quadkey}` and `{bbox-epsg-3857}` for servers that number tiles differently.
 
 The other options are `minZoom` and `maxZoom` (0 and 14 unless the file says otherwise), `bounds` as `[west, south, east, north]` to skip requests outside an area, `scheme: "tms"` for tile sets numbered from the south, `attribution` for the credit line, and `promoteId` to use one of the feature's properties as its id. Anything you set in the style wins over what the file says.
 
