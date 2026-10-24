@@ -20,7 +20,7 @@ import type {
 import type { MapSource, SourceContext } from "./source.ts";
 import { tileEvents } from "./source.ts";
 import type { TileSet } from "./tilejson.ts";
-import { archiveSpec, resolveTileSet, tileUrl } from "./tilejson.ts";
+import { archiveSpec, lngLatBounds, resolveTileSet, tileUrl } from "./tilejson.ts";
 
 export interface GpuGeometry {
   vao: WebGLVertexArrayObject;
@@ -224,6 +224,10 @@ export class VectorSource implements MapSource, VectorTileSource {
 
   get attribution(): string | undefined {
     return this.spec.attribution ?? this.tileSet?.attribution;
+  }
+
+  get bounds(): [number, number, number, number] | null {
+    return lngLatBounds(this.tileSet);
   }
 
   async load(signal: AbortSignal): Promise<void> {
