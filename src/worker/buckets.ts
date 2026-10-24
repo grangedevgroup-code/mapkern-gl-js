@@ -86,7 +86,8 @@ export class FillBuilder {
     this.vertexCount += count;
     const tris: number[] = [];
     triangulate(coords, holes, tris);
-    for (let t = 0; t < tris.length; t += 3) this.indices.push(base + tris[t]!, base + tris[t + 1]!, base + tris[t + 2]!);
+    for (let t = 0; t < tris.length; t += 3)
+      this.indices.push(base + tris[t]!, base + tris[t + 1]!, base + tris[t + 2]!);
   }
 }
 
@@ -107,7 +108,17 @@ export class LineBuilder {
     this.options = options;
   }
 
-  private vertex(x: number, y: number, ex: number, ey: number, sx: number, sy: number, square: boolean, dist: number, feature: number): number {
+  private vertex(
+    x: number,
+    y: number,
+    ex: number,
+    ey: number,
+    sx: number,
+    sy: number,
+    square: boolean,
+    dist: number,
+    feature: number,
+  ): number {
     this.vertices.reserve(LINE_STRIDE);
     const v = this.vertices.view;
     const o = this.vertices.length;
@@ -160,10 +171,14 @@ export class LineBuilder {
     for (let s = 0; s < segments; s++) {
       const a = s;
       const b = (s + 1) % count;
-      const ax = pts[a * 2]!, ay = pts[a * 2 + 1]!;
-      const bx = pts[b * 2]!, by = pts[b * 2 + 1]!;
-      const dx = dirs[s * 2]!, dy = dirs[s * 2 + 1]!;
-      const nx = -dy, ny = dx;
+      const ax = pts[a * 2]!,
+        ay = pts[a * 2 + 1]!;
+      const bx = pts[b * 2]!,
+        by = pts[b * 2 + 1]!;
+      const dx = dirs[s * 2]!,
+        dy = dirs[s * 2 + 1]!;
+      const nx = -dy,
+        ny = dx;
       const d0 = dist;
       const d1 = dist + lens[s]!;
       const v0 = this.vertex(ax, ay, nx, ny, 0, 1, false, d0, feature);
@@ -185,7 +200,8 @@ export class LineBuilder {
   private cap(x: number, y: number, dx: number, dy: number, dist: number, feature: number): void {
     const cap = this.options.cap;
     if (cap === "butt") return;
-    const nx = -dy, ny = dx;
+    const nx = -dy,
+      ny = dx;
     if (cap === "square") {
       const a = this.vertex(x, y, nx, ny, 0, 1, true, dist, feature);
       const b = this.vertex(x, y, -nx, -ny, 0, -1, true, dist, feature);
@@ -210,15 +226,27 @@ export class LineBuilder {
     }
   }
 
-  private join(x: number, y: number, d0x: number, d0y: number, d1x: number, d1y: number, dist: number, feature: number): void {
+  private join(
+    x: number,
+    y: number,
+    d0x: number,
+    d0y: number,
+    d1x: number,
+    d1y: number,
+    dist: number,
+    feature: number,
+  ): void {
     const turn = d0x * d1y - d0y * d1x;
     const dot = d0x * d1x + d0y * d1y;
     if (Math.abs(turn) < 1e-9 && dot > 0) return;
     const side = turn > 0 ? -1 : 1;
-    const o0x = -d0y * side, o0y = d0x * side;
-    const o1x = -d1y * side, o1y = d1x * side;
+    const o0x = -d0y * side,
+      o0y = d0x * side;
+    const o1x = -d1y * side,
+      o1y = d1x * side;
     let join = this.options.join;
-    const mx = o0x + o1x, my = o0y + o1y;
+    const mx = o0x + o1x,
+      my = o0y + o1y;
     const mlen = Math.hypot(mx, my);
     let miter = 0;
     if (mlen > 1e-9) {
