@@ -141,6 +141,15 @@ Each result has `id`, `properties`, `geometry` in longitude and latitude, `layer
 
 For the height of the ground, ask an elevation source: `map.getSource("dem").elevationAt(event.lngLat)` returns meters, or `null` where no elevation tile is loaded.
 
+## Terrain
+
+```js
+map.setTerrain({ source: "dem", exaggeration: 1.5 });
+map.setTerrain(null);
+```
+
+`setTerrain` turns 3D terrain on with an elevation source from the style, or off again with `null`. `getTerrain()` returns the current setting. While terrain is on, `project`, `unproject`, pointer events and `queryRenderedFeatures` all work on the raised ground, so `event.lngLat` is the spot on the hillside under the pointer. [The style guide](style.md#terrain) explains what changes on screen.
+
 ## Errors
 
 Errors come with a `code`, a readable `message` and a `detail` object. If you don't listen for `error`, they're logged to the console.
@@ -201,7 +210,7 @@ Return an `ArrayBuffer` or `Uint8Array`, or `null` when there's no tile. `maplet
 
 ## Diagnostics
 
-`map.getDiagnostics()` returns numbers for tracking down slow maps: frame times (`p50`, `p95`, `p99` and `max` over the last 240 frames), draw calls, requests in flight, worker queue length, `blankRatio` (how much of the screen is still waiting for data) and per-source tile counts with retries, cancellations and cache size.
+`map.getDiagnostics()` returns numbers for tracking down slow maps: frame times (`p50`, `p95`, `p99` and `max` over the last 240 frames), draw calls, requests in flight, worker queue length, `blankRatio` (how much of the screen is still waiting for data) and per-source tile counts with retries, cancellations and cache size. With terrain on, `terrain` says how many ground tiles are drawn, how much GPU memory their textures take and how many were redrawn in the last frame.
 
 ## Other helpers
 
