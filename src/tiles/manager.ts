@@ -429,23 +429,24 @@ export class TileManager<D> {
       }
     }
     for (const tile of this.tiles.values()) {
-      if (tile.wanted && tile.state === "queued" && !this.jobs.has(tile.key) && tile.retryAt <= now) waiting = true;
+      if (this.needsJob(tile) && tile.retryAt <= now) waiting = true;
     }
     for (const [key, handle] of this.jobs) {
       const tile = this.tiles.get(key);
       if (!tile) continue;
       if (!tile.wanted) {
+        const keep = tile.state === "ready";
         if (handle.state === "queued") {
           this.scheduler.cancel(handle);
           this.jobs.delete(key);
           this.counters.aborted++;
-          this.drop(tile);
+          if (!keep) this.drop(tile);
         } else if (handle.state === "active" && tile.controller) {
           const lingering = now - tile.unwantedSince;
           if (lingering > LINGER_MS || (waiting && lingering > 150)) {
             tile.controller.abort(new DOMException("Tile no longer needed", "AbortError"));
             this.counters.aborted++;
-            this.drop(tile);
+            if (!keep) this.drop(tile);
           }
         }
       } else {
@@ -458,7 +459,7 @@ export class TileManager<D> {
     }
     let nextWake = Number.POSITIVE_INFINITY;
     for (const tile of this.tiles.values()) {
-      if (!tile.wanted || tile.state !== "queued" || this.jobs.has(tile.key)) continue;
+      if (!this.needsJob(tile)) continue;
       if (tile.retryAt > now) {
         nextWake = Math.min(nextWake, tile.retryAt);
         continue;
@@ -466,6 +467,15 @@ export class TileManager<D> {
       this.startJob(tile);
     }
     if (nextWake < Number.POSITIVE_INFINITY) this.events.wakeAt(nextWake);
+  }
+
+  private needsJob(tile: Tile<D>): boolean {
+    if (!tile.wanted || this.jobs.has(tile.key)) return false;
+    return tile.state === "queued" || (this.isOutdated(tile) && tile.next === null);
+  }
+
+  private isOutdated(tile: Tile<D>): boolean {
+    return tile.state === "ready" && tile.generation < this.generation;
   }
 
   private startJob(tile: Tile<D>): void {
