@@ -2,9 +2,9 @@ import type { CameraMotion, CameraState, Easing } from "../camera/animation.ts";
 import { easeInOutCubic, easeMotion, easeOutCubic, flyMotion, readState } from "../camera/animation.ts";
 import { Transform } from "../camera/transform.ts";
 import type { LngLat, LngLatLike } from "../geo/mercator.ts";
-import { lngFromMercatorX, latFromMercatorY, mercatorX, mercatorY, toLngLat, wrapLongitude } from "../geo/mercator.ts";
-import { InputHandlers } from "../input/handlers.ts";
+import { latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY, toLngLat, wrapLongitude } from "../geo/mercator.ts";
 import type { InputOptions } from "../input/handlers.ts";
+import { InputHandlers } from "../input/handlers.ts";
 import { GL } from "../render/gl.ts";
 import { Painter } from "../render/painter.ts";
 import { RasterSource } from "../sources/raster.ts";
@@ -19,10 +19,9 @@ import { RequestScheduler } from "../tiles/scheduler.ts";
 import type { Control, ControlPosition } from "../ui/controls.ts";
 import { AttributionControl } from "../ui/controls.ts";
 import { injectStyles } from "../ui/css.ts";
-import { textOnly } from "../ui/sanitize.ts";
-import { WorkerPool } from "../worker/pool.ts";
 import type { WorkerFactory } from "../worker/pool.ts";
-import { MapletError, errorMessage } from "./errors.ts";
+import { WorkerPool } from "../worker/pool.ts";
+import { errorMessage, MapletError } from "./errors.ts";
 import { Emitter } from "./events.ts";
 
 export interface MapOptions {
@@ -240,8 +239,14 @@ export class MapletMap extends Emitter<MapEvents> {
     injectStyles(doc);
     this.transform = new Transform();
     this.transform.renderWorldCopies = options.renderWorldCopies ?? true;
-    this.transform.setPitchRange(checkNumber(options.minPitch, "minPitch", 0), checkNumber(options.maxPitch, "maxPitch", 60));
-    this.transform.setZoomRange(checkNumber(options.minZoom, "minZoom", 0), checkNumber(options.maxZoom, "maxZoom", 22));
+    this.transform.setPitchRange(
+      checkNumber(options.minPitch, "minPitch", 0),
+      checkNumber(options.maxPitch, "maxPitch", 60),
+    );
+    this.transform.setZoomRange(
+      checkNumber(options.minZoom, "minZoom", 0),
+      checkNumber(options.maxZoom, "maxZoom", 22),
+    );
     if (options.center !== undefined) {
       const [lng, lat] = toLngLat(options.center);
       this.transform.setCenter(lng, lat);
@@ -384,7 +389,10 @@ export class MapletMap extends Emitter<MapEvents> {
 
   getBounds(): [[number, number], [number, number]] {
     const pts = this.transform.footprint();
-    let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+    let w = Infinity,
+      s = Infinity,
+      e = -Infinity,
+      n = -Infinity;
     for (const [x, y] of pts) {
       const lng = lngFromMercatorX(x);
       const lat = latFromMercatorY(y);
@@ -525,8 +533,8 @@ export class MapletMap extends Emitter<MapEvents> {
     const offX = (pad.left - pad.right) / 2;
     const offY = (pad.top - pad.bottom) / 2;
     const ws = 512 * 2 ** zoom;
-    const rx = -offX * Math.cos(bearing) - -offY * Math.sin(bearing);
-    const ry = -offX * Math.sin(bearing) + -offY * Math.cos(bearing);
+    const rx = offY * Math.sin(bearing) - offX * Math.cos(bearing);
+    const ry = -offX * Math.sin(bearing) - offY * Math.cos(bearing);
     const center: [number, number] = [lngFromMercatorX(cx + rx / ws), latFromMercatorY(cy + ry / ws)];
     return { center, zoom, bearing: options.bearing ?? t.bearing, pitch: options.pitch ?? t.pitch };
   }
@@ -577,7 +585,11 @@ export class MapletMap extends Emitter<MapEvents> {
         })
         .catch((error: unknown) => {
           if (controller.signal.aborted || this.removed) return;
-          this.fail(error instanceof MapletError ? error : new MapletError("invalid-style", `Could not load the style: ${errorMessage(error)}`, {}, error));
+          this.fail(
+            error instanceof MapletError
+              ? error
+              : new MapletError("invalid-style", `Could not load the style: ${errorMessage(error)}`, {}, error),
+          );
         });
     } else {
       this.applyStyle(style);
@@ -700,7 +712,11 @@ export class MapletMap extends Emitter<MapEvents> {
     const max = this.glContext.maxTextureSize;
     const bw = Math.min(max, Math.max(1, Math.round(width * ratio)));
     const bh = Math.min(max, Math.max(1, Math.round(height * ratio)));
-    const changed = this.canvas.width !== bw || this.canvas.height !== bh || this.transform.width !== width || this.transform.height !== height;
+    const changed =
+      this.canvas.width !== bw ||
+      this.canvas.height !== bh ||
+      this.transform.width !== width ||
+      this.transform.height !== height;
     this.canvas.style.width = `${width}px`;
     this.canvas.style.height = `${height}px`;
     if (this.canvas.width !== bw) this.canvas.width = bw;
@@ -737,7 +753,8 @@ export class MapletMap extends Emitter<MapEvents> {
 
   getDiagnostics(): Diagnostics {
     const sorted = [...this.frameTimes].sort((a, b) => a - b);
-    const pick = (q: number) => (sorted.length === 0 ? 0 : sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!);
+    const pick = (q: number) =>
+      sorted.length === 0 ? 0 : sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!;
     const sources: Record<string, TileStats | null> = {};
     let blank = 0;
     for (const source of this.style?.sources.values() ?? []) {
@@ -802,7 +819,8 @@ export class MapletMap extends Emitter<MapEvents> {
   }
 
   private requireStyle(): Style {
-    if (!this.style) throw new MapletError("invalid-style", "The map has no style yet; call setStyle first or wait for styleload");
+    if (!this.style)
+      throw new MapletError("invalid-style", "The map has no style yet; call setStyle first or wait for styleload");
     return this.style;
   }
 
@@ -821,7 +839,9 @@ export class MapletMap extends Emitter<MapEvents> {
         changed: () => this.triggerRepaint(),
       });
     } catch (error) {
-      this.fail(error instanceof MapletError ? error : new MapletError("invalid-style", errorMessage(error), {}, error));
+      this.fail(
+        error instanceof MapletError ? error : new MapletError("invalid-style", errorMessage(error), {}, error),
+      );
       return;
     }
     const first = this.style === null;
@@ -851,13 +871,10 @@ export class MapletMap extends Emitter<MapEvents> {
   }
 
   private sourceContext(): SourceContext {
-    const map = this;
     return {
       gl: this.glContext,
       scheduler: this.scheduler,
-      get workers() {
-        return map.workerPool();
-      },
+      workers: () => this.workerPool(),
       transformRequest: this.options.transformRequest,
       requestTimeoutMs: this.requestTimeout(),
       cacheBytes: Math.max(16, checkNumber(this.options.tileCacheSize, "tileCacheSize", 192)) * 1024 * 1024,
@@ -1038,7 +1055,13 @@ export class MapletMap extends Emitter<MapEvents> {
         if (source.isFading()) animating = true;
       }
     } else {
-      this.painter.render({ transform: this.transform, pixelRatio: this.pixelRatioValue, layers: [], sources: new Map(), now });
+      this.painter.render({
+        transform: this.transform,
+        pixelRatio: this.pixelRatioValue,
+        layers: [],
+        sources: new Map(),
+        now,
+      });
     }
     this.emitCameraEvents();
     this.emit("render", this.event("render"));
@@ -1105,13 +1128,12 @@ export class MapletMap extends Emitter<MapEvents> {
   }
 
   private inputHost() {
-    const map = this;
     return {
       transform: this.transform,
       element: this.canvasContainer,
       reducedMotion: () => this.prefersReducedMotion(),
       interrupt: () => {
-        if (map.motion) map.motion = null;
+        this.motion = null;
       },
       changed: () => this.cameraChanged(),
       gesture: (active: boolean) => {
@@ -1207,7 +1229,12 @@ function normalizeBounds(bounds: BoundsLike): [[number, number], [number, number
   ];
 }
 
-function normalizePadding(padding: FitBoundsOptions["padding"]): { top: number; right: number; bottom: number; left: number } {
+function normalizePadding(padding: FitBoundsOptions["padding"]): {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+} {
   if (padding === undefined) return { top: 0, right: 0, bottom: 0, left: 0 };
   if (typeof padding === "number") return { top: padding, right: padding, bottom: padding, left: padding };
   return { top: padding.top ?? 0, right: padding.right ?? 0, bottom: padding.bottom ?? 0, left: padding.left ?? 0 };
@@ -1217,14 +1244,12 @@ declare const MAPLET_WORKER_SOURCE: string | undefined;
 
 function workerFactory(url: string | undefined): WorkerFactory | null {
   if (typeof Worker === "undefined") return null;
-  if (url) return () => new Worker(url, { type: "module" });
+  if (url) return () => new Worker(url);
   const source = typeof MAPLET_WORKER_SOURCE === "string" ? MAPLET_WORKER_SOURCE : undefined;
   if (!source) return null;
   let blobUrl: string | null = null;
   return () => {
     blobUrl ??= URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
-    return new Worker(blobUrl, { type: "module" });
+    return new Worker(blobUrl);
   };
 }
-
-export { textOnly };
