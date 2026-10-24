@@ -205,7 +205,12 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
         }
         return result.data;
       } catch (error) {
-        if (signal.aborted || !(error instanceof FetchFailure) || !error.failure.retryable || attempt >= FETCH_ATTEMPTS) {
+        if (
+          signal.aborted ||
+          !(error instanceof FetchFailure) ||
+          !error.failure.retryable ||
+          attempt >= FETCH_ATTEMPTS
+        ) {
           throw error;
         }
         await delay(retryDelay(attempt, error.failure), signal);
@@ -231,7 +236,11 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
       reply = await pool.send<GeoJSONTileReply>("geojson-tile", request, [], signal, this.affinity);
     }
     if (reply.missing) {
-      throw new FetchFailure({ kind: "decode", message: "The GeoJSON data is not loaded in the worker", retryable: false });
+      throw new FetchFailure({
+        kind: "decode",
+        message: "The GeoJSON data is not loaded in the worker",
+        retryable: false,
+      });
     }
     return vectorTile(reply.tile, signature);
   }
