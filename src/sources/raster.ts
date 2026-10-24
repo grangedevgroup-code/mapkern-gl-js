@@ -7,7 +7,7 @@ import { TileManager } from "../tiles/manager.ts";
 import type { MapSource, SourceContext } from "./source.ts";
 import { tileEvents } from "./source.ts";
 import type { TileSet } from "./tilejson.ts";
-import { resolveTileSet, tileUrl } from "./tilejson.ts";
+import { archiveSpec, resolveTileSet, tileUrl } from "./tilejson.ts";
 
 export interface RasterTile {
   image: ImageBitmap | null;
@@ -48,7 +48,7 @@ export class RasterSource implements MapSource {
   async load(signal: AbortSignal): Promise<void> {
     const set = await resolveTileSet(
       this.id,
-      this.spec,
+      archiveSpec(this.spec),
       { minZoom: 0, maxZoom: 22 },
       this.ctx.transformRequest,
       this.ctx.requestTimeoutMs,
