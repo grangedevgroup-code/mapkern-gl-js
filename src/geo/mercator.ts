@@ -59,7 +59,7 @@ export function worldToLngLat(x: number, y: number): LngLat {
 }
 
 export function worldSize(zoom: number): number {
-  return TILE_SIZE * Math.pow(2, zoom);
+  return TILE_SIZE * 2 ** zoom;
 }
 
 export function metersPerPixel(lat: number, zoom: number): number {
@@ -78,7 +78,6 @@ export function distanceMeters(a: LngLat, b: LngLat): number {
   const rad = Math.PI / 180;
   const dLat = (b[1] - a[1]) * rad;
   const dLng = (b[0] - a[0]) * rad;
-  const h =
-    Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin(dLng / 2) ** 2;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin(dLng / 2) ** 2;
   return 2 * EARTH_RADIUS * Math.asin(Math.min(1, Math.sqrt(h)));
 }
