@@ -284,9 +284,8 @@ export class LineBuilder {
       mx *= scale;
       my *= scale;
     }
-    const l = this.vertex(x, y, mx, my, 0, 1, false, dist, feature);
-    const r = this.vertex(x, y, -mx, -my, 0, -1, false, dist, feature);
-    return [l, r];
+    this.pairLeft = this.vertex(x, y, mx, my, 0, 1, false, dist, feature);
+    this.pairRight = this.vertex(x, y, -mx, -my, 0, -1, false, dist, feature);
   }
 
   private cap(x: number, y: number, dx: number, dy: number, dist: number, feature: number): void {
