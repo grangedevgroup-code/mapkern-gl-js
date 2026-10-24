@@ -1,4 +1,6 @@
 import type { Transform } from "../camera/transform.ts";
+import { EARTH_CIRCUMFERENCE } from "../geo/mercator.ts";
+import type { DemSource } from "../sources/dem.ts";
 import type { RasterSource } from "../sources/raster.ts";
 import type { MapSource } from "../sources/source.ts";
 import type { VectorBucket, VectorTile } from "../sources/vector.ts";
@@ -13,6 +15,7 @@ import type { RenderPiece, TileManager } from "../tiles/manager.ts";
 import type { Tile } from "../tiles/tile.ts";
 import type { GL, Program } from "./gl.ts";
 import { PickBuffer } from "./pick.ts";
+import { hillshadeShader } from "./shaders/hillshade.ts";
 import { rasterShader, solidShader } from "./shaders/raster.ts";
 import { circleShader, extrusionShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
 import type { PickPass } from "./vector-layers.ts";
@@ -51,6 +54,7 @@ export class Painter {
   stats: PaintStats = { drawCalls: 0, pieces: 0 };
   private quadVao: WebGLVertexArrayObject | null = null;
   private quadBuffer: WebGLBuffer | null = null;
+  private openMask: WebGLTexture | null = null;
   private readonly matrix = new Float32Array(16);
   private readonly hue = new Float32Array(9);
   private readonly vector: VectorPainter;
@@ -71,6 +75,7 @@ export class Painter {
     for (const shader of [
       solidShader,
       rasterShader,
+      hillshadeShader,
       fillShader,
       fillOutlineShader,
       lineShader,
@@ -88,6 +93,7 @@ export class Painter {
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.bindVertexArray(null);
+    this.openMask = this.gl.createDataTexture(1, 1, "r8", Uint8Array.of(255), false);
   }
 
   render(frame: FrameInput): boolean {
@@ -120,6 +126,11 @@ export class Painter {
         case "raster": {
           const source = layer.source ? frame.sources.get(layer.source) : undefined;
           if (source?.type === "raster") this.drawRaster(frame, layer, source as RasterSource);
+          break;
+        }
+        case "hillshade": {
+          const source = layer.source ? frame.sources.get(layer.source) : undefined;
+          if (source?.type === "dem") this.drawHillshade(frame, layer, source as DemSource);
           break;
         }
         case "fill":
@@ -207,8 +218,10 @@ export class Painter {
     this.labels.destroy();
     this.gl.deleteBuffer(this.quadBuffer);
     this.gl.deleteVertexArray(this.quadVao);
+    this.gl.deleteTexture(this.openMask);
     this.quadBuffer = null;
     this.quadVao = null;
+    this.openMask = null;
   }
 
   private backgroundColor(layer: StyleLayer, zoom: number): RGBA {
@@ -227,6 +240,70 @@ export class Painter {
     gl.bindVertexArray(this.quadVao);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     this.stats.drawCalls++;
+  }
+
+  private drawHillshade(frame: FrameInput, layer: StyleLayer, source: DemSource): void {
+    const manager = source.manager;
+    if (!manager || manager.pieces.length === 0) return;
+    const g = this.gl;
+    const gl = g.gl;
+    const zoom = frame.transform.zoom;
+    const ctx = { zoom };
+    const exaggeration = Math.min(1, Math.max(0, layer.paintValue<number>("exaggeration", ctx)));
+    if (exaggeration <= 0) return;
+    const program = g.program(hillshadeShader);
+    g.use(program);
+    g.setBlend("premultiplied");
+    g.setDepth(false, false);
+    const anchor = layer.fixed<string>("illuminationAnchor") === "map" ? 0 : frame.transform.bearing;
+    const azimuth = (layer.fixed<number>("illuminationDirection") + anchor) * DEG;
+    const level = Math.cos(LIGHT_ALTITUDE);
+    gl.uniform3f(
+      uniform(program, "u_light"),
+      Math.sin(azimuth) * level,
+      -Math.cos(azimuth) * level,
+      Math.sin(LIGHT_ALTITUDE),
+    );
+    gl.uniform1f(uniform(program, "u_flat"), Math.sin(LIGHT_ALTITUDE));
+    for (const [name, property] of [
+      ["u_shadow", "shadowColor"],
+      ["u_highlight", "highlightColor"],
+      ["u_accent", "accentColor"],
+    ] as const) {
+      const c = premultiply(layer.paintValue<RGBA>(property, ctx), 1);
+      gl.uniform4f(uniform(program, name), c[0], c[1], c[2], c[3]);
+    }
+    gl.uniform1i(uniform(program, "u_gradient"), 0);
+    gl.uniform1i(uniform(program, "u_mask"), 1);
+    gl.bindVertexArray(this.quadVao);
+    const uMatrix = uniform(program, "u_matrix");
+    const uClip = uniform(program, "u_clip");
+    const uOpacity = uniform(program, "u_opacity");
+    const uTexel = uniform(program, "u_texel");
+    const uRows = uniform(program, "u_rows");
+    const uScale = uniform(program, "u_scale");
+    const vertical = 2 * exaggeration * hillshadeBoost(zoom);
+    for (const piece of manager.pieces) {
+      const data = piece.tile.data;
+      if (!data?.gradientTexture) continue;
+      const { z, x, y } = piece.tile;
+      const n = 2 ** z;
+      const size = data.grid.size;
+      g.bindTexture(0, data.gradientTexture);
+      g.bindTexture(1, data.maskTexture ?? this.openMask);
+      frame.transform.tileMatrix(z, x, y, piece.wrap, 1, this.matrix);
+      gl.uniformMatrix4fv(uMatrix, false, this.matrix);
+      gl.uniform4f(uClip, piece.clip.x0, piece.clip.y0, piece.clip.x1, piece.clip.y1);
+      gl.uniform1f(uOpacity, piece.opacity);
+      gl.uniform2f(uTexel, size / (size + 2), 1 / (size + 2));
+      gl.uniform2f(uRows, y / n, (y + 1) / n);
+      gl.uniform1f(uScale, (vertical * n * size) / EARTH_CIRCUMFERENCE);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      this.stats.drawCalls++;
+      this.stats.pieces++;
+    }
+    g.bindTexture(1, null);
+    gl.activeTexture(gl.TEXTURE0);
   }
 
   private drawRaster(frame: FrameInput, layer: StyleLayer, source: RasterSource): void {
@@ -274,6 +351,13 @@ export class Painter {
       this.stats.pieces++;
     }
   }
+}
+
+const DEG = Math.PI / 180;
+const LIGHT_ALTITUDE = 45 * DEG;
+
+export function hillshadeBoost(zoom: number): number {
+  return 2 ** (0.3 * Math.max(0, 12 - zoom));
 }
 
 function uniform(program: Program, name: string): WebGLUniformLocation | null {
