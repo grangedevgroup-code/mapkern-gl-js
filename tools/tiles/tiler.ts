@@ -146,8 +146,28 @@ function encode(z: number, x: number, y: number, feats: TileFeature[], options: 
   const tolerance = z === options.maxZoom ? 1 : (extent / 512) * 0.4;
   const layers = new Map<string, EncodedFeature[]>();
   const sortKeys = new Map<EncodedFeature, number>();
+  const add = (layer: string, encoded: EncodedFeature, sortKey: number) => {
+    let list = layers.get(layer);
+    if (!list) {
+      list = [];
+      layers.set(layer, list);
+    }
+    sortKeys.set(encoded, sortKey);
+    list.push(encoded);
+  };
+  const groups = new Map<string, { feature: TileFeature; lines: Float64Array[] }>();
   for (const f of feats) {
     if (f.minZoom > z) continue;
+    if (f.type === 2 && z < options.maxZoom) {
+      const key = JSON.stringify([f.layer, Object.entries(f.props).sort((a, b) => (a[0] < b[0] ? -1 : 1))]);
+      let group = groups.get(key);
+      if (!group) {
+        group = { feature: f, lines: [] };
+        groups.set(key, group);
+      }
+      for (const part of f.parts) group.lines.push(toLocal(part, scale, ox, oy));
+      continue;
+    }
     const parts: Int32Array[] = [];
     if (f.type === 1) {
       const p = f.parts[0]!;
