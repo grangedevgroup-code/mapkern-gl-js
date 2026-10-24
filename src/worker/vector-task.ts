@@ -1,4 +1,4 @@
-import type { VectorFeature, VectorLayer } from "../formats/mvt.ts";
+import type { VectorFeature } from "../formats/mvt.ts";
 import { classifyRings, decodeTile } from "../formats/mvt.ts";
 import type { Compiled, FeatureContext, GeometryType } from "../style/expression.ts";
 import { compile } from "../style/expression.ts";
@@ -94,6 +94,13 @@ class FeatureView implements FeatureContext {
   }
 }
 
+export interface FeatureLayer {
+  readonly name: string;
+  readonly extent: number;
+  readonly length: number;
+  feature(index: number): VectorFeature;
+}
+
 export async function buildVectorTile(
   request: VectorTileRequest,
   signal: AbortSignal,
@@ -101,15 +108,23 @@ export async function buildVectorTile(
   const started = performance.now();
   const data = await inflate(request.bytes);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-  const layers = decodeTile(data);
+  return buildBuckets(decodeTile(data), request.z, request.layers, request.overzoom, started);
+}
+
+export function buildBuckets(
+  layers: ReadonlyMap<string, FeatureLayer>,
+  zoom: number,
+  programs: readonly LayerProgram[],
+  overzoom: boolean,
+  started = performance.now(),
+): { result: VectorTileResult; transfer: Transferable[] } {
   const buckets: BucketData[] = [];
   const transfer: Transferable[] = [];
   let featureCount = 0;
-  const zoom = request.z;
   const views = new Map<string, FeatureView[]>();
-  for (const program of request.layers) {
+  for (const program of programs) {
     if (program.maxZoom <= zoom) continue;
-    if (!request.overzoom && program.minZoom >= zoom + 1) continue;
+    if (!overzoom && program.minZoom >= zoom + 1) continue;
     const source = sourceLayer(layers, program.sourceLayer);
     if (!source) continue;
     let list = views.get(source.name);
@@ -150,7 +165,7 @@ export async function buildVectorTile(
   };
 }
 
-function sourceLayer(layers: Map<string, VectorLayer>, name: string | null): VectorLayer | undefined {
+function sourceLayer(layers: ReadonlyMap<string, FeatureLayer>, name: string | null): FeatureLayer | undefined {
   if (name !== null) return layers.get(name);
   return layers.values().next().value;
 }
@@ -161,7 +176,7 @@ function geometry(vertices: ArrayBuffer, indices: ArrayBuffer, vertexCount: numb
 
 function buildBucket(
   program: LayerProgram,
-  source: VectorLayer,
+  source: FeatureLayer,
   selected: FeatureView[],
   zoom: number,
 ): BucketData | null {
