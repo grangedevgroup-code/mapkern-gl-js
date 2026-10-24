@@ -717,26 +717,51 @@ function layoutAlongPath(
     }
     target -= len;
   }
-  const screen: number[] = [];
   const ws = transform.worldSize;
-  for (let i = 0; i < n; i++) {
-    const p = transform.project(path[i * 2]!, path[i * 2 + 1]!, (heights?.[i] ?? 0) * ws);
-    if (p.w <= 0) return null;
-    screen.push(p.x, p.y);
-  }
-  const cum: number[] = [0];
-  for (let i = 1; i < n; i++)
-    cum.push(cum[i - 1]! + Math.hypot(screen[i * 2]! - screen[i * 2 - 2]!, screen[i * 2 + 1]! - screen[i * 2 - 1]!));
-  const total = cum[n - 1]!;
-  const anchorAt = cum[anchorSeg]! + (cum[anchorSeg + 1]! - cum[anchorSeg]!) * anchorT;
   const width = laid.width * scale;
+  const project = (i: number): [number, number] | null => {
+    const p = transform.project(path[i * 2]!, path[i * 2 + 1]!, (heights?.[i] ?? 0) * ws);
+    return p.w > 0 ? [p.x, p.y] : null;
+  };
+  const first = project(anchorSeg);
+  const second = project(anchorSeg + 1);
+  if (!first || !second) return null;
+  const before: [number, number][] = [first];
+  const after: [number, number][] = [second];
+  const span = Math.hypot(second[0] - first[0], second[1] - first[1]);
+  let reach = span * anchorT;
+  for (let i = anchorSeg - 1; i >= 0 && reach < width; i--) {
+    const p = project(i);
+    if (!p) break;
+    const q = before[before.length - 1]!;
+    reach += Math.hypot(p[0] - q[0], p[1] - q[1]);
+    before.push(p);
+  }
+  reach = span * (1 - anchorT);
+  for (let i = anchorSeg + 2; i < n && reach < width; i++) {
+    const p = project(i);
+    if (!p) break;
+    const q = after[after.length - 1]!;
+    reach += Math.hypot(p[0] - q[0], p[1] - q[1]);
+    after.push(p);
+  }
+  const screen: number[] = [];
+  for (let k = before.length - 1; k >= 0; k--) screen.push(before[k]![0], before[k]![1]);
+  for (const p of after) screen.push(p[0], p[1]);
+  const m = screen.length / 2;
+  const local = before.length - 1;
+  const cum: number[] = [0];
+  for (let i = 1; i < m; i++)
+    cum.push(cum[i - 1]! + Math.hypot(screen[i * 2]! - screen[i * 2 - 2]!, screen[i * 2 + 1]! - screen[i * 2 - 1]!));
+  const total = cum[m - 1]!;
+  const anchorAt = cum[local]! + (cum[local + 1]! - cum[local]!) * anchorT;
   if (width > total) return null;
   let start = anchorAt - width / 2;
   if (start < 0) start = 0;
   if (start + width > total) start = total - width;
   const pointAt = (d: number): [number, number, number] => {
     let i = 0;
-    while (i < n - 2 && cum[i + 1]! < d) i++;
+    while (i < m - 2 && cum[i + 1]! < d) i++;
     const seg = cum[i + 1]! - cum[i]!;
     const t = seg > 0 ? (d - cum[i]!) / seg : 0;
     const ax = screen[i * 2]!;
