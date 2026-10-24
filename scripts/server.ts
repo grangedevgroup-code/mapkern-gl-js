@@ -111,7 +111,11 @@ export function startServer(options: ServerOptions): Promise<{ server: Server; u
         res.end();
         return;
       }
-      res.writeHead(206, { ...headers, "content-range": `bytes ${start}-${end}/${info.size}`, "content-length": String(end - start + 1) });
+      res.writeHead(206, {
+        ...headers,
+        "content-range": `bytes ${start}-${end}/${info.size}`,
+        "content-length": String(end - start + 1),
+      });
       if (req.method === "HEAD") res.end();
       else createReadStream(file, { start, end }).pipe(res);
       return;
