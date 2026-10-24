@@ -140,13 +140,11 @@ export function validateSource(id: string, source: unknown): StyleIssue[] {
     ) {
       issues.push({ path: `${path}.bounds`, message: "bounds must be [west, south, east, north]" });
     }
-    if (
-      type === "dem" &&
-      source.encoding !== undefined &&
-      source.encoding !== "terrarium" &&
-      source.encoding !== "mapbox"
-    ) {
-      issues.push({ path: `${path}.encoding`, message: "encoding must be terrarium or mapbox" });
+    if (type === "dem" && source.encoding !== undefined && !isEncoding(source.encoding)) {
+      issues.push({
+        path: `${path}.encoding`,
+        message: "encoding must be terrarium, mapbox or { red, green, blue, offset }",
+      });
     }
   }
   if (source.promoteId !== undefined && typeof source.promoteId !== "string") {
@@ -261,6 +259,15 @@ function isObject(v: unknown): v is Record<string, unknown> {
 
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
+}
+
+function isEncoding(v: unknown): boolean {
+  if (v === "terrarium" || v === "mapbox") return true;
+  if (!isObject(v)) return false;
+  const keys = Object.keys(v);
+  return (
+    keys.length === 4 && ["red", "green", "blue", "offset"].every((k) => keys.includes(k) && isFiniteNumber(v[k]))
+  );
 }
 
 function isLngLat(v: unknown): boolean {
