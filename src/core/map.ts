@@ -862,7 +862,9 @@ export class MapletMap extends Emitter<MapEvents> {
       if (o.pitch === undefined && spec.pitch !== undefined) t.setPitch(spec.pitch);
       this.cameraVersion++;
     }
-    this.emit("styleload", this.event("styleload"));
+    queueMicrotask(() => {
+      if (this.style === style && !this.removed) this.emit("styleload", this.event("styleload"));
+    });
     this.triggerRepaint();
   }
 
@@ -915,12 +917,14 @@ export class MapletMap extends Emitter<MapEvents> {
   }
 
   private fail(error: MapletError, sourceId?: string): void {
-    if (this.removed) return;
-    if (this.listens("error")) {
-      this.emit("error", { ...this.event("error"), error, sourceId });
-    } else {
-      console.error(error);
-    }
+    queueMicrotask(() => {
+      if (this.removed) return;
+      if (this.listens("error")) {
+        this.emit("error", { ...this.event("error"), error, sourceId });
+      } else {
+        console.error(error);
+      }
+    });
   }
 
   private event(type: string): MapEvent {
