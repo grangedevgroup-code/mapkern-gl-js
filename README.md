@@ -88,7 +88,7 @@ The OpenStreetMap license asks you to credit the data. The style shows "© OpenS
 
 ## What else it does
 
-You can replace GeoJSON with `setData()` while the map is running, move the camera with `easeTo` and `flyTo`, tilt and rotate the map, and style features from their own data with expressions like `match` and `interpolate`. Labels follow streets and keep out of each other's way.
+You can replace GeoJSON with `setData()` while the map is running, move the camera with `easeTo` and `flyTo`, tilt and rotate the map, and style features from their own data with expressions like `match` and `interpolate`. Buildings can rise into 3D, and labels follow streets and keep out of each other's way.
 
 While you pan and zoom, Maplet fills gaps with tiles it already has from other zoom levels, so the map doesn't flash empty. Tiles are decoded in Web Workers, and the whole library is about 77 KB gzipped.
 
