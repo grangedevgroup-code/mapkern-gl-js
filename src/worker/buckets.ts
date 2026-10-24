@@ -108,7 +108,8 @@ export class FillBuilder {
     }
     this.vertices.length = o;
     this.vertexCount += count;
-    const tris: number[] = [];
+    const tris = this.tris;
+    tris.length = 0;
     triangulate(coords, holes, tris);
     for (let t = 0; t < tris.length; t += 3)
       this.indices.push(base + tris[t]!, base + tris[t + 1]!, base + tris[t + 2]!);
