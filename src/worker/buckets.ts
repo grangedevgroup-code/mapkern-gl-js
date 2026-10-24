@@ -391,6 +391,9 @@ export class CircleBuilder {
   }
 }
 
+const CORNER_X = [-127, 127, 127, -127];
+const CORNER_Y = [-127, -127, 127, 127];
+
 function clamp8(v: number): number {
   return v < -127 ? -127 : v > 127 ? 127 : v;
 }
