@@ -35,7 +35,8 @@ export function zipEntries(bytes: Uint8Array): ZipEntry[] {
   const entries: ZipEntry[] = [];
   let p = start;
   for (let k = 0; k < count; k++) {
-    if (p + 46 > bytes.length || view.getUint32(p, true) !== 0x02014b50) throw new ZipError("The ZIP directory is damaged");
+    if (p + 46 > bytes.length || view.getUint32(p, true) !== 0x02014b50)
+      throw new ZipError("The ZIP directory is damaged");
     const nameLength = view.getUint16(p + 28, true);
     const extraLength = view.getUint16(p + 30, true);
     const commentLength = view.getUint16(p + 32, true);
@@ -60,7 +61,8 @@ export async function readZipEntry(bytes: Uint8Array, entry: ZipEntry): Promise<
   const start = p + 30 + view.getUint16(p + 26, true) + view.getUint16(p + 28, true);
   const data = bytes.slice(start, start + entry.compressedSize);
   if (entry.method === 0) return data;
-  if (entry.method !== 8) throw new ZipError(`${entry.name} uses compression method ${entry.method}, which is not supported`);
+  if (entry.method !== 8)
+    throw new ZipError(`${entry.name} uses compression method ${entry.method}, which is not supported`);
   const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
