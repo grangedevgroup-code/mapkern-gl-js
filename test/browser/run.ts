@@ -745,6 +745,16 @@ const specs: Spec[] = [
       const back = await page.evaluate<[number, number]>(`window.map.unproject([${red[0]}, ${red[1]}])`);
       if (Math.hypot(back[0] - DOT[0], back[1] - DOT[1]) > 0.015)
         fail(`unproject of the drawn dot gave ${back}, want ${DOT}`);
+      const layersAt = (geometry: string) =>
+        page.evaluate<string[]>(
+          `window.map.queryRenderedFeatures(${geometry}).then((fs) => fs.map((f) => f.layer))`,
+        );
+      const onDot = await layersAt(`[${red[0]}, ${red[1]}]`);
+      if (!onDot.includes("dot")) fail(`a query on the drawn dot found ${JSON.stringify(onDot)}`);
+      const around = await layersAt(`[[${red[0] - 20}, ${red[1] - 20}], [${red[0] + 20}, ${red[1] + 20}]]`);
+      if (!around.includes("dot")) fail(`a box around the drawn dot found ${JSON.stringify(around)}`);
+      const beside = await layersAt(`[${red[0] + 60}, ${red[1]}]`);
+      if (beside.includes("dot")) fail("a query 60 px beside the dot still found it");
       await page.evaluate("void window.map.setTerrain(null)");
       await idle(page);
       const flat = await page.evaluate<{ x: number; y: number }>(`window.map.project(${JSON.stringify(DOT)})`);
