@@ -64,6 +64,28 @@ test("messages, strings and packed fields", () => {
   assert.ok(r.done);
 });
 
+test("skipping fields of every wire type lands on the next tag", () => {
+  const w = new Writer();
+  w.tag(1, BYTES);
+  w.string("y".repeat(200));
+  w.tag(2, VARINT);
+  w.varint(2 ** 40);
+  w.tag(3, 1);
+  w.double(1.5);
+  w.tag(4, 5);
+  w.float(2.5);
+  w.tag(9, VARINT);
+  w.varint(7);
+  const r = new Reader(w.finish());
+  for (let i = 0; i < 4; i++) {
+    const tag = r.tag();
+    r.skip(tag & 7);
+  }
+  assert.equal(r.tag() >> 3, 9);
+  assert.equal(r.varint(), 7);
+  assert.ok(r.done);
+});
+
 test("embedded messages cannot read past their parent", () => {
   const w = new Writer();
   w.tag(1, BYTES);
