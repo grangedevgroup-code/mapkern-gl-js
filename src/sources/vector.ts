@@ -28,6 +28,7 @@ export interface GpuGeometry {
   indexBuffer: WebGLBuffer;
   indexCount: number;
   bytes: number;
+  shared?: boolean;
 }
 
 export interface VectorBucket {
@@ -278,7 +279,7 @@ export class VectorSource implements MapSource {
           const cpu = bucket.cpu;
           if (!cpu) continue;
           bucket.main = cpu.main ? uploadGeometry(gl, bucket.type, cpu.main) : null;
-          bucket.outline = cpu.outline ? uploadGeometry(gl, "line", cpu.outline) : null;
+          bucket.outline = cpu.outline && bucket.main ? uploadOutline(gl, bucket.main, cpu.outline) : null;
           bucket.cpu = null;
         }
         data.uploaded = true;
@@ -360,9 +361,32 @@ export function uploadGeometry(gl: GL, type: BucketType, g: Geometry): GpuGeomet
   };
 }
 
+export function uploadOutline(gl: GL, main: GpuGeometry, g: Geometry): GpuGeometry | null {
+  if (g.indexCount === 0 || gl.isLost) return null;
+  const ctx = gl.gl;
+  const vao = ctx.createVertexArray();
+  if (!vao) return null;
+  ctx.bindVertexArray(vao);
+  ctx.bindBuffer(ctx.ARRAY_BUFFER, main.vertexBuffer);
+  ctx.enableVertexAttribArray(0);
+  ctx.vertexAttribPointer(0, 2, ctx.SHORT, false, 8, 0);
+  ctx.enableVertexAttribArray(4);
+  ctx.vertexAttribIPointer(4, 1, ctx.UNSIGNED_INT, 8, 4);
+  const indexBuffer = gl.createBuffer(ctx.ELEMENT_ARRAY_BUFFER, new Uint32Array(g.indices));
+  ctx.bindVertexArray(null);
+  return {
+    vao,
+    vertexBuffer: main.vertexBuffer,
+    indexBuffer,
+    indexCount: g.indexCount,
+    bytes: g.indices.byteLength,
+    shared: true,
+  };
+}
+
 export function releaseGeometry(gl: GL, g: GpuGeometry | null): void {
   if (!g) return;
   gl.deleteVertexArray(g.vao);
-  gl.deleteBuffer(g.vertexBuffer);
+  if (!g.shared) gl.deleteBuffer(g.vertexBuffer);
   gl.deleteBuffer(g.indexBuffer);
 }
