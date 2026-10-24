@@ -593,6 +593,9 @@ export function lightStyle(options: LightStyleOptions = {}): StyleSpec {
     },
   );
   if (extruded) {
+    const height: Expression = ["coalesce", ["get", "height"], 6];
+    const base: Expression = ["coalesce", ["get", "min_height"], 0];
+    const tall: Expression = [">=", ["coalesce", ["get", "height"], 0], 25];
     layers.push({
       id: "building-3d",
       type: "extrusion",
