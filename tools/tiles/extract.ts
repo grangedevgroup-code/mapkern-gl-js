@@ -427,14 +427,19 @@ async function runPass(
   const tasks = blobs.map(task);
   const passStart = performance.now();
   let last = passStart;
-  await pool.run(tasks, onResult, (done) => {
-    const now = performance.now();
-    if (now - last > 5000 || done === tasks.length) {
-      last = now;
-      const pct = ((done / Math.max(1, tasks.length)) * 100).toFixed(1);
-      log(
-        `  ${kind}: ${done}/${tasks.length} blobs (${pct}%), ${((now - passStart) / 1000).toFixed(0)} s, total ${((now - started) / 1000).toFixed(0)} s`,
-      );
-    }
-  });
+  await pool.run(
+    tasks,
+    onResult,
+    (done) => {
+      const now = performance.now();
+      if (now - last > 5000 || done === tasks.length) {
+        last = now;
+        const pct = ((done / Math.max(1, tasks.length)) * 100).toFixed(1);
+        log(
+          `  ${kind}: ${done}/${tasks.length} blobs (${pct}%), ${((now - passStart) / 1000).toFixed(0)} s, total ${((now - started) / 1000).toFixed(0)} s`,
+        );
+      }
+    },
+    onSkip,
+  );
 }
