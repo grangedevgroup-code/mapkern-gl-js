@@ -293,30 +293,24 @@ function clipLines(item: Item, r: Rect): Part[] {
 function clipPolygons(item: Item, r: Rect): Part[] {
   const out: Part[] = [];
   const full = (r.x1 - r.x0) * (r.y1 - r.y0) * (1 - 1e-9);
-  let group: Part[] | null = null;
+  let group: Part[] = [];
   let hollow = false;
-  const flush = () => {
-    if (group && !hollow) out.push(...group);
-    group = null;
-    hollow = false;
-  };
   for (const part of item.parts) {
     if (part.outer) {
-      flush();
+      if (!hollow) for (const kept of group) out.push(kept);
+      group = [];
+      hollow = false;
       const ring = clipRing(part.points, r, 3);
-      if (ring) group = [{ points: ring, outer: true, size: part.size }];
+      if (ring) group.push({ points: ring, outer: true, size: part.size });
       continue;
     }
-    if (!group || hollow) continue;
+    if (group.length === 0 || hollow) continue;
     const ring = clipRing(part.points, r, 3);
     if (!ring) continue;
-    if (Math.abs(signedArea(ring, 3)) >= full) {
-      hollow = true;
-      continue;
-    }
-    (group as Part[]).push({ points: ring, outer: false, size: part.size });
+    if (Math.abs(signedArea(ring, 3)) >= full) hollow = true;
+    else group.push({ points: ring, outer: false, size: part.size });
   }
-  flush();
+  if (!hollow) for (const kept of group) out.push(kept);
   return out;
 }
 
