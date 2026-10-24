@@ -75,11 +75,15 @@ export class RasterSource implements MapSource {
         failure: (failure, tile) => {
           const code = failure.kind === "auth" ? "auth" : failure.kind === "decode" ? "decode" : "tile-error";
           this.ctx.error(
-            new MapletError(code, `Tile ${tile.z}/${tile.x}/${tile.y} of source "${this.id}" failed: ${failure.message}`, {
-              sourceId: this.id,
-              tile: { z: tile.z, x: tile.x, y: tile.y },
-              failure,
-            }),
+            new MapletError(
+              code,
+              `Tile ${tile.z}/${tile.x}/${tile.y} of source "${this.id}" failed: ${failure.message}`,
+              {
+                sourceId: this.id,
+                tile: { z: tile.z, x: tile.x, y: tile.y },
+                failure,
+              },
+            ),
           );
         },
         wakeAt: (time) => this.ctx.wakeAt(time),
@@ -127,7 +131,11 @@ export class RasterSource implements MapSource {
     return {
       async load(tile: TileCoord, signal: AbortSignal, onDecoding: () => void): Promise<RasterTile | null> {
         const url = tileUrl(set, tile.z, tile.x, tile.y);
-        const result = await fetchBytes(resolveRequest(url, "tile", ctx.transformRequest), signal, ctx.requestTimeoutMs);
+        const result = await fetchBytes(
+          resolveRequest(url, "tile", ctx.transformRequest),
+          signal,
+          ctx.requestTimeoutMs,
+        );
         if (result.kind === "empty") return null;
         onDecoding();
         let image: ImageBitmap;
