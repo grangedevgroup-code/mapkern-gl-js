@@ -2,7 +2,7 @@ import type { WorkerMessage, WorkerReply } from "./pool.ts";
 
 interface WorkerScope {
   postMessage(message: WorkerReply, transfer?: Transferable[]): void;
-  addEventListener(type: "message", listener: (event: MessageEvent<WorkerMessage>) => void): void;
+  addEventListener(type: "message", listener: (event: MessageEvent<unknown>) => void): void;
 }
 
 export type TaskHandler = (
@@ -16,13 +16,22 @@ export function setting<T>(key: string): T | undefined {
   return settings.get(key) as T | undefined;
 }
 
+function isMessage(value: unknown): value is WorkerMessage {
+  if (typeof value !== "object" || value === null) return false;
+  const m = value as Record<string, unknown>;
+  return typeof m.id === "number" && Number.isInteger(m.id) && typeof m.type === "string";
+}
+
 export function startWorker(tasks: Record<string, TaskHandler>): void {
   const scope = globalThis as unknown as WorkerScope;
-  const handlers = new Map<string, TaskHandler>(Object.entries(tasks));
-  handlers.set("ping", async (payload) => ({ result: payload }));
+  const handlers: Record<string, TaskHandler> = Object.create(null);
+  for (const [name, handler] of Object.entries(tasks)) handlers[name] = handler;
+  handlers.ping = async (payload) => ({ result: payload });
   const running = new Map<number, AbortController>();
   scope.addEventListener("message", (event) => {
+    if (event.origin !== "") return;
     const message = event.data;
+    if (!isMessage(message)) return;
     if (message.type === "cancel") {
       running.get(message.id)?.abort();
       running.delete(message.id);
@@ -32,8 +41,8 @@ export function startWorker(tasks: Record<string, TaskHandler>): void {
       settings.set(message.type, message.payload);
       return;
     }
-    const handler = handlers.get(message.type);
-    if (!handler) {
+    const handler = Object.hasOwn(handlers, message.type) ? handlers[message.type] : undefined;
+    if (typeof handler !== "function") {
       scope.postMessage({ id: message.id, error: { message: `Unknown worker task "${message.type}"` } });
       return;
     }
