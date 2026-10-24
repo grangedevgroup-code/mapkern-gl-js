@@ -1,9 +1,8 @@
 import type { Transform } from "../camera/transform.ts";
 import { errorMessage, MapletError } from "../core/errors.ts";
-import type { GeoJSON } from "../geo/geojson.ts";
 import type { Rect, TileCoord } from "../geo/tile.ts";
 import type { StyleLayer } from "../style/layer.ts";
-import type { GeoJSONSourceSpec } from "../style/types.ts";
+import type { GeoJSONData, GeoJSONSourceSpec } from "../style/types.ts";
 import { FetchFailure, fetchBytes, resolveRequest, retryDelay } from "../tiles/fetch.ts";
 import type { TileStats, Tiling } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
@@ -89,9 +88,9 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
     );
   }
 
-  setData(data: GeoJSON | string): this {
+  setData(data: GeoJSONData): this {
     if (typeof data !== "string" && (typeof data !== "object" || data === null)) {
-      throw new MapletError("invalid-option", "setData needs a GeoJSON object or a URL", { sourceId: this.id });
+      throw new MapletError("invalid-option", "setData needs GeoJSON, a URL or a file", { sourceId: this.id });
     }
     this.spec = { ...this.spec, data };
     this.version++;
@@ -103,7 +102,7 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
     return this;
   }
 
-  getData(): GeoJSON | string {
+  getData(): GeoJSONData {
     return this.spec.data;
   }
 
@@ -176,13 +175,19 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
     }
   }
 
-  private async send(data: GeoJSON | string): Promise<GeoJSONSummary> {
+  private async send(data: GeoJSONData): Promise<GeoJSONSummary> {
     const signal = this.controller.signal;
-    const request: GeoJSONLoadRequest = { source: this.key, options: this.options() };
+    const request: GeoJSONLoadRequest = { source: this.key, options: this.options(), format: this.spec.format };
     const transfer: Transferable[] = [];
     if (typeof data === "string") {
       const bytes = await this.fetchData(data, signal);
       request.bytes = bytes;
+      request.name = data;
+      transfer.push(bytes);
+    } else if (typeof Blob !== "undefined" && data instanceof Blob) {
+      const bytes = await data.arrayBuffer();
+      request.bytes = bytes;
+      request.name = (data as Blob & { name?: string }).name ?? "";
       transfer.push(bytes);
     } else {
       request.data = data;
