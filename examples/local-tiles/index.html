@@ -20,19 +20,19 @@
   <body>
     <div id="map"></div>
     <script type="module">
-      import { lightStyle, Map, NavigationControl, ScaleControl } from "../../dist/maplet.js";
+      import * as maplet from "../../dist/maplet.js";
 
       const params = new URLSearchParams(location.search);
       const file = params.get("tiles") ?? "../../data/puget-sound.pmtiles";
 
-      const map = new Map({
+      const map = new maplet.Map({
         container: "map",
-        style: lightStyle({ url: file }),
+        style: maplet.lightStyle({ url: file }),
         center: [-122.33, 47.6],
         zoom: 10,
       });
-      map.addControl(new NavigationControl());
-      map.addControl(new ScaleControl());
+      map.addControl(new maplet.NavigationControl());
+      map.addControl(new maplet.ScaleControl());
       map.on("error", (event) => console.warn(event.error.message));
       window.map = map;
     </script>
