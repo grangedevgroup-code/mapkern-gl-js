@@ -7,6 +7,14 @@ export interface Program {
   readonly attributes: ReadonlyMap<string, number>;
 }
 
+interface ProgramRecord extends Program {
+  readonly uniforms: Map<string, WebGLUniformLocation>;
+  readonly attributes: Map<string, number>;
+  ready: boolean;
+  vs: WebGLShader | null;
+  fs: WebGLShader | null;
+}
+
 export interface ProgramSource {
   name: string;
   vertex: string;
@@ -21,7 +29,7 @@ export class GL {
   readonly maxTextureSize: number;
   readonly maxAnisotropy: number;
   private readonly anisotropic: EXT_texture_filter_anisotropic | null;
-  private readonly programs = new Map<string, Program>();
+  private readonly programs = new Map<string, ProgramRecord>();
   private currentProgram: WebGLProgram | null = null;
   private blend: BlendMode | null = null;
   private depthTest: boolean | null = null;
@@ -85,6 +93,8 @@ export class GL {
 
   use(program: Program): void {
     if (this.currentProgram === program.handle) return;
+    const record = program as ProgramRecord;
+    if (!record.ready) this.verify(record);
     this.gl.useProgram(program.handle);
     this.currentProgram = program.handle;
   }
@@ -196,7 +206,7 @@ export class GL {
     this.programs.clear();
   }
 
-  private compile(key: string, source: ProgramSource): Program {
+  private compile(key: string, source: ProgramSource): ProgramRecord {
     const gl = this.gl;
     const prelude = `#version 300 es\nprecision highp float;\n${(source.defines ?? []).map((d) => `#define ${d}\n`).join("")}`;
     const vs = this.shader(gl.VERTEX_SHADER, prelude + source.vertex, key);
@@ -206,30 +216,58 @@ export class GL {
     gl.attachShader(handle, vs);
     gl.attachShader(handle, fs);
     gl.linkProgram(handle);
-    gl.deleteShader(vs);
-    gl.deleteShader(fs);
+    return { name: key, handle, uniforms: new Map(), attributes: new Map(), ready: false, vs, fs };
+  }
+
+  private verify(program: ProgramRecord): void {
+    const gl = this.gl;
+    const handle = program.handle;
     if (!gl.getProgramParameter(handle, gl.LINK_STATUS) && !gl.isContextLost()) {
-      const log = gl.getProgramInfoLog(handle) ?? "";
+      const logs: string[] = [];
+      for (const [stage, shader] of [
+        ["vertex", program.vs],
+        ["fragment", program.fs],
+      ] as const) {
+        if (shader && !gl.getShaderParameter(shader, gl.COMPILE_STATUS))
+          logs.push(`${stage}: ${gl.getShaderInfoLog(shader) ?? ""}`);
+      }
+      logs.push(gl.getProgramInfoLog(handle) ?? "");
+      const log = logs.filter((l) => l.trim().length > 0).join("\n");
+      this.release(program);
       gl.deleteProgram(handle);
-      throw new MapletError("shader-compile", `Program ${key} failed to link: ${log}`, { program: key, log });
+      this.programs.delete(program.name);
+      throw new MapletError("shader-compile", `Program ${program.name} failed to build: ${log}`, {
+        program: program.name,
+        log,
+      });
     }
-    const uniforms = new Map<string, WebGLUniformLocation>();
     const uniformCount = gl.getProgramParameter(handle, gl.ACTIVE_UNIFORMS) as number;
     for (let i = 0; i < uniformCount; i++) {
       const info = gl.getActiveUniform(handle, i);
       if (!info) continue;
       const name = info.name.endsWith("[0]") ? info.name.slice(0, -3) : info.name;
       const loc = gl.getUniformLocation(handle, info.name);
-      if (loc) uniforms.set(name, loc);
+      if (loc) program.uniforms.set(name, loc);
     }
-    const attributes = new Map<string, number>();
     const attribCount = gl.getProgramParameter(handle, gl.ACTIVE_ATTRIBUTES) as number;
     for (let i = 0; i < attribCount; i++) {
       const info = gl.getActiveAttrib(handle, i);
       if (!info) continue;
-      attributes.set(info.name, gl.getAttribLocation(handle, info.name));
+      program.attributes.set(info.name, gl.getAttribLocation(handle, info.name));
     }
-    return { name: key, handle, uniforms, attributes };
+    this.release(program);
+    program.ready = true;
+  }
+
+  private release(program: ProgramRecord): void {
+    const gl = this.gl;
+    for (const shader of [program.vs, program.fs]) {
+      if (!shader) continue;
+      gl.detachShader(program.handle, shader);
+      gl.deleteShader(shader);
+    }
+    program.vs = null;
+    program.fs = null;
   }
 
   private shader(type: GLenum, text: string, key: string): WebGLShader {
@@ -238,16 +276,6 @@ export class GL {
     if (!shader) throw new MapletError("shader-compile", `Could not create shader for ${key}`);
     gl.shaderSource(shader, text);
     gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS) && !gl.isContextLost()) {
-      const log = gl.getShaderInfoLog(shader) ?? "";
-      gl.deleteShader(shader);
-      const stage = type === gl.VERTEX_SHADER ? "vertex" : "fragment";
-      throw new MapletError("shader-compile", `The ${stage} shader of ${key} failed to compile: ${log}`, {
-        program: key,
-        stage,
-        log,
-      });
-    }
     return shader;
   }
 }
