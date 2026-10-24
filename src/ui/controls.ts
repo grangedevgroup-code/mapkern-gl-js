@@ -24,7 +24,13 @@ function icon(doc: Document, paths: string[]): SVGSVGElement {
   return svg;
 }
 
-function button(doc: Document, label: string, className: string, svg: SVGSVGElement, onClick: () => void): HTMLButtonElement {
+function button(
+  doc: Document,
+  label: string,
+  className: string,
+  svg: SVGSVGElement,
+  onClick: () => void,
+): HTMLButtonElement {
   const b = doc.createElement("button");
   b.type = "button";
   b.className = className;
