@@ -24,6 +24,8 @@ export interface ProgramSource {
 
 export type BlendMode = "none" | "premultiplied" | "additive";
 
+export type DataFormat = "rg16f" | "r32f" | "r8";
+
 export class GL {
   readonly gl: WebGL2RenderingContext;
   readonly maxTextureSize: number;
