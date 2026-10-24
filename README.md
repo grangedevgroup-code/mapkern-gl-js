@@ -5,28 +5,36 @@
   </picture>
 </p>
 
-# Maplet GL JS
+Maplet GL JS is a map library for the web. It draws vector tiles, raster tiles and GeoJSON with WebGL2, and it doesn't depend on any other package.
 
-Maplet GL JS draws interactive maps in the browser with WebGL2. It renders vector tiles, raster tiles and GeoJSON, keeps the map covered while new tiles load, and has no runtime dependencies. The whole library is about 77 KB gzipped.
-
-![Seattle at a 50 degree tilt, drawn by Maplet](assets/screenshot-seattle.webp)
+![Seattle, tilted 50 degrees](assets/screenshot-seattle.webp)
 
 <sub>Map data © OpenStreetMap contributors</sub>
 
-## Quick start
-
-Install from GitHub:
+## Install
 
 ```sh
 npm install github:grangedevgroup-code/maplet-gl-js
 ```
 
-Show a map with your own points. This needs no tile server and no API key:
+The built files end up in `node_modules/maplet-gl/dist`. If you don't use a bundler, copy `dist/maplet.js` next to your page and import it from there.
+
+## A first map
+
+This one shows two places and needs no tile server or API key.
 
 ```html
 <div id="map" style="position: absolute; inset: 0"></div>
 <script type="module">
   import { Map, NavigationControl } from "maplet-gl";
+
+  const places = {
+    type: "FeatureCollection",
+    features: [
+      { type: "Feature", properties: { name: "Pike Place Market" }, geometry: { type: "Point", coordinates: [-122.3422, 47.6097] } },
+      { type: "Feature", properties: { name: "Space Needle" }, geometry: { type: "Point", coordinates: [-122.3493, 47.6205] } },
+    ],
+  };
 
   const map = new Map({
     container: "map",
@@ -34,33 +42,14 @@ Show a map with your own points. This needs no tile server and no API key:
     zoom: 13,
     style: {
       version: 1,
-      sources: {
-        stops: {
-          type: "geojson",
-          data: {
-            type: "FeatureCollection",
-            features: [
-              {
-                type: "Feature",
-                properties: { name: "Pike Place Market" },
-                geometry: { type: "Point", coordinates: [-122.3422, 47.6097] },
-              },
-              {
-                type: "Feature",
-                properties: { name: "Space Needle" },
-                geometry: { type: "Point", coordinates: [-122.3493, 47.6205] },
-              },
-            ],
-          },
-        },
-      },
+      sources: { places: { type: "geojson", data: places } },
       layers: [
         { id: "background", type: "background", paint: { color: "#eef1ef" } },
-        { id: "stops", type: "circle", source: "stops", paint: { radius: 7, color: "#246a50" } },
+        { id: "dots", type: "circle", source: "places", paint: { radius: 7, color: "#246a50" } },
         {
-          id: "stop-names",
+          id: "names",
           type: "symbol",
-          source: "stops",
+          source: "places",
           layout: { text: ["get", "name"], anchor: "top", offset: [0, 0.8] },
           paint: { color: "#10191d", haloColor: "#ffffff", haloWidth: 1.5 },
         },
@@ -72,75 +61,56 @@ Show a map with your own points. This needs no tile server and no API key:
 </script>
 ```
 
-Without a bundler, import `dist/maplet.js` by path instead of `"maplet-gl"`, and serve the page over HTTP. Browsers do not load modules from `file://` pages.
+Open the page through a local web server. Browsers won't load modules from a `file://` address.
 
-## Add a basemap
+## A real basemap
 
-Maplet can build its own vector tiles from OpenStreetMap data, so you do not need a tile service.
+Maplet can make its own street map tiles from OpenStreetMap data, so you don't need a map provider. Download an extract for your region from [Geofabrik](https://download.geofabrik.de/), then cut out the area you want:
 
-1. Download an `.osm.pbf` extract for your region, for example from [Geofabrik](https://download.geofabrik.de/).
-2. Build a tile file for the area you need. The `maplet-tiles` command comes with the package:
+```sh
+npx maplet-tiles --input washington-latest.osm.pbf --bbox=-122.45,47.48,-122.22,47.74 --output seattle.pmtiles
+```
 
-   ```sh
-   npx maplet-tiles --input washington-latest.osm.pbf --bbox=-122.45,47.48,-122.22,47.74 --output seattle.pmtiles
-   ```
+Put `seattle.pmtiles` on any web server that handles range requests, and point the built-in style at it:
 
-3. Put `seattle.pmtiles` on any web server that supports range requests, and use the built-in style:
+```js
+import { Map, lightStyle } from "maplet-gl";
 
-   ```js
-   import { Map, lightStyle } from "maplet-gl";
+const map = new Map({
+  container: "map",
+  style: lightStyle({ url: "seattle.pmtiles" }),
+  center: [-122.335, 47.608],
+  zoom: 12,
+});
+```
 
-   const map = new Map({
-     container: "map",
-     style: lightStyle({ url: "seattle.pmtiles" }),
-     center: [-122.335, 47.608],
-     zoom: 12,
-   });
-   ```
+The OpenStreetMap license asks you to credit the data. The style shows "© OpenStreetMap contributors" in the corner, so leave that visible.
 
-The light style shows `© OpenStreetMap contributors` in the corner. Keep it visible: the OpenStreetMap license requires it.
+## What else it does
 
-[docs/tiles.md](docs/tiles.md) covers the tile builder and the layers and fields it writes.
+You can replace GeoJSON with `setData()` while the map is running, move the camera with `easeTo` and `flyTo`, tilt and rotate the map, and style features from their own data with expressions like `match` and `interpolate`. Labels follow streets and keep out of each other's way.
 
-## What it does
+While you pan and zoom, Maplet fills gaps with tiles it already has from other zoom levels, so the map doesn't flash empty. Tiles are decoded in Web Workers, and the whole library is about 77 KB gzipped.
 
-- Vector tiles in the Mapbox Vector Tile format, from PMTiles archives or `{z}/{x}/{y}` URLs
-- Raster tiles in PNG, JPEG or WebP
-- GeoJSON, cut into tiles in a worker. `setData()` swaps the data without a blank frame
-- Labels at points and along lines, with collision checks and fading
-- Zoom, pan, rotation and tilt with mouse, touch and keyboard
-- Smooth `easeTo` and `flyTo` camera moves
-- Expressions for data-driven styling: `match`, `case`, `interpolate`, `step` and more
-- A tile loader that keeps the screen covered: parent and child tiles fill in while tiles load, requests are ranked by what is on screen, failed requests are retried with backoff, and requests that are no longer needed are cancelled
-- Tile decoding and geometry building in Web Workers
-- `getDiagnostics()` for frame times, tile states, requests and blank screen area
+3D buildings and terrain aren't finished yet, and the API may still change before 1.0.
 
-3D buildings, terrain and hillshading are in progress. The API may change before version 1.0.
+## Docs
 
-## Documentation
+- [Styles](docs/style.md): sources, layers, properties and expressions
+- [API](docs/api.md): map options, methods and events
+- [Tiles](docs/tiles.md): building tiles and what's in them
 
-- [Getting started](docs/getting-started.md)
-- [Style reference](docs/style.md)
-- [API reference](docs/api.md)
-- [Building tiles from OpenStreetMap](docs/tiles.md)
+## Working on Maplet
 
-## Browser support
-
-Maplet needs WebGL2. It runs in current Chrome, Edge, Firefox and Safari 16.4 or newer, on desktop and mobile.
-
-## Development
-
-You need Node.js 22.18 or newer.
+You'll need Node.js 22.18 or newer.
 
 ```sh
 npm install
-npm run dev            # builds, watches src and serves http://127.0.0.1:8080/examples/
-npm run verify         # lint, type check and unit tests
-npm run test:browser   # renders test maps in Chrome and checks the pixels
-npm run build          # writes dist/
-npm run tiles -- --help
+npm run dev
 ```
+
+`npm run dev` serves the examples at http://127.0.0.1:8080/examples/ and rebuilds whenever you change something in `src`. Before sending a change, run `npm run verify` for lint, types and unit tests, and `npm run test:browser`, which draws test maps in Chrome and checks the pixels.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT
