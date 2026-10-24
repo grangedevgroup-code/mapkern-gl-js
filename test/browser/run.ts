@@ -219,7 +219,7 @@ const specs: Spec[] = [
         return errors;
       })()`);
       const first = errors[0];
-      if (!first || first.code !== "invalid-style") fail(`expected invalid-style error, got ${JSON.stringify(errors)}`);
+      if (first?.code !== "invalid-style") fail(`expected invalid-style error, got ${JSON.stringify(errors)}`);
       for (const needle of ["sources.a", "missing", "colour"]) {
         if (!first.message.includes(needle)) fail(`error message does not mention ${needle}: ${first.message}`);
       }
