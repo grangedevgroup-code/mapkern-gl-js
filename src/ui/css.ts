@@ -154,16 +154,7 @@ export function injectStyles(doc: Document): void {
   if (injected || doc.querySelector("style[data-maplet]")) return;
   injected = true;
   const adoptable = "adoptedStyleSheets" in doc && typeof CSSStyleSheet !== "undefined" && "replaceSync" in CSSStyleSheet.prototype;
-  if (adoptable) {
-    try {
-      const sheet = new CSSStyleSheet();
-      sheet.replaceSync(CSS);
-      doc.adoptedStyleSheets = [sheet, ...doc.adoptedStyleSheets];
-      return;
-    } catch {
-      injected = true;
-    }
-  }
+  if (adoptable && adopt(doc)) return;
   const style = doc.createElement("style");
   style.setAttribute("data-maplet", "");
   style.textContent = CSS;
