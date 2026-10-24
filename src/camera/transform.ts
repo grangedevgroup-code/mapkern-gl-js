@@ -388,6 +388,7 @@ export class Transform {
       );
     }
     out.sort((a, b) => a.distance - b.distance);
+    if (out.length > limit) out.length = limit;
     return out;
   }
 }
