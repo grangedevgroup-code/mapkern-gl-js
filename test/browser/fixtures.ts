@@ -41,6 +41,13 @@ export const fixtureRoute: Route = async (req, res, url) => {
     res.end();
     return true;
   }
+  if (path === "/fixture/formats/places.kml") {
+    res.writeHead(200, { "content-type": "application/vnd.google-earth.kml+xml", "cache-control": "no-store" });
+    res.end(
+      '<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>West</name><Point><coordinates>-10,0</coordinates></Point></Placemark></Document></kml>',
+    );
+    return true;
+  }
   if (path === "/fixture/geojson/square.json") {
     res.writeHead(200, { "content-type": "application/geo+json", "cache-control": "no-store" });
     res.end(JSON.stringify(square(10, "#0000ff")));
