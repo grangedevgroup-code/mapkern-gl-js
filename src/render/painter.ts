@@ -5,6 +5,8 @@ import type { VectorSource } from "../sources/vector.ts";
 import type { RGBA } from "../style/color.ts";
 import { premultiply } from "../style/color.ts";
 import type { StyleLayer } from "../style/layer.ts";
+import type { SymbolLayerInput } from "../text/labels.ts";
+import { LabelRenderer } from "../text/labels.ts";
 import type { GL, Program } from "./gl.ts";
 import { rasterShader, solidShader } from "./shaders/raster.ts";
 import { VectorPainter } from "./vector-layers.ts";
@@ -15,6 +17,7 @@ export interface FrameInput {
   readonly layers: readonly StyleLayer[];
   readonly sources: ReadonlyMap<string, MapSource>;
   readonly now: number;
+  readonly cameraVersion: number;
 }
 
 export interface PaintStats {
@@ -30,14 +33,17 @@ export class Painter {
   private readonly matrix = new Float32Array(16);
   private readonly hue = new Float32Array(9);
   private readonly vector: VectorPainter;
+  readonly labels: LabelRenderer;
 
   constructor(gl: GL) {
     this.gl = gl;
     this.vector = new VectorPainter(gl);
+    this.labels = new LabelRenderer(gl);
     this.init();
   }
 
   init(): void {
+    this.labels.reset();
     const gl = this.gl.gl;
     this.quadBuffer = this.gl.createBuffer(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]));
     this.quadVao = gl.createVertexArray();
@@ -48,7 +54,7 @@ export class Painter {
     gl.bindVertexArray(null);
   }
 
-  render(frame: FrameInput): void {
+  render(frame: FrameInput): boolean {
     const g = this.gl;
     const gl = g.gl;
     this.stats = { drawCalls: 0, pieces: 0 };
@@ -93,10 +99,25 @@ export class Painter {
           break;
       }
     }
+    const symbols: SymbolLayerInput[] = [];
+    for (const layer of layers) {
+      if (layer.type !== "symbol" || !layer.source) continue;
+      const source = frame.sources.get(layer.source);
+      if ((source?.type === "vector" || source?.type === "geojson") && (source as VectorSource).manager) {
+        symbols.push({ layer, manager: (source as VectorSource).manager! });
+      }
+    }
+    let animating = false;
+    if (symbols.length > 0 || this.labels.visibleCount > 0) {
+      animating = this.labels.update(frame.transform, symbols, frame.now, frame.cameraVersion, frame.pixelRatio);
+      this.stats.drawCalls += this.labels.draw(frame.transform, frame.pixelRatio);
+    }
     gl.bindVertexArray(null);
+    return animating;
   }
 
   destroy(): void {
+    this.labels.destroy();
     this.gl.deleteBuffer(this.quadBuffer);
     this.gl.deleteVertexArray(this.quadVao);
     this.quadBuffer = null;
