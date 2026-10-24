@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Entry } from "../../src/formats/pmtiles.ts";
-import { decodeDirectory, encodeDirectory, findEntry, readHeader, tileCoord, tileId, writeHeader } from "../../src/formats/pmtiles.ts";
+import {
+  decodeDirectory,
+  encodeDirectory,
+  findEntry,
+  readHeader,
+  tileCoord,
+  tileId,
+  writeHeader,
+} from "../../src/formats/pmtiles.ts";
 
 test("tile ids follow the published examples", () => {
   assert.equal(tileId(0, 0, 0), 0);
@@ -16,7 +24,13 @@ test("tile ids follow the published examples", () => {
 test("tile ids round trip at every zoom", () => {
   for (let z = 0; z <= 26; z += z < 6 ? 1 : 5) {
     const n = 2 ** z;
-    for (const [x, y] of [[0, 0], [n - 1, 0], [0, n - 1], [n - 1, n - 1], [Math.floor(n / 3), Math.floor(n / 7)]] as const) {
+    for (const [x, y] of [
+      [0, 0],
+      [n - 1, 0],
+      [0, n - 1],
+      [n - 1, n - 1],
+      [Math.floor(n / 3), Math.floor(n / 7)],
+    ] as const) {
       assert.deepEqual(tileCoord(tileId(z, x, y)), { z, x, y });
     }
   }
