@@ -15,7 +15,7 @@ const style = {
 };
 ```
 
-A style can also set `center`, `zoom`, `bearing` and `pitch`. The map uses them when you don't pass those options yourself.
+A style can also set `center`, `zoom`, `bearing` and `pitch`. The map uses them when you don't pass those options yourself. With `terrain` it raises the ground in 3D, see [Terrain](#terrain).
 
 Maplet checks the whole style before drawing it. If something is wrong you get a single `error` event that lists every problem, like `layers[2].paint.colour: "colour" is not a property of fill layers`. `validateStyle(style)` runs the same check without a map.
 
@@ -267,6 +267,30 @@ A filter is just an expression that comes out true or false:
 }
 ```
 
+## Terrain
+
+Add `terrain` to a style and the ground rises in 3D, using an [elevation](#elevation) source:
+
+```js
+const style = {
+  version: 1,
+  sources: {
+    dem: { type: "dem", url: "terrain.pmtiles" },
+    osm: { type: "vector", url: "seattle.pmtiles" },
+  },
+  terrain: { source: "dem", exaggeration: 1.2 },
+  layers: [],
+};
+```
+
+`exaggeration` stretches the heights and is 1 unless you set it. You can also turn terrain on and off while the map runs with [`setTerrain()`](api.md#terrain).
+
+Everything flat gets drawn onto the ground: fills, lines, circles, rasters and hillshading. Labels and 3D buildings stand on it, and labels behind a hill are hidden. Where there's no elevation data the ground stays flat at sea level.
+
+When you drag the map over mountains, the camera keeps its height, so the zoom level changes a little as the ground in the middle of the map rises and falls. `jumpTo`, `easeTo` and `flyTo` end at exactly the zoom you ask for, measured from the ground.
+
+On steep slopes the roofs of 3D buildings follow the slope instead of staying flat.
+
 ## The built-in style
 
 `lightStyle()` gives you a complete street map style for tiles made with `maplet-tiles`:
@@ -275,7 +299,7 @@ A filter is just an expression that comes out true or false:
 const style = maplet.lightStyle({ url: "seattle.pmtiles" });
 ```
 
-Tall buildings stand up in 3D from zoom 12, and all the others join them at zoom 13. Pass `buildings: "flat"` to keep them flat or `buildings: false` to leave them out, and `labels: false` to drop the labels. You can choose label fonts with `font`, and replace the credit line with `attribution`. If your tiles come from a URL template instead of a file, pass `tiles` (and `maxZoom` if it isn't 14).
+Tall buildings stand up in 3D from zoom 12, and all the others join them at zoom 13. Pass `buildings: "flat"` to keep them flat or `buildings: false` to leave them out, and `labels: false` to drop the labels. Give it `elevation` with the URL of an elevation file to shade the hills, and add `terrain: true`, or an exaggeration like `terrain: 1.5`, to raise them in 3D. You can choose label fonts with `font`, and replace the credit line with `attribution`. If your tiles come from a URL template instead of a file, pass `tiles` (and `maxZoom` if it isn't 14).
 
 It returns a normal style object, so you can change it before using it:
 
