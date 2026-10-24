@@ -71,6 +71,7 @@ export interface ManagerEvents {
 const FULL: Rect = { x0: 0, y0: 0, x1: 1, y1: 1 };
 const LINGER_MS = 2500;
 const MAX_FALLBACK_DEPTH = 2;
+const SWAP_WAIT_MS = 100;
 const BREAKER_THRESHOLD = 16;
 
 export class TileManager<D> {
@@ -248,21 +249,27 @@ export class TileManager<D> {
 
   uploadPending(deadline: number, now: number): boolean {
     const pending: Tile<D>[] = [];
-    for (const tile of this.tiles.values()) if (tile.state === "prepared" || tile.next !== null) pending.push(tile);
-    if (pending.length === 0) return false;
+    let swaps = 0;
+    for (const tile of this.tiles.values()) {
+      if (tile.state === "prepared") {
+        pending.push(tile);
+      } else if (tile.next !== null) {
+        swaps++;
+        if (this.loader.needsUpload(tile.next)) pending.push(tile);
+      }
+    }
+    if (pending.length === 0 && swaps === 0) return false;
     pending.sort((a, b) => (a.wanted ? a.priority : 1e12) - (b.wanted ? b.priority : 1e12));
     let uploaded = false;
+    let more = false;
     for (const tile of pending) {
-      if (uploaded && performance.now() > deadline) return true;
+      if (uploaded && performance.now() > deadline) {
+        more = true;
+        break;
+      }
       const next = tile.next;
       if (next !== null) {
-        tile.next = null;
         this.loader.upload(next);
-        const previous = tile.data;
-        tile.data = next;
-        tile.revision++;
-        if (previous) this.loader.release(previous);
-        tile.bytes = this.loader.byteSize(next);
         uploaded = true;
         continue;
       }
@@ -274,7 +281,11 @@ export class TileManager<D> {
       tile.readyAt = now;
       uploaded = true;
     }
-    return false;
+    if (swaps > 0) {
+      if (!more && this.swapDue()) this.swapAll();
+      else more = true;
+    }
+    return more;
   }
 
   reload(): void {
@@ -575,6 +586,35 @@ export class TileManager<D> {
     }
   }
 
+  private swapDue(): boolean {
+    let oldest = Number.POSITIVE_INFINITY;
+    for (const tile of this.tiles.values()) {
+      if (tile.next === null) continue;
+      if (this.loader.needsUpload(tile.next)) return false;
+      oldest = Math.min(oldest, tile.nextAt);
+    }
+    if (oldest === Number.POSITIVE_INFINITY) return false;
+    if (performance.now() - oldest >= SWAP_WAIT_MS) return true;
+    for (const tile of this.tiles.values()) {
+      if (tile.next !== null || !tile.wanted || tile.priority >= 10000) continue;
+      if (this.isOutdated(tile) && tile.failure === null) return false;
+    }
+    return true;
+  }
+
+  private swapAll(): void {
+    for (const tile of this.tiles.values()) {
+      const next = tile.next;
+      if (next === null) continue;
+      tile.next = null;
+      const previous = tile.data;
+      tile.data = next;
+      tile.revision++;
+      if (previous) this.loader.release(previous);
+      tile.bytes = this.loader.byteSize(next);
+    }
+  }
+
   private replace(tile: Tile<D>, data: D | null): void {
     if (data === null) {
       if (tile.data) this.loader.release(tile.data);
@@ -586,6 +626,7 @@ export class TileManager<D> {
     }
     if (this.loader.needsUpload(data)) {
       tile.next = data;
+      tile.nextAt = performance.now();
       tile.bytes = (tile.data ? this.loader.byteSize(tile.data) : 0) + this.loader.byteSize(data);
       return;
     }
