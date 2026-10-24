@@ -1,0 +1,55 @@
+{
+  "name": "maplet-gl",
+  "version": "0.1.0",
+  "description": "Fast WebGL2 map engine for the browser",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/grangedevgroup-code/maplet-gl-js.git"
+  },
+  "homepage": "https://github.com/grangedevgroup-code/maplet-gl-js",
+  "bugs": "https://github.com/grangedevgroup-code/maplet-gl-js/issues",
+  "keywords": [
+    "map",
+    "maps",
+    "webgl",
+    "webgl2",
+    "vector-tiles",
+    "terrain",
+    "gis"
+  ],
+  "main": "./dist/maplet.js",
+  "module": "./dist/maplet.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/maplet.js"
+    },
+    "./maplet.css": "./dist/maplet.css",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": [
+    "*.css"
+  ],
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "check": "tsc -p tsconfig.json",
+    "test": "node --test \"test/unit/**/*.test.ts\"",
+    "test:browser": "node test/browser/run.ts",
+    "dev": "node scripts/serve.ts",
+    "tiles": "node tools/tiles/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
