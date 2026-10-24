@@ -1,7 +1,7 @@
 import type { FeatureType, PropertyValue, VectorFeature } from "../formats/mvt.ts";
 import { ringArea } from "../formats/mvt.ts";
 import { ALWAYS_KEEP, clipLine, clipRing, rankVertices, reverseRing, ringBounds, signedArea } from "../geo/clip.ts";
-import { mercatorX, mercatorY } from "../geo/mercator.ts";
+import { latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY } from "../geo/mercator.ts";
 import type { Rect } from "../geo/tile.ts";
 import { tileKey } from "../geo/tile.ts";
 import type { FeatureLayer } from "./vector-task.ts";
@@ -17,7 +17,8 @@ export interface GeoJSONOptions {
 export interface GeoJSONSummary {
   features: number;
   vertices: number;
-  bounds: Rect | null;
+  coverage: Rect | null;
+  bounds: [number, number, number, number] | null;
 }
 
 interface SourceFeature {
@@ -59,16 +60,28 @@ export class GeoJSONIndex {
 
   constructor(data: unknown, options: GeoJSONOptions) {
     this.options = options;
-    const { items, features } = readGeoJSON(data, options.promoteId);
+    const { items, features, bounds } = readGeoJSON(data, options.promoteId);
     let vertices = 0;
-    let bounds: Rect | null = null;
+    let coverage: Rect | null = null;
     for (const item of items) {
       vertices += item.vertices;
-      bounds = bounds ? union(bounds, item.bounds) : { ...item.bounds };
+      coverage = coverage ? union(coverage, item.bounds) : { ...item.bounds };
     }
     this.root = { items, vertices, cost: vertices };
     this.budget = Math.max(MIN_CACHE_COST, vertices);
-    this.summary = { features, vertices, bounds };
+    this.summary = {
+      features,
+      vertices,
+      coverage,
+      bounds: bounds
+        ? [
+            lngFromMercatorX(bounds.x0),
+            latFromMercatorY(bounds.y1),
+            lngFromMercatorX(bounds.x1),
+            latFromMercatorY(bounds.y0),
+          ]
+        : null,
+    };
   }
 
   tile(z: number, x: number, y: number): FeatureLayer {
@@ -343,9 +356,13 @@ function shifted(item: Item, dx: number): Item {
   return makeItem(item.feature, item.type, parts);
 }
 
-function readGeoJSON(data: unknown, promoteId: string | undefined): { items: Item[]; features: number } {
+function readGeoJSON(
+  data: unknown,
+  promoteId: string | undefined,
+): { items: Item[]; features: number; bounds: Rect | null } {
   const items: Item[] = [];
   let features = 0;
+  let bounds: Rect | null = null;
   const add = (geometry: unknown, feature: SourceFeature): boolean => {
     if (typeof geometry !== "object" || geometry === null) return false;
     const g = geometry as Record<string, unknown>;
@@ -357,6 +374,7 @@ function readGeoJSON(data: unknown, promoteId: string | undefined): { items: Ite
     const item = readGeometry(g, feature);
     if (!item) return false;
     items.push(item);
+    bounds = bounds ? union(bounds, item.bounds) : item.bounds;
     if (item.bounds.x1 > 1) items.push(shifted(item, -1));
     if (item.bounds.x0 < 0) items.push(shifted(item, 1));
     return true;
@@ -375,7 +393,7 @@ function readGeoJSON(data: unknown, promoteId: string | undefined): { items: Ite
     }
   };
   visit(data);
-  return { items, features };
+  return { items, features, bounds };
 }
 
 function readProperties(raw: unknown): Record<string, PropertyValue> {
