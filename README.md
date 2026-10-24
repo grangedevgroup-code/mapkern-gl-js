@@ -79,10 +79,10 @@ Without a bundler, import `dist/maplet.js` by path instead of `"maplet-gl"`, and
 Maplet can build its own vector tiles from OpenStreetMap data, so you do not need a tile service.
 
 1. Download an `.osm.pbf` extract for your region, for example from [Geofabrik](https://download.geofabrik.de/).
-2. Build a tile file for the area you need:
+2. Build a tile file for the area you need. The `maplet-tiles` command comes with the package:
 
    ```sh
-   npm run tiles -- --input washington-latest.osm.pbf --bbox=-122.45,47.48,-122.22,47.74 --output seattle.pmtiles
+   npx maplet-tiles --input washington-latest.osm.pbf --bbox=-122.45,47.48,-122.22,47.74 --output seattle.pmtiles
    ```
 
 3. Put `seattle.pmtiles` on any web server that supports range requests, and use the built-in style:
