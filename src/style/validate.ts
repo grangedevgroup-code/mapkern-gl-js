@@ -114,6 +114,12 @@ export function validateSource(id: string, source: unknown): StyleIssue[] {
     if (source.data === undefined || (typeof source.data !== "string" && !isObject(source.data))) {
       issues.push({ path: `${path}.data`, message: "geojson data must be a GeoJSON object or a URL" });
     }
+    if (isFiniteNumber(source.maxZoom) && source.maxZoom > 24) {
+      issues.push({ path: `${path}.maxZoom`, message: "geojson maxZoom must be 24 or less" });
+    }
+    if (isFiniteNumber(source.buffer) && source.buffer > 512) {
+      issues.push({ path: `${path}.buffer`, message: "buffer must be between 0 and 512 pixels" });
+    }
   } else {
     const hasTiles =
       Array.isArray(source.tiles) && source.tiles.length > 0 && source.tiles.every((t) => typeof t === "string");
@@ -137,6 +143,9 @@ export function validateSource(id: string, source: unknown): StyleIssue[] {
     ) {
       issues.push({ path: `${path}.encoding`, message: "encoding must be terrarium or mapbox" });
     }
+  }
+  if (source.promoteId !== undefined && typeof source.promoteId !== "string") {
+    issues.push({ path: `${path}.promoteId`, message: "promoteId must be a property name" });
   }
   for (const key of ["minZoom", "maxZoom", "tileSize", "tolerance", "buffer"] as const) {
     const v = source[key];
