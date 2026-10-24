@@ -4,7 +4,7 @@ import type { GeoJSON } from "../geo/geojson.ts";
 import type { Rect, TileCoord } from "../geo/tile.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { GeoJSONSourceSpec } from "../style/types.ts";
-import { FetchFailure, fetchBytes, isAbortError, resolveRequest, retryDelay } from "../tiles/fetch.ts";
+import { FetchFailure, fetchBytes, resolveRequest, retryDelay } from "../tiles/fetch.ts";
 import type { TileStats, Tiling } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
 import type { GeoJSONOptions, GeoJSONSummary } from "../worker/geojson.ts";
@@ -35,6 +35,7 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
   private applied = 0;
   private syncing: Promise<void> | null = null;
   private restoring: Promise<void> | null = null;
+  private posted = false;
 
   constructor(id: string, spec: GeoJSONSourceSpec, ctx: SourceContext) {
     this.id = id;
@@ -102,6 +103,10 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
     return this;
   }
 
+  getData(): GeoJSON | string {
+    return this.spec.data;
+  }
+
   setLayers(layers: readonly StyleLayer[]): void {
     if (this.layers.update(layers)) this.manager?.refresh();
   }
@@ -134,6 +139,7 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
     this.controller.abort();
     this.manager?.destroy();
     this.manager = null;
+    if (!this.posted) return;
     const pool = this.ctx.workers();
     if (pool.available) pool.send("geojson-remove", { source: this.key }, [], undefined, this.affinity).catch(() => {});
   }
@@ -155,8 +161,8 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
         summary = await this.send(this.spec.data);
       } catch (error) {
         this.applied = version;
-        if (initial || this.version === version) throw error;
-        this.ctx.error(this.loadError(error));
+        if (this.version === version) throw this.loadError(error);
+        if (!initial) this.ctx.error(this.loadError(error));
         continue;
       }
       this.applied = version;
@@ -181,6 +187,8 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
     } else {
       request.data = data;
     }
+    if (signal.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
+    this.posted = true;
     return this.ctx.workers().send<GeoJSONSummary>("geojson-load", request, transfer, signal, this.affinity);
   }
 
@@ -301,9 +309,3 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
     signal.addEventListener("abort", onAbort, { once: true });
   });
 }
-
-export function isGeoJSONSource(source: unknown): source is GeoJSONSource {
-  return source instanceof GeoJSONSource;
-}
-
-export { isAbortError };
