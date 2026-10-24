@@ -160,3 +160,14 @@ export function injectStyles(doc: Document): void {
   style.textContent = CSS;
   doc.head.appendChild(style);
 }
+
+function adopt(doc: Document): boolean {
+  try {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(CSS);
+    doc.adoptedStyleSheets = [sheet, ...doc.adoptedStyleSheets];
+    return true;
+  } catch {
+    return false;
+  }
+}
