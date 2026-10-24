@@ -29,6 +29,21 @@ export interface TileSetDefaults {
   maxZoom: number;
 }
 
+export function archiveSpec<T extends TileSourceBase>(spec: T): T {
+  const url = spec.url;
+  const m = url ? /\.(pmtiles|mbtiles)(\?|#|$)/i.exec(url) : null;
+  if (!url || !m || /^(pmtiles|mbtiles):\/\//i.test(url)) return spec;
+  return { ...spec, url: `${m[1]!.toLowerCase()}://${absoluteUrl(url)}` };
+}
+
+export function absoluteUrl(url: string): string {
+  try {
+    return new URL(url, globalThis.location?.href).href;
+  } catch {
+    return url;
+  }
+}
+
 export async function resolveTileSet(
   sourceId: string,
   spec: TileSourceBase,
