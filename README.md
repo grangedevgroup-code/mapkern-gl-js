@@ -26,7 +26,7 @@ This one shows two places and needs no tile server or API key.
 ```html
 <div id="map" style="position: absolute; inset: 0"></div>
 <script type="module">
-  import { Map, NavigationControl } from "maplet-gl";
+  import * as maplet from "maplet-gl";
 
   const places = {
     type: "FeatureCollection",
@@ -36,7 +36,7 @@ This one shows two places and needs no tile server or API key.
     ],
   };
 
-  const map = new Map({
+  const map = new maplet.Map({
     container: "map",
     center: [-122.335, 47.608],
     zoom: 13,
@@ -57,7 +57,7 @@ This one shows two places and needs no tile server or API key.
     },
   });
 
-  map.addControl(new NavigationControl());
+  map.addControl(new maplet.NavigationControl());
 </script>
 ```
 
@@ -74,11 +74,11 @@ npx maplet-tiles --input washington-latest.osm.pbf --bbox=-122.45,47.48,-122.22,
 Put `seattle.pmtiles` on any web server that handles range requests, and point the built-in style at it:
 
 ```js
-import { Map, lightStyle } from "maplet-gl";
+import * as maplet from "maplet-gl";
 
-const map = new Map({
+const map = new maplet.Map({
   container: "map",
-  style: lightStyle({ url: "seattle.pmtiles" }),
+  style: maplet.lightStyle({ url: "seattle.pmtiles" }),
   center: [-122.335, 47.608],
   zoom: 12,
 });
