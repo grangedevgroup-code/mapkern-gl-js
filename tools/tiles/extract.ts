@@ -40,6 +40,10 @@ class Pool {
       let next = 0;
       let done = 0;
       let failed = false;
+      const listeners: (() => void)[] = [];
+      const cleanup = () => {
+        for (const off of listeners) off();
+      };
       const feed = (w: Worker) => {
         if (failed) return;
         if (next < tasks.length) w.postMessage(tasks[next++]);
@@ -75,10 +79,6 @@ class Pool {
           w.off("error", onError);
         });
       }
-      const listeners: (() => void)[] = [];
-      const cleanup = () => {
-        for (const off of listeners) off();
-      };
       if (tasks.length === 0) {
         resolve();
         return;
@@ -109,12 +109,12 @@ function bitmap(maxId: number): { buffer: SharedArrayBuffer; bits: Uint8Array } 
 }
 
 function setBit(bits: Uint8Array, id: number): void {
-  bits[Math.floor(id / 8)]! |= 1 << id % 8;
+  bits[Math.floor(id / 8)]! |= 1 << (id % 8);
 }
 
 function hasBit(bits: Uint8Array, id: number): boolean {
   const byte = Math.floor(id / 8);
-  return byte < bits.length && (bits[byte]! & (1 << id % 8)) !== 0;
+  return byte < bits.length && (bits[byte]! & (1 << (id % 8))) !== 0;
 }
 
 function concatNodes(parts: { ids: Float64Array; lon: Int32Array; lat: Int32Array }[]) {
@@ -179,7 +179,11 @@ function mergeNodes(
   return { ids, lon, lat };
 }
 
-export async function extractRegion(path: string, bbox: [number, number, number, number], options: ExtractOptions = {}): Promise<RegionData> {
+export async function extractRegion(
+  path: string,
+  bbox: [number, number, number, number],
+  options: ExtractOptions = {},
+): Promise<RegionData> {
   const log = options.log ?? (() => undefined);
   const threads = Math.max(1, options.threads ?? Math.max(1, availableParallelism() - 0));
   const started = performance.now();
@@ -199,17 +203,27 @@ export async function extractRegion(path: string, bbox: [number, number, number,
     const points: PointRecord[][] = new Array(blobs.length);
     const relationParts: RelationRecord[][] = new Array(blobs.length);
     let maxNodeId = 0;
-    await runPass(pool, "nodes", blobs, (b, i) => ({ kind: "nodes", index: i, blob: b, bbox: fixed }), (r) => {
-      if (r.kind !== "nodes") return;
-      kinds[r.index] = r.kinds;
-      nodeParts[r.index] = { ids: r.ids, lon: r.lon, lat: r.lat };
-      points[r.index] = r.points;
-      relationParts[r.index] = r.relations;
-      if (r.maxId > maxNodeId) maxNodeId = r.maxId;
-    }, log, started);
+    await runPass(
+      pool,
+      "nodes",
+      blobs,
+      (b, i) => ({ kind: "nodes", index: i, blob: b, bbox: fixed }),
+      (r) => {
+        if (r.kind !== "nodes") return;
+        kinds[r.index] = r.kinds;
+        nodeParts[r.index] = { ids: r.ids, lon: r.lon, lat: r.lat };
+        points[r.index] = r.points;
+        relationParts[r.index] = r.relations;
+        if (r.maxId > maxNodeId) maxNodeId = r.maxId;
+      },
+      log,
+      started,
+    );
     const regionNodes = concatNodes(nodeParts.filter(Boolean));
     const relations = relationParts.filter(Boolean).flat();
-    log(`region nodes: ${regionNodes.ids.length.toLocaleString()}, tagged points: ${points.flat().length.toLocaleString()}, relations: ${relations.length.toLocaleString()}`);
+    log(
+      `region nodes: ${regionNodes.ids.length.toLocaleString()}, tagged points: ${points.flat().length.toLocaleString()}, relations: ${relations.length.toLocaleString()}`,
+    );
 
     const region = bitmap(maxNodeId);
     for (const id of regionNodes.ids) setBit(region.bits, id);
@@ -221,11 +235,50 @@ export async function extractRegion(path: string, bbox: [number, number, number,
 
     const wayBlobs = blobs.map((b, i) => [b, i] as const).filter(([, i]) => kinds[i]?.ways);
     const wayParts: WayBatch[] = [];
-    await runPass(pool, "ways", wayBlobs.map(([b]) => b), (b, i) => ({ kind: "ways", index: wayBlobs[i]![1], blob: b }), (r) => {
-      if (r.kind === "ways") wayParts[r.index] = r.ways;
-    }, log, started);
-    const ways = concatWays(wayParts.filter(Boolean));
+    await runPass(
+      pool,
+      "ways",
+      wayBlobs.map(([b]) => b),
+      (b, i) => ({ kind: "ways", index: wayBlobs[i]![1], blob: b }),
+      (r) => {
+        if (r.kind === "ways") wayParts[r.index] = r.ways;
+      },
+      log,
+      started,
+    );
+    let ways = concatWays(wayParts.filter(Boolean));
     log(`ways kept: ${ways.ids.length.toLocaleString()}, refs: ${ways.refs.length.toLocaleString()}`);
+
+    const extra = bitmap(maxWayId);
+    let extraCount = 0;
+    for (const rel of relations) {
+      if (rel.tags.type === "boundary" && rel.tags.boundary === "administrative") continue;
+      if (!rel.members.some((m) => sortedHas(ways.ids, m.ref))) continue;
+      for (const m of rel.members) {
+        if (!sortedHas(ways.ids, m.ref) && !hasBit(extra.bits, m.ref)) {
+          setBit(extra.bits, m.ref);
+          extraCount++;
+        }
+      }
+    }
+    if (extraCount > 0) {
+      log(`member ways outside the box needed to close polygons: ${extraCount.toLocaleString()}`);
+      pool.share({ kind: "share", regionNodes: null, memberWays: extra.buffer, missingNodes: null });
+      const extraParts: WayBatch[] = [];
+      await runPass(
+        pool,
+        "ways",
+        wayBlobs.map(([b]) => b),
+        (b, i) => ({ kind: "ways", index: wayBlobs[i]![1], blob: b, extra: true }),
+        (r) => {
+          if (r.kind === "ways") extraParts[r.index] = r.ways;
+        },
+        log,
+        started,
+      );
+      ways = concatWays([ways, ...extraParts.filter(Boolean)]);
+      log(`ways after closing polygons: ${ways.ids.length.toLocaleString()}`);
+    }
 
     const missingMap = bitmap(maxNodeId);
     let missingCount = 0;
@@ -241,9 +294,17 @@ export async function extractRegion(path: string, bbox: [number, number, number,
       pool.share({ kind: "share", regionNodes: null, memberWays: null, missingNodes: missingMap.buffer });
       const nodeBlobs = blobs.map((b, i) => [b, i] as const).filter(([, i]) => kinds[i]?.nodes);
       const missingParts: { ids: Float64Array; lon: Int32Array; lat: Int32Array }[] = [];
-      await runPass(pool, "missing", nodeBlobs.map(([b]) => b), (b, i) => ({ kind: "missing", index: nodeBlobs[i]![1], blob: b }), (r) => {
-        if (r.kind === "missing") missingParts[r.index] = { ids: r.ids, lon: r.lon, lat: r.lat };
-      }, log, started);
+      await runPass(
+        pool,
+        "missing",
+        nodeBlobs.map(([b]) => b),
+        (b, i) => ({ kind: "missing", index: nodeBlobs[i]![1], blob: b }),
+        (r) => {
+          if (r.kind === "missing") missingParts[r.index] = { ids: r.ids, lon: r.lon, lat: r.lat };
+        },
+        log,
+        started,
+      );
       nodes = mergeNodes(regionNodes, concatNodes(missingParts.filter(Boolean)));
     }
     log(`extract finished in ${((performance.now() - started) / 1000).toFixed(1)} s`);
@@ -262,6 +323,19 @@ export async function extractRegion(path: string, bbox: [number, number, number,
   } finally {
     await pool.close();
   }
+}
+
+function sortedHas(ids: Float64Array, id: number): boolean {
+  let lo = 0;
+  let hi = ids.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    const v = ids[mid]!;
+    if (v === id) return true;
+    if (v < id) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return false;
 }
 
 function concatWays(parts: WayBatch[]): WayBatch {
@@ -332,7 +406,9 @@ async function runPass(
     if (now - last > 5000 || done === tasks.length) {
       last = now;
       const pct = ((done / Math.max(1, tasks.length)) * 100).toFixed(1);
-      log(`  ${kind}: ${done}/${tasks.length} blobs (${pct}%), ${((now - passStart) / 1000).toFixed(0)} s, total ${((now - started) / 1000).toFixed(0)} s`);
+      log(
+        `  ${kind}: ${done}/${tasks.length} blobs (${pct}%), ${((now - passStart) / 1000).toFixed(0)} s, total ${((now - started) / 1000).toFixed(0)} s`,
+      );
     }
   });
 }
