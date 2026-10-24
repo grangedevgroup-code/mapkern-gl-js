@@ -5,7 +5,6 @@ import type { RGBA } from "../style/color.ts";
 import type { EvalContext, GeometryType } from "../style/expression.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { RenderPiece, TileManager } from "../tiles/manager.ts";
-import type { LabelCandidate } from "../worker/symbols.ts";
 import type { FontSpec, GlyphMetrics } from "./glyphs.ts";
 import { cssFamily, GLYPH_SIZE, GlyphAtlas, needsWholeShaping, SDF_RADIUS, splitGraphemes } from "./glyphs.ts";
 import { textShader } from "./shader.ts";
@@ -250,7 +249,23 @@ export class LabelRenderer {
     };
   }
 
+  private layoutCache = new Map<string, Laid>();
+  private layoutGeneration = -1;
+
   private layout(layer: StyleLayer, text: string, line: boolean, budget: { left: number }): Laid | null {
+    if (this.layoutGeneration !== this.atlas.generation || this.layoutCache.size > 6000) {
+      this.layoutCache.clear();
+      this.layoutGeneration = this.atlas.generation;
+    }
+    const cacheKey = `${layer.id}#${layer.revision}#${line ? 1 : 0}#${text}`;
+    const cached = this.layoutCache.get(cacheKey);
+    if (cached) return cached;
+    const laid = this.computeLayout(layer, text, line, budget);
+    if (laid) this.layoutCache.set(cacheKey, laid);
+    return laid;
+  }
+
+  private computeLayout(layer: StyleLayer, text: string, line: boolean, budget: { left: number }): Laid | null {
     const font = this.font(layer);
     const whole = needsWholeShaping(text);
     if (whole && line) return null;
@@ -338,25 +353,43 @@ export class LabelRenderer {
       const padding = layer.fixed<number>("padding");
       const spacing = layer.fixed<number>("spacing");
       const ctx: EvalContext = { zoom };
-      const items: { piece: RenderPiece<VectorTile>; bucket: VectorBucket; c: LabelCandidate; order: number }[] = [];
+      const items: {
+        piece: RenderPiece<VectorTile>;
+        bucket: VectorBucket;
+        i: number;
+        priority: number;
+        was: number;
+        order: number;
+      }[] = [];
       let order = 0;
       for (const piece of manager.pieces) {
         const bucket = piece.tile.data?.buckets.get(layer.id);
-        if (!bucket?.labels) continue;
-        for (const c of bucket.labels) items.push({ piece, bucket, c, order: order++ });
+        const labels = bucket?.labels;
+        if (!bucket || !labels) continue;
+        for (let i = 0; i < labels.count; i++) {
+          const was = shown.has(`${layer.id}|${labels.texts[i]}`) ? 0 : 1;
+          items.push({ piece, bucket, i, priority: labels.priority[i]!, was, order: order++ });
+        }
       }
-      const was = (c: LabelCandidate) => (shown.has(`${layer.id}|${c.text}`) ? 0 : 1);
-      items.sort((a, b) => b.c.priority - a.c.priority || was(a.c) - was(b.c) || a.order - b.order);
-      for (const { piece, bucket, c } of items) {
+      items.sort((a, b) => b.priority - a.priority || a.was - b.was || a.order - b.order);
+      const scratch: Record<string, unknown> = {};
+      for (const { piece, bucket, i } of items) {
+        const labels = bucket.labels!;
         const tile = piece.tile;
         const extent = bucket.extent;
         const n = 2 ** tile.z;
         const clip = piece.clip;
-        const record = bucket.features[c.feature];
-        const dedupeKey = `${layer.id}|${c.text}`;
-        for (let a = 0; a < c.anchors.length; a += 3) {
-          const tx = c.anchors[a]! / extent;
-          const ty = c.anchors[a + 1]! / extent;
+        const text = labels.texts[i]!;
+        const isLine = labels.line[i] === 1;
+        const anchors = labels.anchors.subarray(labels.anchorStart[i]!, labels.anchorStart[i + 1]!);
+        const pathData = labels.paths.subarray(labels.pathStart[i]!, labels.pathStart[i + 1]!);
+        const fi = labels.feature[i]!;
+        const featureId = bucket.features.id(fi);
+        const dedupeKey = `${layer.id}|${text}`;
+        let featureReady = false;
+        for (let a = 0; a < anchors.length; a += 3) {
+          const tx = anchors[a]! / extent;
+          const ty = anchors[a + 1]! / extent;
           if (tx < clip.x0 || tx >= clip.x1 || ty < clip.y0 || ty >= clip.y1) continue;
           const wx = piece.wrap + (tile.x + tx) / n;
           const wy = (tile.y + ty) / n;
@@ -364,27 +397,32 @@ export class LabelRenderer {
           if (p.w <= 0 || p.w > transform.cameraToCenterDistance * 2.5) continue;
           if (p.x < -margin || p.y < -margin || p.x > transform.width + margin || p.y > transform.height + margin)
             continue;
-          const laid = this.layout(layer, c.text, c.line, budget);
+          const laid = this.layout(layer, text, isLine, budget);
           if (!laid) continue;
-          ctx.feature = record
-            ? { properties: record.props, id: record.id, geometryType: GEOMETRY[record.type] ?? "Unknown" }
-            : undefined;
+          if (!featureReady) {
+            ctx.feature = {
+              properties: bucket.features.fill(fi, scratch),
+              id: featureId,
+              geometryType: GEOMETRY[bucket.features.type(fi)] ?? "Unknown",
+            };
+            featureReady = true;
+          }
           const size = layer.layoutValue<number>("size", ctx);
           const scale = size / GLYPH_SIZE;
           const w = laid.width * scale;
           const h = laid.height * scale;
-          const minDist = c.line ? Math.max(spacing, w * 1.5) : Math.max(80, w * 1.2);
+          const minDist = isLine ? Math.max(spacing, w * 1.5) : Math.max(80, w * 1.2);
           const prior = placed.get(dedupeKey);
           if (prior?.some(([x, y]) => Math.hypot(x - p.x, y - p.y) < minDist)) continue;
           let path: Float64Array | null = null;
           let boxes: number[];
-          if (c.line && c.path) {
-            path = new Float64Array(c.path.length);
-            for (let i = 0; i < c.path.length; i += 2) {
-              path[i] = piece.wrap + (tile.x + c.path[i]! / extent) / n;
-              path[i + 1] = (tile.y + c.path[i + 1]! / extent) / n;
+          if (isLine && pathData.length >= 4) {
+            path = new Float64Array(pathData.length);
+            for (let k = 0; k < pathData.length; k += 2) {
+              path[k] = piece.wrap + (tile.x + pathData[k]! / extent) / n;
+              path[k + 1] = (tile.y + pathData[k + 1]! / extent) / n;
             }
-            const quads = layoutAlongPath(transform, path, c.anchors[a + 2]! / extent / n, laid, scale);
+            const quads = layoutAlongPath(transform, path, anchors[a + 2]! / extent / n, laid, scale);
             if (!quads) continue;
             boxes = [];
             for (const q of quads) {
@@ -409,7 +447,7 @@ export class LabelRenderer {
           for (let i = 0; i < boxes.length; i += 4) grid.insert(boxes[i]!, boxes[i + 1]!, boxes[i + 2]!, boxes[i + 3]!);
           if (prior) prior.push([p.x, p.y]);
           else placed.set(dedupeKey, [[p.x, p.y]]);
-          const key = `${dedupeKey}|${record?.id ?? ""}|${Math.round((wx * ws) / 4)}|${Math.round((wy * ws) / 4)}`;
+          const key = `${dedupeKey}|${featureId ?? ""}|${Math.round((wx * ws) / 4)}|${Math.round((wy * ws) / 4)}`;
           visible.add(key);
           const existing = this.labels.get(key);
           const color = layer.paintValue<RGBA>("color", ctx);
@@ -420,7 +458,7 @@ export class LabelRenderer {
             existing.wx = wx;
             existing.wy = wy;
             existing.path = path;
-            existing.anchorDist = c.anchors[a + 2]! / extent / n;
+            existing.anchorDist = anchors[a + 2]! / extent / n;
             existing.laid = laid;
             existing.scale = scale;
             existing.color = withOpacity(color, opacity);
@@ -433,12 +471,12 @@ export class LabelRenderer {
               key,
               dedupe: dedupeKey,
               layer,
-              text: c.text,
-              line: c.line,
+              text,
+              line: isLine,
               wx,
               wy,
               path,
-              anchorDist: c.anchors[a + 2]! / extent / n,
+              anchorDist: anchors[a + 2]! / extent / n,
               laid,
               scale,
               color: withOpacity(color, opacity),
@@ -449,7 +487,7 @@ export class LabelRenderer {
               seen: now,
             });
           }
-          if (!c.line) break;
+          if (!isLine) break;
         }
       }
     }
