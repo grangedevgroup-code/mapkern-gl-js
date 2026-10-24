@@ -42,6 +42,20 @@ imagery: { type: "raster", tiles: ["https://example.com/imagery/{z}/{x}/{y}.jpg"
 
 Raster sources take the same options as vector ones, minus `promoteId`, plus `tileSize`, which is 256 unless you change it. Any image the browser can decode works. `maxZoom` defaults to 22 here.
 
+### Elevation
+
+```js
+dem: { type: "dem", url: "terrain.pmtiles" }
+```
+
+Elevation tiles are PNG or WebP images with a height for every pixel, packed into the red, green and blue channels. Maplet uses them to shade hills with a [hillshade](#hillshade) layer. `encoding` says how the heights are packed. The two common ways are `"terrarium"`, the default, and `"mapbox"`. For anything else, give the numbers yourself: `{ red, green, blue, offset }` means height in meters = red × R + green × G + blue × B + offset, with R, G and B from 0 to 255. Terrarium is `{ red: 256, green: 1, blue: 1 / 256, offset: -32768 }` and mapbox is `{ red: 6553.6, green: 25.6, blue: 0.1, offset: -10000 }`.
+
+Fully transparent pixels mean there's no data, and so do heights below -11,000 m, deeper than any place on Earth. That catches Terrarium files that mark missing data as black. Heights are used as they're stored, usually meters above sea level, and Maplet doesn't convert between vertical datums.
+
+The other options work as for raster tiles, except that `tileSize` is 512 and `maxZoom` 15 unless you say otherwise. Tiles have to be square.
+
+`map.getSource("dem").elevationAt([lng, lat])` gives you the height at a place, in meters. It reads the tiles that are loaded at that moment, so it returns `null` for places off screen or without data.
+
 ### GeoJSON
 
 ```js
@@ -64,7 +78,7 @@ A few notes on what comes through:
 
 ## Layers
 
-Every layer has an `id` and a `type`: `background`, `raster`, `fill`, `line`, `circle`, `extrusion` or `symbol`. Layers that draw data also name a `source`, and for vector tiles a `sourceLayer`, which is the layer inside the tiles. Layers are drawn in order, so later ones end up on top.
+Every layer has an `id` and a `type`: `background`, `raster`, `hillshade`, `fill`, `line`, `circle`, `extrusion` or `symbol`. Layers that draw data also name a `source`, and for vector tiles a `sourceLayer`, which is the layer inside the tiles. Layers are drawn in order, so later ones end up on top.
 
 Any layer can have a `filter` (an expression; only features where it's true get drawn), `minZoom` and `maxZoom` to hide it outside a zoom range, and `visible: false` to hide it altogether. Fill, line and circle layers can also have a `sortKey` expression: features with a higher value are drawn over the others.
 
@@ -90,6 +104,25 @@ Fills the whole map with one color. It's usually the first layer.
 | `hueRotate` | 0 | In degrees |
 | `fadeDuration` | 200 | How long new tiles take to fade in, in ms. Fixed value only |
 | `resampling` | `linear` | Or `nearest` for sharp pixels. Fixed value only |
+
+### hillshade
+
+Shades the ground from an [elevation](#elevation) source as if it were lit from one side, so hills and valleys stand out.
+
+```js
+{ id: "hills", type: "hillshade", source: "dem", paint: { exaggeration: 0.4 } }
+```
+
+| Paint | Default | |
+| --- | --- | --- |
+| `exaggeration` | 0.5 | How strong the shading is, from 0 to 1 |
+| `shadowColor` | `#000000` | For slopes that face away from the light |
+| `highlightColor` | `#ffffff` | For slopes that face the light |
+| `accentColor` | `#000000` | Darkens steep slopes, whichever way they face |
+| `illuminationDirection` | 335 | Where the light comes from, in degrees clockwise from the top of the screen. 335 is the top left. Fixed value only |
+| `illuminationAnchor` | `viewport` | `viewport` keeps the light on the same side of the screen when you rotate the map, `map` turns it with the map, so 0 is north. Fixed value only |
+
+Flat ground stays clear, so the layer works on top of land and water fills. Put it below roads and labels. When you zoom out, slopes are steepened a little so mountain ranges stay visible.
 
 ### fill
 
