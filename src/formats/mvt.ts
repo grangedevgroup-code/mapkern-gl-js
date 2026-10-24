@@ -1,4 +1,4 @@
-import { BYTES, Reader, decodeUtf8 } from "./protobuf.ts";
+import { BYTES, decodeUtf8, Reader } from "./protobuf.ts";
 
 export type FeatureType = 0 | 1 | 2 | 3;
 export type PropertyValue = string | number | boolean;
