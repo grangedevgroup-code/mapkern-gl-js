@@ -1,6 +1,6 @@
 import type { Transform } from "../camera/transform.ts";
-import type { MapSource } from "../sources/source.ts";
 import type { RasterSource } from "../sources/raster.ts";
+import type { MapSource } from "../sources/source.ts";
 import type { RGBA } from "../style/color.ts";
 import { premultiply } from "../style/color.ts";
 import type { StyleLayer } from "../style/layer.ts";
@@ -121,7 +121,10 @@ export class Painter {
     g.setBlend("premultiplied");
     g.setDepth(false, false);
     const contrast = Math.max(-1, Math.min(0.99, layer.paintValue<number>("contrast", ctx)));
-    gl.uniform1f(uniform(program, "u_saturation"), Math.max(-1, Math.min(1, layer.paintValue<number>("saturation", ctx))));
+    gl.uniform1f(
+      uniform(program, "u_saturation"),
+      Math.max(-1, Math.min(1, layer.paintValue<number>("saturation", ctx))),
+    );
     gl.uniform1f(uniform(program, "u_contrast"), contrast > 0 ? 1 / (1 - contrast) : 1 + contrast);
     gl.uniform2f(
       uniform(program, "u_brightness"),
