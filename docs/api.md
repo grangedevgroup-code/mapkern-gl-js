@@ -1,9 +1,9 @@
 # API
 
-Everything is exported from the package root:
+Everything is exported from the package root. The examples here import it all as `maplet`:
 
 ```js
-import { Map, NavigationControl, ScaleControl, lightStyle, addProtocol } from "maplet-gl";
+import * as maplet from "maplet-gl";
 ```
 
 Positions are always `[longitude, latitude]`. Anywhere a position goes in, `{ lng, lat }` works too.
@@ -11,9 +11,9 @@ Positions are always `[longitude, latitude]`. Anywhere a position goes in, `{ ln
 ## Creating a map
 
 ```js
-const map = new Map({
+const map = new maplet.Map({
   container: "map",
-  style: lightStyle({ url: "seattle.pmtiles" }),
+  style: maplet.lightStyle({ url: "seattle.pmtiles" }),
   center: [-122.335, 47.608],
   zoom: 12,
 });
@@ -90,6 +90,8 @@ const vehicles = map.getSource("vehicles");
 vehicles.setData(latestPositions);
 ```
 
+In TypeScript, check `vehicles?.type === "geojson"` first so the compiler knows which kind of source it is.
+
 The current data stays on screen until the new tiles are ready, and if you call `setData` faster than Maplet can keep up, it skips straight to the newest data. You can pass a URL instead of an object, which is the better choice for big files because the parsing then happens in a worker.
 
 The source also has `getData()`, `bounds` (`[west, south, east, north]`, or `null` when empty) and `featureCount`.
@@ -124,8 +126,8 @@ Errors come with a `code`, a readable `message` and a `detail` object. If you do
 ## Controls
 
 ```js
-map.addControl(new NavigationControl());
-map.addControl(new ScaleControl({ unit: "imperial" }), "bottom-left");
+map.addControl(new maplet.NavigationControl());
+map.addControl(new maplet.ScaleControl({ unit: "imperial" }), "bottom-left");
 ```
 
 `NavigationControl` has zoom buttons and a compass that turns the map back north and flat. Pass `showZoom: false` or `showCompass: false` to leave one out. `ScaleControl` takes `unit` (`"metric"` or `"imperial"`) and `maxWidth` in pixels. The attribution control is added for you.
@@ -154,7 +156,7 @@ map.addControl(new HomeButton(), "top-left");
 `addProtocol` lets you answer requests for a made-up URL scheme yourself, for example to serve tiles from IndexedDB or from a file someone picked:
 
 ```js
-addProtocol("local", async (request, signal) => {
+maplet.addProtocol("local", async (request, signal) => {
   const bytes = await readTile(request.url, signal);
   return bytes ?? null;
 });
@@ -162,7 +164,7 @@ addProtocol("local", async (request, signal) => {
 map.addSource("offline", { type: "vector", tiles: ["local://roads/{z}/{x}/{y}"] });
 ```
 
-Return an `ArrayBuffer` or `Uint8Array`, or `null` when there's no tile. `removeProtocol("local")` undoes it. `pmtiles://` is built in.
+Return an `ArrayBuffer` or `Uint8Array`, or `null` when there's no tile. `maplet.removeProtocol("local")` undoes it. `pmtiles://` is built in.
 
 ## Diagnostics
 
@@ -172,4 +174,4 @@ Return an `ArrayBuffer` or `Uint8Array`, or `null` when there's no tile. `remove
 
 `lightStyle(options)` is the built-in street style, described at the end of the [style guide](style.md#the-built-in-style). `validateStyle(style)` returns a list of `{ path, message }` problems. `distanceMeters(a, b)` measures between two positions, `metersPerPixel(latitude, zoom)` tells you how much ground one pixel covers, and `lngLatToWorld` and `worldToLngLat` convert to and from Web Mercator coordinates between 0 and 1. `version` is the library version.
 
-A few smaller methods round things out: `getContainer()`, `getCanvas()`, `resize()` (you rarely need it, the map watches its size), `getPixelRatio()`, `setPixelRatio()`, `triggerRepaint()`, `loaded()`, `getAttributions()`, `setMinZoom()`, `setMaxZoom()` and `setMaxPitch()`.
+A few smaller methods round things out: `getContainer()`, `getCanvas()`, `resize()` (rarely needed, since the map watches its own size), `getPixelRatio()`, `setPixelRatio()`, `triggerRepaint()`, `loaded()`, `getAttributions()`, `setMinZoom()`, `setMaxZoom()` and `setMaxPitch()`.
