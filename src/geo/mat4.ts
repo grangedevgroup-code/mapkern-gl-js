@@ -19,12 +19,27 @@ export function copy(out: Mat4, a: Mat4): Mat4 {
 }
 
 export function multiply(out: Mat4, a: Mat4, b: Mat4): Mat4 {
-  const a00 = a[0]!, a01 = a[1]!, a02 = a[2]!, a03 = a[3]!;
-  const a10 = a[4]!, a11 = a[5]!, a12 = a[6]!, a13 = a[7]!;
-  const a20 = a[8]!, a21 = a[9]!, a22 = a[10]!, a23 = a[11]!;
-  const a30 = a[12]!, a31 = a[13]!, a32 = a[14]!, a33 = a[15]!;
+  const a00 = a[0]!,
+    a01 = a[1]!,
+    a02 = a[2]!,
+    a03 = a[3]!;
+  const a10 = a[4]!,
+    a11 = a[5]!,
+    a12 = a[6]!,
+    a13 = a[7]!;
+  const a20 = a[8]!,
+    a21 = a[9]!,
+    a22 = a[10]!,
+    a23 = a[11]!;
+  const a30 = a[12]!,
+    a31 = a[13]!,
+    a32 = a[14]!,
+    a33 = a[15]!;
   for (let i = 0; i < 4; i++) {
-    const b0 = b[i * 4]!, b1 = b[i * 4 + 1]!, b2 = b[i * 4 + 2]!, b3 = b[i * 4 + 3]!;
+    const b0 = b[i * 4]!,
+      b1 = b[i * 4 + 1]!,
+      b2 = b[i * 4 + 2]!,
+      b3 = b[i * 4 + 3]!;
     out[i * 4] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
     out[i * 4 + 1] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
     out[i * 4 + 2] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
@@ -53,12 +68,25 @@ export function scale(out: Mat4, a: Mat4, x: number, y: number, z: number): Mat4
 }
 
 export function rotateX(out: Mat4, a: Mat4, rad: number): Mat4 {
-  const s = Math.sin(rad), c = Math.cos(rad);
-  const a10 = a[4]!, a11 = a[5]!, a12 = a[6]!, a13 = a[7]!;
-  const a20 = a[8]!, a21 = a[9]!, a22 = a[10]!, a23 = a[11]!;
+  const s = Math.sin(rad),
+    c = Math.cos(rad);
+  const a10 = a[4]!,
+    a11 = a[5]!,
+    a12 = a[6]!,
+    a13 = a[7]!;
+  const a20 = a[8]!,
+    a21 = a[9]!,
+    a22 = a[10]!,
+    a23 = a[11]!;
   if (out !== a) {
-    out[0] = a[0]!; out[1] = a[1]!; out[2] = a[2]!; out[3] = a[3]!;
-    out[12] = a[12]!; out[13] = a[13]!; out[14] = a[14]!; out[15] = a[15]!;
+    out[0] = a[0]!;
+    out[1] = a[1]!;
+    out[2] = a[2]!;
+    out[3] = a[3]!;
+    out[12] = a[12]!;
+    out[13] = a[13]!;
+    out[14] = a[14]!;
+    out[15] = a[15]!;
   }
   out[4] = a10 * c + a20 * s;
   out[5] = a11 * c + a21 * s;
@@ -72,12 +100,25 @@ export function rotateX(out: Mat4, a: Mat4, rad: number): Mat4 {
 }
 
 export function rotateZ(out: Mat4, a: Mat4, rad: number): Mat4 {
-  const s = Math.sin(rad), c = Math.cos(rad);
-  const a00 = a[0]!, a01 = a[1]!, a02 = a[2]!, a03 = a[3]!;
-  const a10 = a[4]!, a11 = a[5]!, a12 = a[6]!, a13 = a[7]!;
+  const s = Math.sin(rad),
+    c = Math.cos(rad);
+  const a00 = a[0]!,
+    a01 = a[1]!,
+    a02 = a[2]!,
+    a03 = a[3]!;
+  const a10 = a[4]!,
+    a11 = a[5]!,
+    a12 = a[6]!,
+    a13 = a[7]!;
   if (out !== a) {
-    out[8] = a[8]!; out[9] = a[9]!; out[10] = a[10]!; out[11] = a[11]!;
-    out[12] = a[12]!; out[13] = a[13]!; out[14] = a[14]!; out[15] = a[15]!;
+    out[8] = a[8]!;
+    out[9] = a[9]!;
+    out[10] = a[10]!;
+    out[11] = a[11]!;
+    out[12] = a[12]!;
+    out[13] = a[13]!;
+    out[14] = a[14]!;
+    out[15] = a[15]!;
   }
   out[0] = a00 * c + a10 * s;
   out[1] = a01 * c + a11 * s;
@@ -101,7 +142,15 @@ export function perspective(out: Mat4, fovy: number, aspect: number, near: numbe
   return out;
 }
 
-export function ortho(out: Mat4, left: number, right: number, bottom: number, top: number, near: number, far: number): Mat4 {
+export function ortho(
+  out: Mat4,
+  left: number,
+  right: number,
+  bottom: number,
+  top: number,
+  near: number,
+  far: number,
+): Mat4 {
   out.fill(0);
   out[0] = 2 / (right - left);
   out[5] = 2 / (top - bottom);
@@ -114,10 +163,22 @@ export function ortho(out: Mat4, left: number, right: number, bottom: number, to
 }
 
 export function invert(out: Mat4, a: Mat4): Mat4 | null {
-  const a00 = a[0]!, a01 = a[1]!, a02 = a[2]!, a03 = a[3]!;
-  const a10 = a[4]!, a11 = a[5]!, a12 = a[6]!, a13 = a[7]!;
-  const a20 = a[8]!, a21 = a[9]!, a22 = a[10]!, a23 = a[11]!;
-  const a30 = a[12]!, a31 = a[13]!, a32 = a[14]!, a33 = a[15]!;
+  const a00 = a[0]!,
+    a01 = a[1]!,
+    a02 = a[2]!,
+    a03 = a[3]!;
+  const a10 = a[4]!,
+    a11 = a[5]!,
+    a12 = a[6]!,
+    a13 = a[7]!;
+  const a20 = a[8]!,
+    a21 = a[9]!,
+    a22 = a[10]!,
+    a23 = a[11]!;
+  const a30 = a[12]!,
+    a31 = a[13]!,
+    a32 = a[14]!,
+    a33 = a[15]!;
   const b00 = a00 * a11 - a01 * a10;
   const b01 = a00 * a12 - a02 * a10;
   const b02 = a00 * a13 - a03 * a10;
