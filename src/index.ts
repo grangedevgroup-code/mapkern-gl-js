@@ -21,6 +21,7 @@ export { MapletMap as Map } from "./core/map.ts";
 export type { Feature, FeatureCollection, GeoJSON, Geometry } from "./geo/geojson.ts";
 export type { LngLat, LngLatLike, LngLatObject } from "./geo/mercator.ts";
 export { distanceMeters, lngLatToWorld, metersPerPixel, worldToLngLat } from "./geo/mercator.ts";
+export { openTileFile } from "./sources/files.ts";
 export type { GeoJSONSource } from "./sources/geojson.ts";
 export type { RasterSource } from "./sources/raster.ts";
 export type { VectorSource } from "./sources/vector.ts";
