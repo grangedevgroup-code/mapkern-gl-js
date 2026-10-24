@@ -88,11 +88,11 @@ The OpenStreetMap license asks you to credit the data. The style shows "© OpenS
 
 ## What else it does
 
-Vector and raster sources read PMTiles and MBTiles files, from a web server or from the user's own computer. GeoJSON sources also read KML, KMZ, GPX, CSV, TopoJSON, zipped Shapefiles and FlatGeobuf, from a URL or straight from a file the user picks, and data in UTM, state plane or Web Mercator coordinates is converted for you. You can replace the data with `setData()` while the map is running, move the camera with `easeTo` and `flyTo`, tilt and rotate the map, and style features from their own data with expressions like `match` and `interpolate`. Buildings can rise into 3D, labels follow streets and keep out of each other's way, and `queryRenderedFeatures()` tells you what's under the pointer.
+Vector and raster sources read PMTiles and MBTiles files, from a web server or from the user's own computer. GeoJSON sources also read KML, KMZ, GPX, CSV, TopoJSON, zipped Shapefiles and FlatGeobuf, from a URL or straight from a file the user picks, and data in UTM, state plane or Web Mercator coordinates is converted for you. You can replace the data with `setData()` while the map is running, move the camera with `easeTo` and `flyTo`, tilt and rotate the map, and style features from their own data with expressions like `match` and `interpolate`. Buildings can rise into 3D, labels follow streets and keep out of each other's way, and `queryRenderedFeatures()` tells you what's under the pointer. Elevation tiles shade the hills and can raise the ground into 3D terrain, with the map, labels and buildings on top of it.
 
-While you pan and zoom, Maplet fills gaps with tiles it already has from other zoom levels, so the map doesn't flash empty. Tiles are decoded in Web Workers, and the whole library is under 90 KB gzipped.
+While you pan and zoom, Maplet fills gaps with tiles it already has from other zoom levels, so the map doesn't flash empty. Tiles are decoded in Web Workers, and the whole library, worker included, is about 110 KB gzipped.
 
-Terrain isn't finished yet, and the API may still change before 1.0.
+The API may still change before 1.0.
 
 ## Docs
 
