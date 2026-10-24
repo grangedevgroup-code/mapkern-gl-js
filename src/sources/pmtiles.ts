@@ -1,5 +1,14 @@
 import type { Entry, Header } from "../formats/pmtiles.ts";
-import { Compression, HEADER_SIZE, PMTilesError, ROOT_LIMIT, TileType, decodeDirectory, findEntry, readHeader, tileId } from "../formats/pmtiles.ts";
+import {
+  Compression,
+  decodeDirectory,
+  findEntry,
+  PMTilesError,
+  ROOT_LIMIT,
+  readHeader,
+  TileType,
+  tileId,
+} from "../formats/pmtiles.ts";
 import { FetchFailure } from "../tiles/fetch.ts";
 import type { ProtocolRequest, ProtocolResult } from "../tiles/protocols.ts";
 import { addProtocol } from "../tiles/protocols.ts";
@@ -23,7 +32,11 @@ export class HttpRangeSource implements RangeSource {
     this.credentials = credentials;
   }
 
-  async read(offset: number, length: number, signal: AbortSignal): Promise<{ data: Uint8Array; etag?: string | undefined }> {
+  async read(
+    offset: number,
+    length: number,
+    signal: AbortSignal,
+  ): Promise<{ data: Uint8Array; etag?: string | undefined }> {
     if (this.whole) {
       const all = await this.whole;
       return { data: all.subarray(offset, offset + length) };
@@ -43,7 +56,12 @@ export class HttpRangeSource implements RangeSource {
     }
     if (response.status === 401 || response.status === 403) {
       await response.body?.cancel().catch(() => undefined);
-      throw new FetchFailure({ kind: "auth", status: response.status, message: `Access denied to ${this.url}`, retryable: false });
+      throw new FetchFailure({
+        kind: "auth",
+        status: response.status,
+        message: `Access denied to ${this.url}`,
+        retryable: false,
+      });
     }
     if (response.status === 404) {
       await response.body?.cancel().catch(() => undefined);
@@ -51,14 +69,24 @@ export class HttpRangeSource implements RangeSource {
     }
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new FetchFailure({ kind: "http", status: response.status, message: `HTTP ${response.status} for ${this.url}`, retryable: response.status >= 500 || response.status === 429 });
+      throw new FetchFailure({
+        kind: "http",
+        status: response.status,
+        message: `HTTP ${response.status} for ${this.url}`,
+        retryable: response.status >= 500 || response.status === 429,
+      });
     }
     const etag = response.headers.get("etag") ?? undefined;
     if (response.status === 200) {
       const size = Number(response.headers.get("content-length") ?? "0");
       if (size > 64 * 1024 * 1024) {
         await response.body?.cancel().catch(() => undefined);
-        throw new FetchFailure({ kind: "http", status: 200, message: `${this.url} is served without support for range requests`, retryable: false });
+        throw new FetchFailure({
+          kind: "http",
+          status: 200,
+          message: `${this.url} is served without support for range requests`,
+          retryable: false,
+        });
       }
       this.whole = response.arrayBuffer().then((b) => new Uint8Array(b));
       const all = await this.whole;
@@ -113,7 +141,9 @@ export class PMTilesArchive {
         const { data } = await this.source.read(header.metadataOffset, header.metadataLength, signal);
         const text = new TextDecoder().decode(await decompress(data, header.internalCompression));
         const parsed: unknown = JSON.parse(text);
-        return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+        return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : {};
       })();
       this.metadataPromise.catch(() => {
         this.metadataPromise = null;
@@ -131,12 +161,29 @@ export class PMTilesArchive {
       const entry = findEntry(entries, id);
       if (!entry) return null;
       if (entry.runLength > 0) {
-        const { data } = await this.source.read(header.dataOffset + entry.offset, entry.length, signal);
+        const { data, etag } = await this.source.read(header.dataOffset + entry.offset, entry.length, signal);
+        this.checkEtag(etag);
         return data;
       }
       entries = await this.leaf(header, entry, signal);
     }
     throw new PMTilesError("Directory nesting is too deep");
+  }
+
+  private etag: string | undefined;
+
+  private checkEtag(etag: string | undefined): void {
+    if (!etag || !this.etag || etag === this.etag) return;
+    this.etag = undefined;
+    this.headerPromise = null;
+    this.metadataPromise = null;
+    this.leaves.clear();
+    this.leafOrder.length = 0;
+    throw new FetchFailure({
+      kind: "http",
+      message: `${this.source.key} changed on the server; reloading its index`,
+      retryable: true,
+    });
   }
 
   private init(signal: AbortSignal) {
@@ -151,6 +198,7 @@ export class PMTilesArchive {
           rootBytes = (await this.source.read(header.rootOffset, header.rootLength, signal)).data;
         }
         const root = decodeDirectory(await decompress(rootBytes, header.internalCompression));
+        this.etag = etag;
         return { header, root, etag };
       })();
       this.headerPromise.catch(() => {
@@ -165,7 +213,8 @@ export class PMTilesArchive {
     let promise = this.leaves.get(key);
     if (!promise) {
       promise = (async () => {
-        const { data } = await this.source.read(header.leafOffset + entry.offset, entry.length, signal);
+        const { data, etag } = await this.source.read(header.leafOffset + entry.offset, entry.length, signal);
+        this.checkEtag(etag);
         return decodeDirectory(await decompress(data, header.internalCompression));
       })();
       promise.catch(() => this.leaves.delete(key));
@@ -253,5 +302,3 @@ export function registerPmtilesProtocol(): void {
   registered = true;
   addProtocol("pmtiles", handlePmtiles);
 }
-
-export { HEADER_SIZE };
