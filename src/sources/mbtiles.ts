@@ -76,7 +76,12 @@ export class MBTilesArchive {
         if (data) visit(zoom, column, row, data);
       } else {
         const idIndex = layout.map.columns.indexOf("tile_id");
-        pending.push({ z: zoom, x: column, y: row, id: layout.map.rowidAlias === "tile_id" ? rowid : values[idIndex]! });
+        pending.push({
+          z: zoom,
+          x: column,
+          y: row,
+          id: layout.map.rowidAlias === "tile_id" ? rowid : values[idIndex]!,
+        });
       }
     });
     if (layout.kind !== "split") return;
