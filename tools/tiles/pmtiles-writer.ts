@@ -79,17 +79,19 @@ export class PMTilesWriter {
     const sequence: number[] = [];
     const entries: Entry[] = [];
     let dataLength = 0;
+    let previous = -1;
     for (const i of order) {
+      const id = this.ids[i]!;
+      if (id === previous) continue;
+      previous = id;
       const ref = this.refs[i]!;
       if (placed[ref]! < 0) {
         placed[ref] = dataLength;
         dataLength += this.lengths[ref]!;
         sequence.push(ref);
       }
-      const id = this.ids[i]!;
       const offset = placed[ref]!;
       const last = entries[entries.length - 1];
-      if (last && last.tileId === id) continue;
       if (last && last.offset === offset && last.tileId + last.runLength === id) {
         last.runLength++;
       } else {
