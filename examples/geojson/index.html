@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Live GeoJSON</title>
+    <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      #map {
+        position: absolute;
+        inset: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script type="module">
+      import { Map, NavigationControl } from "../../dist/maplet.js";
+
+      const center = [-122.335, 47.608];
+      const count = 120;
+
+      function circle(radius, steps) {
+        const ring = [];
+        for (let i = 0; i <= steps; i++) {
+          const a = (i / steps) * Math.PI * 2;
+          ring.push([center[0] + radius * Math.cos(a) * 1.5, center[1] + radius * Math.sin(a)]);
+        }
+        return ring;
+      }
+
+      function vehicles(time) {
+        const features = [];
+        for (let i = 0; i < count; i++) {
+          const lane = 0.006 + (i % 6) * 0.004;
+          const speed = 0.00015 + (i % 5) * 0.00004;
+          const a = (i / count) * Math.PI * 2 + time * speed * (i % 2 === 0 ? 1 : -1);
+          features.push({
+            type: "Feature",
+            id: i,
+            properties: { lane: i % 6 },
+            geometry: { type: "Point", coordinates: [center[0] + lane * Math.cos(a) * 1.5, center[1] + lane * Math.sin(a)] },
+          });
+        }
+        return { type: "FeatureCollection", features };
+      }
+
+      const map = new Map({
+        container: "map",
+        center,
+        zoom: 13.5,
+        style: {
+          version: 1,
+          sources: {
+            zones: {
+              type: "geojson",
+              data: {
+                type: "FeatureCollection",
+                features: [
+                  { type: "Feature", properties: { kind: "outer" }, geometry: { type: "Polygon", coordinates: [circle(0.03, 96), circle(0.004, 48)] } },
+                  { type: "Feature", properties: { kind: "track" }, geometry: { type: "LineString", coordinates: circle(0.016, 96) } },
+                ],
+              },
+            },
+            vehicles: { type: "geojson", data: vehicles(0) },
+          },
+          layers: [
+            { id: "background", type: "background", paint: { color: "#eef1ef" } },
+            {
+              id: "zone",
+              type: "fill",
+              source: "zones",
+              filter: ["==", ["geometry-type"], "Polygon"],
+              paint: { color: "#b4d8c4", opacity: 0.5, outlineColor: "#246a50" },
+            },
+            {
+              id: "track",
+              type: "line",
+              source: "zones",
+              filter: ["==", ["geometry-type"], "LineString"],
+              layout: { join: "round" },
+              paint: { color: "#246a50", width: 2, dash: [3, 2] },
+            },
+            {
+              id: "vehicles",
+              type: "circle",
+              source: "vehicles",
+              paint: {
+                radius: ["interpolate", ["linear"], ["zoom"], 11, 3, 16, 9],
+                color: ["match", ["get", "lane"], 0, "#e4572e", 1, "#f3a712", 2, "#29335c", 3, "#a8c686", 4, "#669bbc", "#10191d"],
+                strokeColor: "#ffffff",
+                strokeWidth: 1.5,
+              },
+            },
+          ],
+        },
+      });
+
+      map.addControl(new NavigationControl());
+
+      const source = () => map.getSource("vehicles");
+      let last = 0;
+      function tick(now) {
+        if (now - last > 100) {
+          last = now;
+          source()?.setData(vehicles(now));
+        }
+        requestAnimationFrame(tick);
+      }
+      map.once("load").then(() => requestAnimationFrame(tick));
+      window.map = map;
+    </script>
+  </body>
+</html>
