@@ -21,7 +21,7 @@ Big downloads sometimes arrive damaged. If the builder finds a broken part, it w
 To use the result, put it on a web server that supports range requests (most static hosts do) and load it:
 
 ```js
-const map = new Map({ container: "map", style: lightStyle({ url: "seattle.pmtiles" }) });
+const map = new maplet.Map({ container: "map", style: maplet.lightStyle({ url: "seattle.pmtiles" }) });
 ```
 
 ## What's inside
