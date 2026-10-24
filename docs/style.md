@@ -126,6 +126,34 @@ Draws a circle at each point.
 | `strokeWidth` | 0 | per feature, in pixels |
 | `blur` | 0 | per feature. Softens the edge, in pixels |
 
+### extrusion
+
+Raises polygons into 3D shapes, usually buildings. Walls are shaded by the direction they face, and the light turns with the map so a building looks the same from every side you rotate to.
+
+```js
+{
+  id: "buildings-3d",
+  type: "extrusion",
+  source: "osm",
+  sourceLayer: "building",
+  minZoom: 15,
+  paint: {
+    color: "#e3dfd7",
+    height: ["coalesce", ["get", "height"], 6],
+    base: ["coalesce", ["get", "min_height"], 0],
+  },
+}
+```
+
+| Paint | Default | |
+| --- | --- | --- |
+| `color` | `#000000` | per feature |
+| `height` | 0 | per feature, in meters |
+| `base` | 0 | per feature. Where the shape starts, in meters, for things like overhangs and building parts |
+| `opacity` | 1 | For the whole layer. Below 1 you see the map through the buildings, but not their inside walls |
+
+Put extrusion layers after your roads and point layers, so buildings hide what's behind them. Labels drawn later stay on top.
+
 ### symbol
 
 Draws text. When labels would overlap, the one with the lower `priority` is hidden.
