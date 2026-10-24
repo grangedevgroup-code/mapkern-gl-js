@@ -342,7 +342,7 @@ test("refresh keeps ready tiles on screen until replacements arrive", async () =
   );
 });
 
-test("refreshed data waits for upload before replacing what is drawn", async () => {
+async function refreshedUploadingSetup() {
   const transform = new Transform();
   transform.resize(800, 600);
   transform.setCenter(10, 20);
@@ -366,6 +366,11 @@ test("refreshed data waits for upload before replacing what is drawn", async () 
   manager.refresh();
   manager.update(transform, 2);
   await flush();
+  return { transform, loader, manager };
+}
+
+test("refreshed data waits for upload before replacing what is drawn", async () => {
+  const { transform, loader, manager } = await refreshedUploadingSetup();
   for (const p of loader.pending.splice(0)) p.resolve({ v: "new", uploaded: false });
   await flush();
   manager.update(transform, 3);
@@ -468,4 +473,40 @@ test("empty tiles are requested again after a refresh", async () => {
   await resolveAll(loader);
   manager.update(transform, 3);
   assert.ok(manager.pieces.length > 0);
+});
+
+test("refreshed tiles are swapped in together", async () => {
+  const { transform, loader, manager } = await refreshedUploadingSetup();
+  const reloads = loader.pending.splice(0);
+  assert.ok(reloads.length >= 2);
+  const [first, ...rest] = reloads;
+  first!.resolve({ v: "new", uploaded: false });
+  await flush();
+  manager.uploadPending(Number.POSITIVE_INFINITY, 3);
+  manager.update(transform, 3);
+  assert.ok(
+    manager.pieces.every((p) => p.tile.data?.v === "old"),
+    "a finished tile waits for the others",
+  );
+  for (const p of rest) p.resolve({ v: "new", uploaded: false });
+  await flush();
+  manager.uploadPending(Number.POSITIVE_INFINITY, 4);
+  manager.update(transform, 4);
+  assert.ok(
+    manager.pieces.every((p) => p.tile.data?.v === "new"),
+    "every tile changes in the same frame",
+  );
+});
+
+test("a slow tile holds back finished ones only briefly", async () => {
+  const { transform, loader, manager } = await refreshedUploadingSetup();
+  const first = loader.pending.find((p) => p.coord.z === 3);
+  first!.resolve({ v: "new", uploaded: false });
+  await flush();
+  await new Promise((r) => setTimeout(r, 130));
+  manager.uploadPending(Number.POSITIVE_INFINITY, 3);
+  manager.update(transform, 3);
+  const drawn = manager.pieces.map((p) => p.tile.data?.v);
+  assert.ok(drawn.includes("new"), "the finished tile is shown after the wait");
+  assert.ok(drawn.includes("old"), "the slow tiles keep their old data");
 });
