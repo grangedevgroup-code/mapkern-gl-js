@@ -44,7 +44,12 @@ export function edt(grid: Float64Array, width: number, height: number): void {
 
 export const SDF_CUTOFF = 0.25;
 
-export function signedDistanceField(alpha: Uint8ClampedArray | Uint8Array, width: number, height: number, radius: number): Uint8Array {
+export function signedDistanceField(
+  alpha: Uint8ClampedArray | Uint8Array,
+  width: number,
+  height: number,
+  radius: number,
+): Uint8Array {
   const size = width * height;
   const outer = new Float64Array(size);
   const inner = new Float64Array(size);
