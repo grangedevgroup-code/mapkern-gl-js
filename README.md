@@ -111,7 +111,7 @@ The light style shows `© OpenStreetMap contributors` in the corner. Keep it vis
 - Zoom, pan, rotation and tilt with mouse, touch and keyboard
 - Smooth `easeTo` and `flyTo` camera moves
 - Expressions for data-driven styling: `match`, `case`, `interpolate`, `step` and more
-- A tile loader that never leaves holes: parent and child tiles fill in while tiles load, requests are ranked by what is on screen, slow or failed requests are retried with backoff, and requests that are no longer needed are cancelled
+- A tile loader that keeps the screen covered: parent and child tiles fill in while tiles load, requests are ranked by what is on screen, failed requests are retried with backoff, and requests that are no longer needed are cancelled
 - Tile decoding and geometry building in Web Workers
 - `getDiagnostics()` for frame times, tile states, requests and blank screen area
 
