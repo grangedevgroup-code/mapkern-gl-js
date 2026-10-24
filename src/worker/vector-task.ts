@@ -5,8 +5,8 @@ import { compile } from "../style/expression.ts";
 import { CircleBuilder, ExtrusionBuilder, FillBuilder, LineBuilder } from "./buckets.ts";
 import type { PackedFeatures, PackedLabels } from "./packed.ts";
 import { FeatureTableBuilder, featureTransfers, LabelBuilder, labelTransfers } from "./packed.ts";
-import type { SymbolLayout } from "./symbols.ts";
-import { labelCandidates } from "./symbols.ts";
+import type { LabelInfo, SymbolLayout } from "./symbols.ts";
+import { labelCandidates, labelInfo, lineLabels, mergeParts } from "./symbols.ts";
 
 export type BucketType = "fill" | "line" | "circle" | "symbol" | "extrusion";
 
@@ -282,12 +282,33 @@ function buildBucket(
       transform: layout.transform === "uppercase" || layout.transform === "lowercase" ? layout.transform : "none",
     };
     const labels = new LabelBuilder();
+    const streets = new Map<string, { info: LabelInfo; index: number; parts: Int32Array[] }>();
     for (const f of selected) {
       const index = features.count;
+      if (symbol.placement === "line" && f.feature.type === 2) {
+        const info = labelInfo({ zoom, feature: f }, symbol);
+        const parts = info ? f.feature.geometry() : [];
+        if (!info || parts.length === 0) continue;
+        const key = `${info.size}|${info.text}`;
+        const group = streets.get(key);
+        if (group) {
+          group.info.priority = Math.max(group.info.priority, info.priority);
+          for (const part of parts) group.parts.push(part);
+          continue;
+        }
+        streets.set(key, { info, index, parts: [...parts] });
+        features.add(f.feature, f.index);
+        continue;
+      }
       const found = labelCandidates(f.feature, index, { zoom, feature: f }, symbol, source.extent);
       if (found.length === 0) continue;
       for (const c of found) labels.add(c.text, c.feature, c.size, c.priority, c.line, c.anchors, c.path);
       features.add(f.feature, f.index);
+    }
+    for (const { info, index, parts } of streets.values()) {
+      for (const c of lineLabels(mergeParts(parts), info, index, symbol, source.extent)) {
+        labels.add(c.text, c.feature, c.size, c.priority, c.line, c.anchors, c.path);
+      }
     }
     if (labels.count === 0) return null;
     return {
