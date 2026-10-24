@@ -18,7 +18,7 @@ const TRANSITIONS: Readonly<Record<TileState, readonly TileState[]>> = {
   fetching: ["decoding", "prepared", "empty", "failed", "queued", "evicted"],
   decoding: ["prepared", "empty", "failed", "queued", "evicted"],
   prepared: ["ready", "queued", "evicted"],
-  ready: ["queued", "prepared", "evicted"],
+  ready: ["queued", "prepared", "empty", "evicted"],
   empty: ["queued", "evicted"],
   failed: ["queued", "evicted"],
   evicted: [],
