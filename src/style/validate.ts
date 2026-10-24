@@ -265,9 +265,7 @@ function isEncoding(v: unknown): boolean {
   if (v === "terrarium" || v === "mapbox") return true;
   if (!isObject(v)) return false;
   const keys = Object.keys(v);
-  return (
-    keys.length === 4 && ["red", "green", "blue", "offset"].every((k) => keys.includes(k) && isFiniteNumber(v[k]))
-  );
+  return keys.length === 4 && ["red", "green", "blue", "offset"].every((k) => keys.includes(k) && isFiniteNumber(v[k]));
 }
 
 function isLngLat(v: unknown): boolean {
