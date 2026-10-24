@@ -1,3 +1,5 @@
+import { rmSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import type { Route } from "../../scripts/server.ts";
 import { fixtureTile } from "./png.ts";
 
@@ -78,3 +80,26 @@ export const fixtureRoute: Route = async (req, res, url) => {
   res.end(tile(z, x, y));
   return true;
 };
+
+export function writeMbtilesFixture(path: string, maxZoom = 5): void {
+  rmSync(path, { force: true });
+  const db = new DatabaseSync(path);
+  db.exec("CREATE TABLE metadata (name text, value text)");
+  db.exec("CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)");
+  db.exec("CREATE UNIQUE INDEX tile_index on tiles (zoom_level, tile_column, tile_row)");
+  const meta = db.prepare("INSERT INTO metadata VALUES (?, ?)");
+  meta.run("name", "Fixture");
+  meta.run("format", "png");
+  meta.run("minzoom", "0");
+  meta.run("maxzoom", String(maxZoom));
+  const insert = db.prepare("INSERT INTO tiles VALUES (?, ?, ?, ?)");
+  db.exec("BEGIN");
+  for (let z = 0; z <= maxZoom; z++) {
+    const n = 2 ** z;
+    for (let x = 0; x < n; x++) {
+      for (let y = 0; y < n; y++) insert.run(z, x, n - 1 - y, tile(z, x, y));
+    }
+  }
+  db.exec("COMMIT");
+  db.close();
+}
