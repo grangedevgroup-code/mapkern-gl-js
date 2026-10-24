@@ -83,6 +83,7 @@ export class TileManager<D> {
   private readonly tiles = new Map<number, Tile<D>>();
   private readonly jobs = new Map<number, JobHandle>();
   private frame = 0;
+  private generation = 0;
   private fading = false;
   private consecutiveFailures = 0;
   private pausedUntil = 0;
