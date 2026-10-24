@@ -181,6 +181,12 @@ export class GL {
     return texture;
   }
 
+  applyAnisotropy(): void {
+    if (this.anisotropic && this.maxAnisotropy > 1) {
+      this.gl.texParameterf(this.gl.TEXTURE_2D, this.anisotropic.TEXTURE_MAX_ANISOTROPY_EXT, this.maxAnisotropy);
+    }
+  }
+
   createDataTexture(
     width: number,
     height: number,
