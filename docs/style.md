@@ -56,7 +56,7 @@ Polygon rings can wind either way, and shapes that cross the 180th meridian show
 
 ## Layers
 
-Every layer has an `id` and a `type`. Layers that draw data also name a `source`, and for vector tiles a `sourceLayer`, which is the layer inside the tiles. Layers are drawn in order, so later ones end up on top.
+Every layer has an `id` and a `type`: `background`, `raster`, `fill`, `line`, `circle`, `extrusion` or `symbol`. Layers that draw data also name a `source`, and for vector tiles a `sourceLayer`, which is the layer inside the tiles. Layers are drawn in order, so later ones end up on top.
 
 Any layer can have a `filter` (an expression; only features where it's true get drawn), `minZoom` and `maxZoom` to hide it outside a zoom range, and `visible: false` to hide it altogether. Fill, line and circle layers can also have a `sortKey` expression: features with a higher value are drawn over the others.
 
