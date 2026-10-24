@@ -94,6 +94,15 @@ In TypeScript, check `vehicles?.type === "geojson"` first so the compiler knows 
 
 The current data stays on screen until the new tiles are ready, and if you call `setData` faster than Maplet can keep up, it skips straight to the newest data. You can pass a URL instead of an object, which is the better choice for big files because the parsing then happens in a worker.
 
+`setData` also takes a `File` or `Blob`, so people can open their own files. Any of the formats listed in the [style guide](style.md#geojson) work:
+
+```js
+input.addEventListener("change", () => {
+  const file = input.files[0];
+  if (file) map.getSource("uploads").setData(file);
+});
+```
+
 The source also has `getData()`, `bounds` (`[west, south, east, north]`, or `null` when empty) and `featureCount`.
 
 ## Events
