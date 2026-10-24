@@ -5,7 +5,7 @@ export interface LightStyleOptions {
   tiles?: string[];
   maxZoom?: number;
   attribution?: string;
-  buildings?: boolean;
+  buildings?: boolean | "flat";
   labels?: boolean;
   font?: string[];
 }
@@ -465,6 +465,7 @@ export function lightStyle(options: LightStyleOptions = {}): StyleSpec {
       },
     },
   ];
+  const extruded = options.buildings !== false && options.buildings !== "flat";
   if (options.buildings !== false) {
     layers.push({
       id: "building",
@@ -472,13 +473,23 @@ export function lightStyle(options: LightStyleOptions = {}): StyleSpec {
       source: "osm",
       sourceLayer: "building",
       minZoom: 13,
+      ...(extruded ? { maxZoom: 15.5 } : {}),
       paint: {
         color: "#e0ddd5",
         outlineColor: "#d0ccc2",
-        opacity: linearZoom([
-          [13, 0],
-          [14, 1],
-        ]),
+        opacity: linearZoom(
+          extruded
+            ? [
+                [13, 0],
+                [14, 1],
+                [15, 1],
+                [15.5, 0],
+              ]
+            : [
+                [13, 0],
+                [14, 1],
+              ],
+        ),
       },
     });
   }
@@ -591,6 +602,24 @@ export function lightStyle(options: LightStyleOptions = {}): StyleSpec {
       },
     },
   );
+  if (extruded) {
+    layers.push({
+      id: "building-3d",
+      type: "extrusion",
+      source: "osm",
+      sourceLayer: "building",
+      minZoom: 15,
+      paint: {
+        color: "#e3dfd7",
+        height: ["coalesce", ["get", "height"], 6],
+        base: ["coalesce", ["get", "min_height"], 0],
+        opacity: linearZoom([
+          [15, 0],
+          [15.5, 1],
+        ]),
+      },
+    });
+  }
   if (options.labels !== false) layers.push(...labelLayers(options.font));
   return {
     version: 1,
