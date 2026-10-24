@@ -64,7 +64,7 @@ export class RasterSource implements MapSource {
       this.ctx.scheduler,
       {
         fadeDuration: this.fadeDuration,
-        backstopLevels: 2,
+        backstopLevels: [2, 4],
         maxRetries: 3,
         cacheBytes: this.ctx.cacheBytes,
         failureCooldownMs: 120000,
