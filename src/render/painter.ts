@@ -69,6 +69,27 @@ interface TerrainGeometry {
 const DRAPED: ReadonlySet<string> = new Set(["background", "raster", "hillshade", "fill", "line", "circle"]);
 const DRAPE_CACHE_BYTES = 32 * 1024 * 1024;
 
+interface PickSetup {
+  width: number;
+  height: number;
+  scale: [number, number];
+  clip: Float64Array;
+}
+
+function pickSetup(frame: FrameInput, box: PickBox): PickSetup {
+  const t = frame.transform;
+  const hx = Math.max(box.x1 - box.x0, 1 / frame.pixelRatio) / t.width;
+  const hy = Math.max(box.y1 - box.y0, 1 / frame.pixelRatio) / t.height;
+  const cx = (box.x0 + box.x1) / t.width - 1;
+  const cy = 1 - (box.y0 + box.y1) / t.height;
+  return {
+    width: Math.max(1, Math.round((box.x1 - box.x0) * frame.pixelRatio)),
+    height: Math.max(1, Math.round((box.y1 - box.y0) * frame.pixelRatio)),
+    scale: [hx, hy],
+    clip: Float64Array.of(1 / hx, 0, 0, 0, 0, 1 / hy, 0, 0, 0, 0, 1, 0, -cx / hx, -cy / hy, 0, 1),
+  };
+}
+
 function drapeSize(t: Transform, slot: TerrainSlot, pixelRatio: number): number {
   const n = 2 ** slot.z;
   const x0 = slot.wrap + slot.x / n;
@@ -420,20 +441,19 @@ export class Painter {
     return this.terrainGeometry;
   }
 
-  pick(frame: FrameInput, box: PickBox, accept: (layer: StyleLayer) => boolean): PickedFeature[] {
+  pick(
+    frame: FrameInput,
+    box: PickBox,
+    accept: (layer: StyleLayer) => boolean,
+    ground?: { frame: FrameInput; box: PickBox },
+  ): PickedFeature[] {
     if (this.gl.isLost) return [];
-    const t = frame.transform;
-    const zoom = t.zoom;
-    const width = Math.max(1, Math.round((box.x1 - box.x0) * frame.pixelRatio));
-    const height = Math.max(1, Math.round((box.y1 - box.y0) * frame.pixelRatio));
-    const hx = Math.max(box.x1 - box.x0, 1 / frame.pixelRatio) / t.width;
-    const hy = Math.max(box.y1 - box.y0, 1 / frame.pixelRatio) / t.height;
-    const cx = (box.x0 + box.x1) / t.width - 1;
-    const cy = 1 - (box.y0 + box.y1) / t.height;
-    const clip = Float64Array.of(1 / hx, 0, 0, 0, 0, 1 / hy, 0, 0, 0, 0, 1, 0, -cx / hx, -cy / hy, 0, 1);
+    const zoom = frame.transform.zoom;
+    const main = pickSetup(frame, box);
+    const flat = ground ? pickSetup(ground.frame, ground.box) : main;
     const stats: PaintStats = { drawCalls: 0, pieces: 0, drapes: 0 };
     const found: PickedFeature[] = [];
-    this.pickBuffer.begin(width, height);
+    let bound: PickSetup | null = null;
     try {
       for (let i = frame.layers.length - 1; i >= 0; i--) {
         const layer = frame.layers[i]!;
@@ -442,14 +462,21 @@ export class Painter {
           continue;
         const manager = vectorManager(layer.source ? frame.sources.get(layer.source) : undefined);
         if (!manager) continue;
+        const draped = layer.type !== "extrusion";
+        const setup = draped ? flat : main;
+        const input = draped && ground ? ground.frame : frame;
+        if (setup !== bound) {
+          this.pickBuffer.begin(setup.width, setup.height);
+          bound = setup;
+        }
         const draws: { piece: RenderPiece<VectorTile>; bucket: VectorBucket }[] = [];
         const pass: PickPass = {
-          clip,
-          scale: [hx, hy],
+          clip: setup.clip,
+          scale: setup.scale,
           register: (piece, bucket) => draws.push({ piece, bucket }),
         };
         this.pickBuffer.clear();
-        this.vector.draw(frame, layer, manager, stats, pass);
+        this.vector.draw(input, layer, manager, stats, pass);
         if (draws.length === 0) continue;
         const pixels = this.pickBuffer.read();
         const seen = new Set<number>();
@@ -465,7 +492,7 @@ export class Painter {
         }
       }
     } finally {
-      this.pickBuffer.end();
+      if (bound) this.pickBuffer.end();
     }
     const labels = this.labels.hits(box, (layer) => layer.isVisible(zoom) && accept(layer));
     const order = new Map(frame.layers.map((l, i) => [l, i]));
