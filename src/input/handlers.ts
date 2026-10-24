@@ -1,5 +1,7 @@
 import type { Transform } from "../camera/transform.ts";
 
+type Point3 = [number, number, number];
+
 export interface InputOptions {
   dragPan: boolean;
   dragRotate: boolean;
@@ -15,6 +17,7 @@ export type GestureKind = "pan" | "zoom" | "rotate" | "pitch";
 export interface InputHost {
   readonly transform: Transform;
   readonly element: HTMLElement;
+  anchor(px: number, py: number): Point3 | null;
   reducedMotion(): boolean;
   interrupt(): void;
   changed(): void;
@@ -44,7 +47,7 @@ interface Pointer {
 type Mode =
   | { kind: "idle" }
   | { kind: "press"; pointer: number; rotate: boolean }
-  | { kind: "pan"; pointer: number; anchor: [number, number] }
+  | { kind: "pan"; pointer: number; anchor: Point3 }
   | { kind: "rotate"; pointer: number; lastX: number; lastY: number; moved: boolean }
   | {
       kind: "touch2";
@@ -53,7 +56,7 @@ type Mode =
       zoom0: number;
       bearing0: number;
       pitch0: number;
-      anchor: [number, number] | null;
+      anchor: Point3 | null;
       sub: "undecided" | "pinch" | "pitch";
       rotating: boolean;
     };
@@ -72,13 +75,13 @@ interface Inertia {
   duration: number;
   from: [number, number];
   offset: [number, number];
-  anchor: [number, number];
+  anchor: Point3;
 }
 
 interface WheelZoom {
   target: number;
   anchorScreen: [number, number];
-  anchorWorld: [number, number] | null;
+  anchorWorld: Point3 | null;
   last: number;
 }
 
@@ -136,7 +139,12 @@ export class InputHandlers {
       const i = this.inertia;
       const t = Math.min(1, (now - i.start) / i.duration);
       const k = 1 - (1 - t) * (1 - t);
-      this.host.transform.setLocationAtPoint(i.anchor, i.from[0] + i.offset[0] * k, i.from[1] + i.offset[1] * k);
+      this.host.transform.setLocationAtPoint(
+        i.anchor,
+        i.from[0] + i.offset[0] * k,
+        i.from[1] + i.offset[1] * k,
+        i.anchor[2],
+      );
       this.host.changed();
       if (t >= 1) this.inertia = null;
       else busy = true;
@@ -151,7 +159,8 @@ export class InputHandlers {
       const reduced = this.host.reducedMotion();
       const next = reduced || Math.abs(diff) < 0.001 ? w.target : current + diff * (1 - Math.exp(-dt / 70));
       transform.setZoom(next);
-      if (w.anchorWorld) transform.setLocationAtPoint(w.anchorWorld, w.anchorScreen[0], w.anchorScreen[1]);
+      if (w.anchorWorld)
+        transform.setLocationAtPoint(w.anchorWorld, w.anchorScreen[0], w.anchorScreen[1], w.anchorWorld[2]);
       this.host.changed();
       if (next === w.target || transform.zoom !== next) {
         this.wheel = null;
@@ -253,7 +262,7 @@ export class InputHandlers {
         this.host.gesture(true);
       } else {
         if (!this.options.dragPan) return;
-        const anchor = transform.unproject(pointer.startX, pointer.startY);
+        const anchor = this.host.anchor(pointer.startX, pointer.startY);
         if (!anchor) return;
         this.mode = { kind: "pan", pointer: e.pointerId, anchor };
         this.host.gesture(true);
@@ -261,7 +270,7 @@ export class InputHandlers {
     }
     const current = this.mode;
     if (current.kind === "pan" && current.pointer === e.pointerId) {
-      transform.setLocationAtPoint(current.anchor, x, y);
+      transform.setLocationAtPoint(current.anchor, x, y, current.anchor[2]);
       this.samples.push({ t: e.timeStamp, x, y });
       while (this.samples.length > 2 && e.timeStamp - this.samples[0]!.t > 100) this.samples.shift();
       this.host.changed();
@@ -315,7 +324,7 @@ export class InputHandlers {
       this.host.gesture(false);
       const rest = [...this.pointers.values()].find((p) => p.type !== "mouse");
       if (rest && this.options.dragPan) {
-        const anchor = this.host.transform.unproject(rest.x, rest.y);
+        const anchor = this.host.anchor(rest.x, rest.y);
         if (anchor) {
           this.mode = { kind: "pan", pointer: rest.id, anchor };
           this.samples = [{ t: e.timeStamp, x: rest.x, y: rest.y }];
@@ -327,7 +336,7 @@ export class InputHandlers {
     }
   }
 
-  private startInertia(anchor: [number, number], x: number, y: number, time: number): void {
+  private startInertia(anchor: Point3, x: number, y: number, time: number): void {
     if (this.host.reducedMotion()) return;
     const first = this.samples[0];
     this.samples = [];
@@ -378,7 +387,7 @@ export class InputHandlers {
       zoom0: transform.zoom,
       bearing0: transform.bearing,
       pitch0: transform.pitch,
-      anchor: transform.unproject(start.midX, start.midY),
+      anchor: this.host.anchor(start.midX, start.midY),
       sub: "undecided",
       rotating: false,
     };
@@ -425,7 +434,7 @@ export class InputHandlers {
     const turn = angleDelta(now.angle, s.angle);
     if (!mode.rotating && Math.abs(turn) > (12 * Math.PI) / 180) mode.rotating = true;
     if (mode.rotating) transform.setBearing(mode.bearing0 - (turn * 180) / Math.PI);
-    if (mode.anchor) transform.setLocationAtPoint(mode.anchor, now.midX, now.midY);
+    if (mode.anchor) transform.setLocationAtPoint(mode.anchor, now.midX, now.midY, mode.anchor[2]);
     this.host.changed();
   }
 
@@ -485,13 +494,13 @@ export class InputHandlers {
       this.wheel = {
         target: transform.zoom,
         anchorScreen: point,
-        anchorWorld: transform.unproject(point[0], point[1]),
+        anchorWorld: this.host.anchor(point[0], point[1]),
         last: now,
       };
       this.host.gesture(true);
     } else if (Math.hypot(point[0] - this.wheel.anchorScreen[0], point[1] - this.wheel.anchorScreen[1]) > 2) {
       this.wheel.anchorScreen = point;
-      this.wheel.anchorWorld = transform.unproject(point[0], point[1]);
+      this.wheel.anchorWorld = this.host.anchor(point[0], point[1]);
     }
     this.wheel.target = Math.max(transform.minZoom, Math.min(transform.maxZoom, this.wheel.target + dz));
     this.wheel.last = Math.min(this.wheel.last, now);
