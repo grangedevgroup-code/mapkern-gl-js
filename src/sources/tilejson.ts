@@ -105,7 +105,8 @@ function zoomValue(value: unknown, fallback: number): number {
 }
 
 function absolutize(url: string, base: string | undefined): string {
-  if (!base) return url;
+  if (!base || /^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
+  if (!/^https?:/i.test(base) && !/^[./]/.test(base)) return url;
   try {
     const encoded = url.replace(/\{/g, "%7B").replace(/\}/g, "%7D");
     return new URL(encoded, new URL(base, globalThis.location?.href)).href.replace(/%7B/gi, "{").replace(/%7D/gi, "}");
