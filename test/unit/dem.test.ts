@@ -43,7 +43,11 @@ function at(grid: DemGrid, x: number, y: number): number {
 }
 
 test("terrarium, mapbox and custom encodings decode to meters", () => {
-  const terr = decodeDem(image(2, (x, y) => [-428.5, 0, 1234.25, 8848][y * 2 + x]!), 2, TERRARIUM)!;
+  const terr = decodeDem(
+    image(2, (x, y) => [-428.5, 0, 1234.25, 8848][y * 2 + x]!),
+    2,
+    TERRARIUM,
+  )!;
   assert.deepEqual([at(terr, 0, 0), at(terr, 1, 0), at(terr, 0, 1), at(terr, 1, 1)], [-428.5, 0, 1234.25, 8848]);
   assert.equal(terr.min, -428.5);
   assert.equal(terr.max, 8848);
@@ -77,12 +81,23 @@ test("transparent pixels and impossible depths count as missing", () => {
   assert.equal(at(grid, 3, 3), 103);
   assert.equal(sampleElevation(grid, 0.1, 0.1), null);
   assert.ok(sampleElevation(grid, 0.6, 0.1) !== null);
-  assert.equal(decodeDem(image(2, () => null), 2, TERRARIUM), null);
+  assert.equal(
+    decodeDem(
+      image(2, () => null),
+      2,
+      TERRARIUM,
+    ),
+    null,
+  );
 });
 
 test("the border repeats the edge until neighbors arrive", () => {
   const size = 3;
-  const grid = decodeDem(image(size, (x, y) => x * 10 + y), size, TERRARIUM)!;
+  const grid = decodeDem(
+    image(size, (x, y) => x * 10 + y),
+    size,
+    TERRARIUM,
+  )!;
   const e = grid.elevation;
   const s = grid.stride;
   for (let k = 0; k < DEM_BORDER; k++) {
@@ -156,8 +171,16 @@ test("stitched neighbors give the same slopes as one seamless grid", () => {
 
 test("refreshing the frame matches a full recompute", () => {
   const size = 6;
-  const a = decodeDem(image(size, (x, y) => x * x + 3 * y), size, TERRARIUM)!;
-  const b = decodeDem(image(size, (x, y) => (x + size) * (x + size) + 3 * y), size, TERRARIUM)!;
+  const a = decodeDem(
+    image(size, (x, y) => x * x + 3 * y),
+    size,
+    TERRARIUM,
+  )!;
+  const b = decodeDem(
+    image(size, (x, y) => (x + size) * (x + size) + 3 * y),
+    size,
+    TERRARIUM,
+  )!;
   const before = gradients(a);
   backfill(a, b, 1, 0);
   writeFrame(a, before);
@@ -165,8 +188,16 @@ test("refreshing the frame matches a full recompute", () => {
 });
 
 test("backfill refuses tiles of different sizes", () => {
-  const a = decodeDem(image(4, () => 1), 4, TERRARIUM)!;
-  const b = decodeDem(image(2, () => 1), 2, TERRARIUM)!;
+  const a = decodeDem(
+    image(4, () => 1),
+    4,
+    TERRARIUM,
+  )!;
+  const b = decodeDem(
+    image(2, () => 1),
+    2,
+    TERRARIUM,
+  )!;
   assert.equal(backfill(a, b, 1, 0), false);
   assert.equal(backfill(a, a, 0, 0), false);
 });
@@ -189,9 +220,6 @@ test("sampling interpolates between pixel centers and reaches across a stitched 
 
 test("image type is sniffed from the bytes", () => {
   assert.equal(imageType(Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 0, 0, 0, 0)), "image/png");
-  assert.equal(
-    imageType(Uint8Array.of(0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x57, 0x45, 0x42, 0x50)),
-    "image/webp",
-  );
+  assert.equal(imageType(Uint8Array.of(0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x57, 0x45, 0x42, 0x50)), "image/webp");
   assert.equal(imageType(Uint8Array.of(0xff, 0xd8, 0xff, 0xe0)), "image/jpeg");
 });
