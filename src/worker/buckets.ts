@@ -237,8 +237,10 @@ export class LineBuilder {
         endR = firstR;
         pairL = -1;
         pairR = -1;
-      } else if (hasJoin && simple(s, next)) {
-        [endL, endR] = this.miterPair(bx, by, s, next, dirs, d1, feature);
+      } else if (hasJoin && this.simple(s, next)) {
+        this.miterPair(bx, by, s, next, d1, feature);
+        endL = this.pairLeft;
+        endR = this.pairRight;
         pairL = endL;
         pairR = endR;
       } else {
