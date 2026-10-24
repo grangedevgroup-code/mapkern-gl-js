@@ -8,11 +8,11 @@ import type { VectorSourceSpec } from "../style/types.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileLoader, TileStats } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
-import type { LabelCandidate } from "../worker/symbols.ts";
+import type { PackedLabels } from "../worker/packed.ts";
+import { FeatureTable } from "../worker/packed.ts";
 import type {
   BucketData,
   BucketType,
-  FeatureRecord,
   Geometry,
   LayerProgram,
   VectorTileRequest,
@@ -35,12 +35,12 @@ export interface VectorBucket {
   readonly layerId: string;
   readonly type: BucketType;
   readonly extent: number;
-  readonly features: FeatureRecord[];
+  readonly features: FeatureTable;
   main: GpuGeometry | null;
   outline: GpuGeometry | null;
   cpu: BucketData | null;
   paint: PaintTable;
-  labels: LabelCandidate[] | null;
+  labels: PackedLabels | null;
 }
 
 export interface VectorTile {
@@ -262,14 +262,14 @@ export class VectorSource implements MapSource {
             layerId: b.layerId,
             type: b.type,
             extent: b.extent,
-            features: b.features,
+            features: new FeatureTable(b.features),
             main: null,
             outline: null,
             cpu: b,
             paint: new PaintTable(),
             labels: b.labels ?? null,
           });
-          bytes += geometryBytes(b.main) + geometryBytes(b.outline) + b.features.length * 64;
+          bytes += geometryBytes(b.main) + geometryBytes(b.outline) + b.features.ids.byteLength * 4;
         }
         return { buckets, signature, bytes, uploaded: false, featureCount: decoded.featureCount };
       },
@@ -298,7 +298,7 @@ export class VectorSource implements MapSource {
       byteSize: (data) => {
         let bytes = 0;
         for (const b of data.buckets.values()) {
-          bytes += (b.main?.bytes ?? 0) + (b.outline?.bytes ?? 0) + b.paint.bytes + b.features.length * 64;
+          bytes += (b.main?.bytes ?? 0) + (b.outline?.bytes ?? 0) + b.paint.bytes + b.features.bytes;
           if (b.cpu) bytes += geometryBytes(b.cpu.main) + geometryBytes(b.cpu.outline);
         }
         return bytes || data.bytes;
