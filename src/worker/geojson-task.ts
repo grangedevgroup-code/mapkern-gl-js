@@ -1,6 +1,6 @@
 import { bytesToGeoJSON, objectToGeoJSON } from "../formats/convert.ts";
 import type { FeatureFormat } from "../formats/feature-format.ts";
-import type { GeoJSONOptions, GeoJSONSummary } from "./geojson.ts";
+import type { GeoJSONOptions, GeoJSONSummary, QueriedSourceFeature } from "./geojson.ts";
 import { GeoJSONIndex } from "./geojson.ts";
 import type { LayerProgram, VectorTileResult } from "./vector-task.ts";
 import { buildBuckets } from "./vector-task.ts";
@@ -45,6 +45,14 @@ export async function buildGeoJSONTile(
   const layer = index.tile(request.z, request.x, request.y);
   const built = buildBuckets(new Map([[layer.name, layer]]), request.z, request.layers, request.overzoom, started);
   return { result: { missing: false, tile: built.result }, transfer: built.transfer };
+}
+
+export async function geojsonFeatures(request: {
+  source: string;
+  indices: number[];
+}): Promise<{ result: QueriedSourceFeature[] | null }> {
+  const index = indexes.get(request.source);
+  return { result: index ? index.features(request.indices) : null };
 }
 
 export async function removeGeoJSON(request: { source: string }): Promise<{ result: null }> {
