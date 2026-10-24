@@ -228,9 +228,10 @@ test("a ground plane below the center widens the coverage", () => {
 test("zoomAround keeps an elevated anchor under the cursor", () => {
   const t = make(11, 45, 20);
   t.setElevation(1000);
+  const z = worldHeight(1000, t.centerWorld[1]);
   const anchor = t.unproject(650, 120)!;
-  t.zoomAround(13.5, 650, 120, 1000);
-  const p = t.project(anchor[0], anchor[1], 1000 * t.pixelsPerMeter);
+  t.zoomAround(13.5, 650, 120, z);
+  const p = t.project(anchor[0], anchor[1], z * t.worldSize);
   close(p.x, 650, 1e-4);
   close(p.y, 120, 1e-4);
 });
