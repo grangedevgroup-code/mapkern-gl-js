@@ -35,6 +35,7 @@ export class Tile<D> implements TileCoord {
   readonly key: number;
   state: TileState = "queued";
   data: D | null = null;
+  next: D | null = null;
   failure: TileFailure | null = null;
   attempts = 0;
   retryAt = 0;
