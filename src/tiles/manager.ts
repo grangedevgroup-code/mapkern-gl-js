@@ -492,15 +492,17 @@ export class TileManager<D> {
   }
 
   private async load(tile: Tile<D>, handle: JobHandle | undefined): Promise<void> {
-    if (this.destroyed || tile.state !== "queued") {
+    const refreshing = this.isOutdated(tile);
+    if (this.destroyed || (tile.state !== "queued" && !refreshing)) {
       this.release(tile, handle);
       return;
     }
+    const generation = this.generation;
     const controller = new AbortController();
     tile.controller = controller;
     tile.attempts++;
     tile.requestedAt = performance.now();
-    tile.transition("fetching");
+    if (!refreshing) tile.transition("fetching");
     this.counters.requested++;
     if (tile.attempts > 1) this.counters.retried++;
     try {
@@ -514,7 +516,10 @@ export class TileManager<D> {
       this.consecutiveFailures = 0;
       this.counters.completed++;
       tile.failure = null;
-      if (data === null) {
+      tile.generation = generation;
+      if (refreshing) {
+        this.replace(tile, data);
+      } else if (data === null) {
         tile.transition("empty");
       } else {
         tile.data = data;
