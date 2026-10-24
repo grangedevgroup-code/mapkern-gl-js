@@ -48,7 +48,7 @@ Raster sources take the same options as vector ones, minus `promoteId`, plus `ti
 stations: { type: "geojson", data: "stations.geojson" }
 ```
 
-`data` is a GeoJSON object or a URL. Maplet cuts the data into tiles in a worker, so even large files stay smooth to pan around. You can change the data later with [`setData()`](api.md#geojson).
+`data` is a GeoJSON object or a URL. Maplet cuts the data into tiles in a worker, so the page stays responsive while it works. You can change the data later with [`setData()`](api.md#geojson).
 
 A few options control how the tiles are made. `maxZoom` (18) is the last zoom level that gets its own tiles. `tolerance` (0.375) is how far, in pixels, lines and polygons may be simplified when zoomed out; 0 keeps every point. `buffer` (64) is how far each tile reaches past its edge, in pixels of a 512 pixel tile. Raise it if you draw very wide lines or big circles and see them cut off at tile edges. `attribution` and `promoteId` work as for vector tiles.
 
