@@ -363,11 +363,10 @@ export class Transform {
       const y0 = t.y / n,
         y1 = (t.y + 1) / n;
       if (!polygonIntersectsRect(poly, x0, y0, x1, y1)) continue;
-      const px = Math.min(Math.max(cam[0], x0 * ws), x1 * ws) - cam[0];
-      const py = Math.min(Math.max(cam[1], y0 * ws), y1 * ws) - cam[1];
-      const dist = Math.hypot(px, py, cam[2]);
-      let wanted = centerTileZoom + Math.log2(d / Math.max(dist, 1e-9));
-      wanted = Math.min(wanted, centerTileZoom);
+      const nearX = (dirX >= 0 ? x0 : x1) * ws - cam[0];
+      const nearY = (dirY >= 0 ? y0 : y1) * ws - cam[1];
+      const depth = Math.max(minDepth, nearX * dirX + nearY * dirY + baseDepth);
+      const wanted = Math.min(centerTileZoom, centerTileZoom + Math.log2(d / depth));
       const target = Math.max(
         minZoom,
         Math.min(maxZoom, options.round ? Math.round(wanted) : Math.floor(wanted + 1e-9)),
@@ -376,7 +375,6 @@ export class Transform {
         const cxw = ((x0 + x1) / 2) * ws - cam[0];
         const cyw = ((y0 + y1) / 2) * ws - cam[1];
         out.push({ z: t.z, x: t.x, y: t.y, wrap: t.wrap, distance: Math.hypot(cxw, cyw, cam[2]) });
-        if (out.length >= limit) break;
         continue;
       }
       const z = t.z + 1,
