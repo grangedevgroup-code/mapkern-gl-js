@@ -8,6 +8,7 @@ import { InputHandlers } from "../input/handlers.ts";
 import { GL } from "../render/gl.ts";
 import type { PickBox } from "../render/painter.ts";
 import { Painter } from "../render/painter.ts";
+import { DemSource } from "../sources/dem.ts";
 import { GeoJSONSource } from "../sources/geojson.ts";
 import { registerMbtilesProtocol } from "../sources/mbtiles.ts";
 import { registerPmtilesProtocol } from "../sources/pmtiles.ts";
@@ -108,7 +109,7 @@ export interface FitBoundsOptions extends AnimationOptions {
 
 export type BoundsLike = [[number, number], [number, number]] | [number, number, number, number];
 
-export type Source = RasterSource | VectorSource | GeoJSONSource;
+export type Source = RasterSource | VectorSource | GeoJSONSource | DemSource;
 
 export type PointLike = [number, number] | { x: number; y: number };
 
@@ -946,8 +947,12 @@ export class MapletMap extends Emitter<MapEvents> {
         return new VectorSource(id, spec, ctx);
       case "geojson":
         return new GeoJSONSource(id, spec, ctx);
-      default:
-        throw new MapletError("invalid-style", `Source type "${spec.type}" is not supported yet`, { sourceId: id });
+      case "dem":
+        return new DemSource(id, spec, ctx);
+      default: {
+        const type = (spec as { type: unknown }).type;
+        throw new MapletError("invalid-style", `Source type "${String(type)}" is not supported`, { sourceId: id });
+      }
     }
   }
 
