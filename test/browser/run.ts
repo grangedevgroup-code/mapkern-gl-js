@@ -439,6 +439,147 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "queryRenderedFeatures finds what is drawn under the pointer",
+    async run({ page }) {
+      const data = {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            id: 1,
+            properties: { name: "square" },
+            geometry: {
+              type: "Polygon",
+              coordinates: [
+                [
+                  [-10, -10],
+                  [10, -10],
+                  [10, 10],
+                  [-10, 10],
+                  [-10, -10],
+                ],
+              ],
+            },
+          },
+          {
+            type: "Feature",
+            id: 2,
+            properties: { name: "road" },
+            geometry: {
+              type: "LineString",
+              coordinates: [
+                [-15, -12],
+                [15, -12],
+              ],
+            },
+          },
+          { type: "Feature", id: 3, properties: { name: "dot" }, geometry: { type: "Point", coordinates: [14, 0] } },
+        ],
+      };
+      const style = JSON.stringify({
+        version: 1,
+        sources: { g: { type: "geojson", data } },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          {
+            id: "fill",
+            type: "fill",
+            source: "g",
+            filter: ["==", ["geometry-type"], "Polygon"],
+            paint: { color: "#ff0000" },
+          },
+          {
+            id: "line",
+            type: "line",
+            source: "g",
+            filter: ["==", ["geometry-type"], "LineString"],
+            paint: { color: "#0000ff", width: 6 },
+          },
+          {
+            id: "dots",
+            type: "circle",
+            source: "g",
+            filter: ["==", ["geometry-type"], "Point"],
+            paint: { radius: 10 },
+          },
+          {
+            id: "names",
+            type: "symbol",
+            source: "g",
+            filter: ["==", ["geometry-type"], "Point"],
+            layout: { text: ["get", "name"] },
+          },
+        ],
+      });
+      await createMap(page, style, { zoom: 4 });
+      const query = (args: string) =>
+        page.evaluate<{ layer: string; name: unknown; geometry: string | undefined; id: unknown }[]>(
+          `window.map.queryRenderedFeatures(${args}).then((fs) => fs.map((f) => ({ layer: f.layer, name: f.properties.name, geometry: f.geometry?.type, id: f.id })))`,
+        );
+      const fill = await query("[500, 300]");
+      if (
+        fill.length !== 1 ||
+        fill[0]!.layer !== "fill" ||
+        fill[0]!.name !== "square" ||
+        fill[0]!.geometry !== "Polygon" ||
+        fill[0]!.id !== 1
+      )
+        fail(`expected the square under 500,300, got ${JSON.stringify(fill)}`);
+      const line = await query("[400, 575]");
+      if (line.length !== 1 || line[0]!.name !== "road" || line[0]!.geometry !== "LineString")
+        fail(`expected the road under 400,575, got ${JSON.stringify(line)}`);
+      const dot = await query("[719, 300]");
+      const layers = dot.map((f) => f.layer);
+      if (layers[0] !== "names" || layers[1] !== "dots" || dot.some((f) => f.name !== "dot"))
+        fail(`expected the label then the circle under 719,300, got ${JSON.stringify(dot)}`);
+      const empty = await query("[100, 300]");
+      if (empty.length !== 0) fail(`expected nothing under 100,300, got ${JSON.stringify(empty)}`);
+      const only = await query('[719, 300], { layers: ["fill"] }');
+      if (only.length !== 0) fail(`expected no fill under the dot, got ${JSON.stringify(only)}`);
+      const all = await query("[[0, 0], [800, 600]]");
+      const names = new Set(all.map((f) => `${f.layer}:${f.name}`));
+      for (const want of ["fill:square", "line:road", "dots:dot", "names:dot"]) {
+        if (!names.has(want)) fail(`box query is missing ${want}: ${JSON.stringify([...names])}`);
+      }
+      const bad = await page.evaluate<string>(
+        `window.map.queryRenderedFeatures([1, 1], { layers: ["nope"] }).then(() => "no error", (e) => e.code)`,
+      );
+      if (bad !== "invalid-option") fail(`expected an invalid-option error for an unknown layer, got ${bad}`);
+    },
+  },
+  {
+    name: "queryRenderedFeatures returns vector tile features and 3D buildings",
+    async run({ page, base }) {
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          v: { type: "vector", tiles: [`${base}/fixture/vector/{z}/{x}/{y}.pbf`], maxZoom: 6 },
+          b: { type: "geojson", data: square(0.001, "#3366cc") },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "areas", type: "fill", source: "v", sourceLayer: "areas", paint: { color: "#dddddd" } },
+          { id: "box", type: "extrusion", source: "b", paint: { color: ["get", "color"], height: 300 } },
+        ],
+      });
+      await createMap(page, style, { zoom: 3, center: [20, 20] });
+      const found = await page.evaluate<{ layer: string; name: unknown; id: unknown; ring: number[][] }[]>(
+        `window.map.queryRenderedFeatures([400, 300], { layers: ["areas"] }).then((fs) => fs.map((f) => ({ layer: f.layer, name: f.properties.name, id: f.id, ring: f.geometry.coordinates[0] })))`,
+      );
+      if (found.length !== 1 || found[0]!.name !== "tile 3/4/3" || found[0]!.id !== 1003)
+        fail(`expected the 3/4/3 tile polygon, got ${JSON.stringify(found)}`);
+      const lngs = found[0]!.ring.map((p) => p[0]!);
+      if (Math.abs(Math.min(...lngs) - 0) > 1e-6 || Math.abs(Math.max(...lngs) - 45) > 1e-6)
+        fail(`expected the tile edges at 0 and 45 degrees east, got ${JSON.stringify(lngs)}`);
+      await page.evaluate("void window.map.jumpTo({ center: [0, 0], zoom: 16, pitch: 60 })");
+      await idle(page);
+      const wall = await page.evaluate<string[]>(
+        `window.map.queryRenderedFeatures([400, 200]).then((fs) => fs.map((f) => f.layer))`,
+      );
+      if (wall[0] !== "box") fail(`expected the 3D box first at 400,200, got ${JSON.stringify(wall)}`);
+    },
+  },
+  {
     name: "events from the constructor reach listeners added right after it",
     async run({ page }) {
       const result = await page.evaluate<{ styleload: number; errors: string[] }>(`(async () => {
