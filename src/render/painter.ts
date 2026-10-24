@@ -1,11 +1,13 @@
 import type { Transform } from "../camera/transform.ts";
 import type { RasterSource } from "../sources/raster.ts";
 import type { MapSource } from "../sources/source.ts";
+import type { VectorSource } from "../sources/vector.ts";
 import type { RGBA } from "../style/color.ts";
 import { premultiply } from "../style/color.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { GL, Program } from "./gl.ts";
 import { rasterShader, solidShader } from "./shaders/raster.ts";
+import { VectorPainter } from "./vector-layers.ts";
 
 export interface FrameInput {
   readonly transform: Transform;
@@ -27,9 +29,11 @@ export class Painter {
   private quadBuffer: WebGLBuffer | null = null;
   private readonly matrix = new Float32Array(16);
   private readonly hue = new Float32Array(9);
+  private readonly vector: VectorPainter;
 
   constructor(gl: GL) {
     this.gl = gl;
+    this.vector = new VectorPainter(gl);
     this.init();
   }
 
@@ -74,6 +78,15 @@ export class Painter {
         case "raster": {
           const source = layer.source ? frame.sources.get(layer.source) : undefined;
           if (source?.type === "raster") this.drawRaster(frame, layer, source as RasterSource);
+          break;
+        }
+        case "fill":
+        case "line":
+        case "circle": {
+          const source = layer.source ? frame.sources.get(layer.source) : undefined;
+          if ((source?.type === "vector" || source?.type === "geojson") && (source as VectorSource).manager) {
+            this.vector.draw(frame, layer, (source as VectorSource).manager!, this.stats);
+          }
           break;
         }
         default:
