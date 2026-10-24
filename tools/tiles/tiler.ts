@@ -177,12 +177,7 @@ function encode(z: number, x: number, y: number, feats: TileFeature[], options: 
       for (const part of f.parts) {
         const isOuter = f.type === 3 && signedArea(part) > 0;
         if (f.type === 3 && !isOuter && !outerKept) continue;
-        const local = new Float64Array(part.length);
-        for (let i = 0; i < part.length; i += 2) {
-          local[i] = part[i]! * scale - ox;
-          local[i + 1] = part[i + 1]! * scale - oy;
-        }
-        const simple = simplify(local, tolerance, f.type === 3);
+        const simple = simplify(toLocal(part, scale, ox, oy), tolerance, f.type === 3);
         const q = quantize(simple);
         if (f.type === 2) {
           if (q.length >= 4) parts.push(q);
