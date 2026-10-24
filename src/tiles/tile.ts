@@ -40,6 +40,7 @@ export class Tile<D> implements TileCoord {
   retryAt = 0;
   priority = Number.POSITIVE_INFINITY;
   wanted = false;
+  unwantedSince = Number.NaN;
   retained = false;
   lastUsed = 0;
   readyAt = Number.NEGATIVE_INFINITY;
