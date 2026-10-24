@@ -11,6 +11,11 @@ export interface PaintSlot {
 
 export const NO_SLOT: PaintSlot = { slot: -1, composite: false };
 
+export interface PaintBudget {
+  deadline: number;
+  behind: boolean;
+}
+
 const GEOMETRY: Record<number, GeometryType> = { 0: "Unknown", 1: "Point", 2: "LineString", 3: "Polygon" };
 
 export class PaintTable {
@@ -23,7 +28,18 @@ export class PaintTable {
   private hasComposite = false;
   private textureSize = [0, 0];
 
-  update(gl: GL, layer: StyleLayer, features: FeatureTable, names: readonly string[], zoom: number): void {
+  get base(): number {
+    return this.evaluatedZoom;
+  }
+
+  update(
+    gl: GL,
+    layer: StyleLayer,
+    features: FeatureTable,
+    names: readonly string[],
+    zoom: number,
+    budget: PaintBudget,
+  ): void {
     const layoutChanged = layer.revision !== this.revision;
     if (layoutChanged) {
       this.revision = layer.revision;
@@ -46,6 +62,10 @@ export class PaintTable {
     }
     const base = Math.floor(zoom);
     if (!layoutChanged && (!this.hasComposite || base === this.evaluatedZoom) && this.texture) return;
+    if (!layoutChanged && this.texture && performance.now() > budget.deadline) {
+      budget.behind = true;
+      return;
+    }
     this.evaluatedZoom = base;
     const total = Math.max(1, features.count * this.stride);
     const width = Math.min(total, 2048);
@@ -59,18 +79,18 @@ export class PaintTable {
       geometryType: "Unknown" as GeometryType,
     };
     ctx.feature = feature;
-    for (const [name, slot] of this.slots) {
-      const c = layer.paintProperty<unknown>(name);
-      for (let f = 0; f < features.count; f++) {
-        features.fill(f, props);
-        feature.id = features.id(f);
-        feature.geometryType = GEOMETRY[features.type(f)] ?? "Unknown";
+    const slots = [...this.slots].map(([name, slot]) => ({ slot, property: layer.paintProperty<unknown>(name) }));
+    for (let f = 0; f < features.count; f++) {
+      features.fill(f, props);
+      feature.id = features.id(f);
+      feature.geometryType = GEOMETRY[features.type(f)] ?? "Unknown";
+      for (const { slot, property } of slots) {
         const at = (f * this.stride + slot.slot) * 4;
         ctx.zoom = base;
-        write(data, at, c.evaluate(ctx));
+        write(data, at, property.evaluate(ctx));
         if (slot.composite) {
           ctx.zoom = base + 1;
-          write(data, at + 4, c.evaluate(ctx));
+          write(data, at + 4, property.evaluate(ctx));
         }
       }
     }
