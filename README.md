@@ -138,6 +138,7 @@ npm run dev            # builds, watches src and serves http://127.0.0.1:8080/ex
 npm run verify         # lint, type check and unit tests
 npm run test:browser   # renders test maps in Chrome and checks the pixels
 npm run build          # writes dist/
+npm run tiles -- --help
 ```
 
 ## License
