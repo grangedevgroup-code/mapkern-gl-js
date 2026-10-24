@@ -593,21 +593,31 @@ export function lightStyle(options: LightStyleOptions = {}): StyleSpec {
     },
   );
   if (extruded) {
-    const height: Expression = ["coalesce", ["get", "height"], 6];
-    const base: Expression = ["coalesce", ["get", "min_height"], 0];
-    const tall: Expression = [">=", ["coalesce", ["get", "height"], 0], 25];
-    layers.push({
-      id: "building-3d",
-      type: "extrusion",
-      source: "osm",
-      sourceLayer: "building",
-      minZoom: 12,
-      paint: {
-        color: "#e3dfd7",
-        height: ["interpolate", ["linear"], ["zoom"], 12, ["case", tall, ["get", "height"], 0], 13, height],
-        base: ["interpolate", ["linear"], ["zoom"], 12, ["case", tall, base, 0], 13, base],
+    const paint = {
+      color: "#e3dfd7",
+      height: ["coalesce", ["get", "height"], 6] as Expression,
+      base: ["coalesce", ["get", "min_height"], 0] as Expression,
+    };
+    layers.push(
+      {
+        id: "building-3d-tall",
+        type: "extrusion",
+        source: "osm",
+        sourceLayer: "building",
+        minZoom: 12,
+        maxZoom: 13,
+        filter: [">=", ["coalesce", ["get", "height"], 0], 25],
+        paint,
       },
-    });
+      {
+        id: "building-3d",
+        type: "extrusion",
+        source: "osm",
+        sourceLayer: "building",
+        minZoom: 13,
+        paint,
+      },
+    );
   }
   if (options.labels !== false) layers.push(...labelLayers(options.font));
   return {
