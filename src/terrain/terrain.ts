@@ -78,6 +78,25 @@ export class Terrain {
     return this.elevationAt(x, y) ?? 0;
   }
 
+  heightAt(x: number, y: number): number {
+    return metersToWorld(this.surfaceAt(x, y), y);
+  }
+
+  hidden(camera: readonly number[], x: number, y: number, z: number): boolean {
+    const dx = camera[0]! - x;
+    const dy = camera[1]! - y;
+    const dz = camera[2]! - z;
+    const steps = 32;
+    for (let i = 1; i < steps; i++) {
+      const t = (i / steps) ** 2;
+      if (t < 0.002) continue;
+      const px = x + dx * t;
+      const py = y + dy * t;
+      if (this.heightAt(px, py) > z + dz * t) return true;
+    }
+    return false;
+  }
+
   raycast(origin: readonly number[], dir: readonly number[], maxDistance: number): [number, number, number] | null {
     const length = Math.hypot(dir[0]!, dir[1]!, dir[2]!);
     if (!(length > 0)) return null;
