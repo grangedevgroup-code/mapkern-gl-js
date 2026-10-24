@@ -1,9 +1,11 @@
-import type { FeatureType, PropertyValue, VectorFeature, VectorLayer } from "../formats/mvt.ts";
+import type { VectorFeature, VectorLayer } from "../formats/mvt.ts";
 import { classifyRings, decodeTile } from "../formats/mvt.ts";
 import type { Compiled, FeatureContext, GeometryType } from "../style/expression.ts";
 import { compile } from "../style/expression.ts";
 import { CircleBuilder, FillBuilder, LineBuilder } from "./buckets.ts";
-import type { LabelCandidate, SymbolLayout } from "./symbols.ts";
+import type { PackedFeatures, PackedLabels } from "./packed.ts";
+import { FeatureTableBuilder, featureTransfers, LabelBuilder, labelTransfers } from "./packed.ts";
+import type { SymbolLayout } from "./symbols.ts";
 import { labelCandidates } from "./symbols.ts";
 
 export type BucketType = "fill" | "line" | "circle" | "symbol" | "extrusion";
@@ -29,12 +31,6 @@ export interface VectorTileRequest {
   overzoom: boolean;
 }
 
-export interface FeatureRecord {
-  id: number | undefined;
-  type: FeatureType;
-  props: Record<string, PropertyValue>;
-}
-
 export interface Geometry {
   vertices: ArrayBuffer;
   indices: ArrayBuffer;
@@ -46,10 +42,10 @@ export interface BucketData {
   layerId: string;
   type: BucketType;
   extent: number;
-  features: FeatureRecord[];
+  features: PackedFeatures;
   main: Geometry | null;
   outline: Geometry | null;
-  labels?: LabelCandidate[];
+  labels?: PackedLabels;
 }
 
 export interface VectorTileResult {
@@ -139,11 +135,13 @@ export async function buildVectorTile(
     }
     const bucket = buildBucket(program, source, selected, zoom);
     if (!bucket) continue;
-    featureCount += bucket.features.length;
+    featureCount += bucket.features.count;
     for (const g of [bucket.main, bucket.outline]) {
       if (!g) continue;
       transfer.push(g.vertices, g.indices);
     }
+    featureTransfers(bucket.features, transfer);
+    if (bucket.labels) labelTransfers(bucket.labels, transfer);
     buckets.push(bucket);
   }
   return {
@@ -157,16 +155,6 @@ function sourceLayer(layers: Map<string, VectorLayer>, name: string | null): Vec
   return layers.values().next().value;
 }
 
-function record(f: FeatureView, keys: readonly string[]): FeatureRecord {
-  const props: Record<string, PropertyValue> = {};
-  const all = f.feature.properties();
-  for (const k of keys) {
-    const v = all[k];
-    if (v !== undefined) props[k] = v;
-  }
-  return { id: f.feature.id, type: f.feature.type, props };
-}
-
 function geometry(vertices: ArrayBuffer, indices: ArrayBuffer, vertexCount: number): Geometry {
   return { vertices, indices, vertexCount, indexCount: indices.byteLength / 4 };
 }
@@ -177,23 +165,23 @@ function buildBucket(
   selected: FeatureView[],
   zoom: number,
 ): BucketData | null {
-  const features: FeatureRecord[] = [];
+  const features = new FeatureTableBuilder(program.keys);
   const layout = program.layout;
   if (program.type === "fill") {
     const fill = new FillBuilder();
     for (const f of selected) {
-      const index = features.length;
+      const index = features.count;
       const polygons = classifyRings(f.feature.geometry());
       if (polygons.length === 0) continue;
       for (const rings of polygons) fill.addPolygon(rings, index);
-      features.push(record(f, program.keys));
+      features.add(f.feature);
     }
     if (fill.vertexCount === 0) return null;
     return {
       layerId: program.id,
       type: "fill",
       extent: source.extent,
-      features,
+      features: features.finish(),
       main: geometry(fill.vertices.finish(), fill.indices.finish(), fill.vertexCount),
       outline: fill.edges.length > 0 ? geometry(new ArrayBuffer(0), fill.edges.finish(), fill.vertexCount) : null,
     };
@@ -204,19 +192,19 @@ function buildBucket(
     const miterLimit = typeof layout.miterLimit === "number" ? layout.miterLimit : 2;
     const lines = new LineBuilder({ cap, join, miterLimit, roundLimit: 0.94 });
     for (const f of selected) {
-      const index = features.length;
+      const index = features.count;
       const parts = f.feature.geometry();
       if (parts.length === 0) continue;
       const closed = f.feature.type === 3;
       for (const part of parts) lines.addLine(part, index, closed);
-      features.push(record(f, program.keys));
+      features.add(f.feature);
     }
     if (lines.vertexCount === 0) return null;
     return {
       layerId: program.id,
       type: "line",
       extent: source.extent,
-      features,
+      features: features.finish(),
       main: geometry(lines.vertices.finish(), lines.indices.finish(), lines.vertexCount),
       outline: null,
     };
@@ -230,21 +218,29 @@ function buildBucket(
       spacing: typeof layout.spacing === "number" ? layout.spacing : 250,
       transform: layout.transform === "uppercase" || layout.transform === "lowercase" ? layout.transform : "none",
     };
-    const labels: LabelCandidate[] = [];
+    const labels = new LabelBuilder();
     for (const f of selected) {
-      const index = features.length;
+      const index = features.count;
       const found = labelCandidates(f.feature, index, { zoom, feature: f }, symbol, source.extent);
       if (found.length === 0) continue;
-      labels.push(...found);
-      features.push(record(f, program.keys));
+      for (const c of found) labels.add(c.text, c.feature, c.size, c.priority, c.line, c.anchors, c.path);
+      features.add(f.feature);
     }
-    if (labels.length === 0) return null;
-    return { layerId: program.id, type: "symbol", extent: source.extent, features, main: null, outline: null, labels };
+    if (labels.count === 0) return null;
+    return {
+      layerId: program.id,
+      type: "symbol",
+      extent: source.extent,
+      features: features.finish(),
+      main: null,
+      outline: null,
+      labels: labels.finish(),
+    };
   }
   if (program.type === "circle") {
     const circles = new CircleBuilder();
     for (const f of selected) {
-      const index = features.length;
+      const index = features.count;
       const parts = f.feature.geometry();
       let added = false;
       for (const part of parts) {
@@ -255,14 +251,14 @@ function buildBucket(
           }
         }
       }
-      if (added) features.push(record(f, program.keys));
+      if (added) features.add(f.feature);
     }
     if (circles.vertexCount === 0) return null;
     return {
       layerId: program.id,
       type: "circle",
       extent: source.extent,
-      features,
+      features: features.finish(),
       main: geometry(circles.vertices.finish(), circles.indices.finish(), circles.vertexCount),
       outline: null,
     };
