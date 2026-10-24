@@ -5,7 +5,7 @@ import { buildAll } from "../../scripts/build.ts";
 import { startServer } from "../../scripts/server.ts";
 import type { Page } from "./cdp.ts";
 import { Browser } from "./cdp.ts";
-import { fixtureRoute } from "./fixtures.ts";
+import { fixtureRoute, square } from "./fixtures.ts";
 import { BORDER, zoomColor } from "./png.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -52,6 +52,59 @@ function rasterStyle(base: string, path: string): string {
       { id: "r", type: "raster", source: "fx", paint: { fadeDuration: 0 } },
     ],
   });
+}
+
+function geojsonStyle(data: unknown): string {
+  return JSON.stringify({
+    version: 1,
+    sources: { g: { type: "geojson", data } },
+    layers: [
+      { id: "bg", type: "background", paint: { color: "#ffffff" } },
+      {
+        id: "fill",
+        type: "fill",
+        source: "g",
+        filter: ["==", ["geometry-type"], "Polygon"],
+        paint: { color: ["coalesce", ["get", "color"], "#ff0000"] },
+      },
+      {
+        id: "line",
+        type: "line",
+        source: "g",
+        filter: ["==", ["geometry-type"], "LineString"],
+        paint: { color: "#0000ff", width: 6 },
+      },
+      {
+        id: "dots",
+        type: "circle",
+        source: "g",
+        filter: ["==", ["geometry-type"], "Point"],
+        paint: { color: "#00ff00", radius: 10 },
+      },
+    ],
+  });
+}
+
+const RED = [255, 0, 0, 255];
+const BLUE = [0, 0, 255, 255];
+const GREEN = [0, 255, 0, 255];
+const WHITE = [255, 255, 255, 255];
+
+async function framesDuring(page: Page, action: string, x: number, y: number, ms: number): Promise<RGBA[]> {
+  return page.evaluate<RGBA[]>(`(async () => {
+    const samples = [];
+    const start = performance.now();
+    ${action};
+    await new Promise((resolve) => {
+      const tick = () => {
+        samples.push(window.pixel(${x}, ${y}));
+        if (performance.now() - start > ${ms}) return resolve(0);
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    return samples;
+  })()`);
 }
 
 async function createMap(page: Page, style: string, options: Record<string, unknown> = {}): Promise<void> {
@@ -191,6 +244,116 @@ const specs: Spec[] = [
         const c = await pixel(page, x, y);
         if (near(c, [255, 255, 255], 3)) fail(`blank pixel at ${x},${y} at pitch 60`);
       }
+    },
+  },
+  {
+    name: "GeoJSON polygons, holes, lines and circles render in place",
+    async run({ page, shot }) {
+      const outer = [
+        [-10, -10],
+        [10, -10],
+        [10, 10],
+        [-10, 10],
+        [-10, -10],
+      ];
+      const hole = [
+        [-3, -3],
+        [3, -3],
+        [3, 3],
+        [-3, 3],
+        [-3, -3],
+      ];
+      const data = {
+        type: "FeatureCollection",
+        features: [
+          { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [outer, hole] } },
+          {
+            type: "Feature",
+            properties: {},
+            geometry: {
+              type: "LineString",
+              coordinates: [
+                [-15, -12],
+                [15, -12],
+              ],
+            },
+          },
+          { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [14, 0] } },
+        ],
+      };
+      await createMap(page, geojsonStyle(data), { zoom: 4 });
+      await shot("geojson");
+      const checks: [number, number, readonly number[], string][] = [
+        [500, 300, RED, "polygon fill"],
+        [400, 300, WHITE, "inside the hole"],
+        [300, 200, RED, "polygon fill north-west"],
+        [400, 575, BLUE, "line"],
+        [719, 300, GREEN, "circle centre"],
+        [740, 300, WHITE, "outside the circle"],
+        [100, 300, WHITE, "outside everything"],
+      ];
+      for (const [x, y, colour, what] of checks) {
+        const c = await pixel(page, x, y);
+        if (!near(c, colour, 8)) fail(`${what} at ${x},${y}: expected ${colour}, got ${c}`);
+      }
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
+    name: "GeoJSON loads from a URL and setData swaps it without a blank frame",
+    async run({ page, base, shot }) {
+      await createMap(page, geojsonStyle(`${base}/fixture/geojson/square.json`), { zoom: 4 });
+      const first = await pixel(page, 500, 300);
+      if (!near(first, BLUE, 8)) fail(`expected the URL data (blue) at 500,300, got ${first}`);
+      const update = JSON.stringify(square(10, "#ff0000"));
+      const samples = await framesDuring(page, `window.map.getSource("g").setData(${update})`, 500, 300, 1200);
+      await idle(page);
+      await shot("after-set-data");
+      const blank = samples.filter((c) => near(c, WHITE, 8));
+      if (blank.length > 0) fail(`${blank.length} of ${samples.length} frames were blank during setData`);
+      const last = await pixel(page, 500, 300);
+      if (!near(last, RED, 8)) fail(`expected the new data (red) after setData, got ${last}`);
+      const smaller = JSON.stringify(square(4, "#ff0000"));
+      await page.evaluate(`void window.map.getSource("g").setData(${smaller})`);
+      await idle(page);
+      const outside = await pixel(page, 500, 300);
+      if (!near(outside, WHITE, 8)) fail(`expected the smaller square to leave 500,300 blank, got ${outside}`);
+      const count = await page.evaluate<number>("window.map.getSource('g').featureCount");
+      if (count !== 1) fail(`expected one feature after setData, got ${count}`);
+    },
+  },
+  {
+    name: "filter edits keep vector features on screen while tiles rebuild",
+    async run({ page }) {
+      await createMap(page, geojsonStyle(square(10, "#ff0000")), { zoom: 4 });
+      const samples = await framesDuring(
+        page,
+        `window.map.setFilter("fill", ["all", ["==", ["geometry-type"], "Polygon"], ["has", "color"]])`,
+        500,
+        300,
+        800,
+      );
+      await idle(page);
+      const blank = samples.filter((c) => near(c, WHITE, 8));
+      if (blank.length > 0) fail(`${blank.length} of ${samples.length} frames were blank after setFilter`);
+      const c = await pixel(page, 500, 300);
+      if (!near(c, RED, 8)) fail(`expected the fill after setFilter, got ${c}`);
+    },
+  },
+  {
+    name: "a missing GeoJSON URL reports a source error",
+    async run({ page, base }) {
+      const style = geojsonStyle(`${base}/fixture/geojson/none.json`);
+      await page.evaluate(`(async () => {
+        window.errors = [];
+        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, center: [0, 0], zoom: 3, style: ${style} });
+        window.map.on("error", (e) => window.errors.push({ code: e.error.code, message: e.error.message }));
+        await new Promise((r) => setTimeout(r, 500));
+      })()`);
+      const errors = await page.evaluate<{ code: string; message: string }[]>("window.errors");
+      if (!errors.some((e) => e.code === "source-error" && e.message.includes("none.json")))
+        fail(`expected a source-error naming the URL, got ${JSON.stringify(errors)}`);
     },
   },
   {
