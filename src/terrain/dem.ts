@@ -157,7 +157,8 @@ export function frameStrips(grid: DemGrid): FrameStrip[] {
   const n = grid.size + 2;
   const strip = (x: number, y: number, width: number, height: number): FrameStrip => {
     const data = new Float32Array(width * height * 2);
-    for (let j = 0; j < height; j++) for (let i = 0; i < width; i++) horn(grid, x + i, y + j, data, (j * width + i) * 2);
+    for (let j = 0; j < height; j++)
+      for (let i = 0; i < width; i++) horn(grid, x + i, y + j, data, (j * width + i) * 2);
     return { x, y, width, height, data };
   };
   return [strip(0, 0, n, 2), strip(0, n - 2, n, 2), strip(0, 2, 2, n - 4), strip(n - 2, 2, 2, n - 4)];
