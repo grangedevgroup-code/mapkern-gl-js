@@ -1,305 +1,215 @@
-# Style reference
+# Styles
 
-A style is a JSON object that says which data to load and how to draw it. Pass it to `new Map({ style })` or `map.setStyle()`, or pass the URL of a JSON file.
+A style tells Maplet what data to load and how to draw it. You pass it to the map as an object, or as the URL of a JSON file.
 
-```json
-{
-  "version": 1,
-  "center": [-122.335, 47.608],
-  "zoom": 12,
-  "sources": {
-    "places": { "type": "geojson", "data": "places.geojson" }
+```js
+const style = {
+  version: 1,
+  sources: {
+    places: { type: "geojson", data: "places.geojson" },
   },
-  "layers": [
-    { "id": "background", "type": "background", "paint": { "color": "#f4f3ef" } },
-    { "id": "places", "type": "circle", "source": "places", "paint": { "radius": 6, "color": "#e4572e" } }
-  ]
-}
+  layers: [
+    { id: "background", type: "background", paint: { color: "#f4f3ef" } },
+    { id: "places", type: "circle", source: "places", paint: { radius: 6, color: "#e4572e" } },
+  ],
+};
 ```
 
-Maplet checks the whole style before it draws anything. If something is wrong, the map emits one `error` event that lists every problem with its path, for example `layers[2].paint.colour: unknown paint property "colour"`. You can run the same check yourself with `validateStyle(style)`.
+A style can also set `center`, `zoom`, `bearing` and `pitch`. The map uses them when you don't pass those options yourself.
 
-## Top level
-
-| Key | Type | Meaning |
-| --- | --- | --- |
-| `version` | `1` | Required. The style format version |
-| `name` | string | Optional name |
-| `center` | `[lng, lat]` | Starting position, used when the map options do not set one |
-| `zoom` | number | Starting zoom |
-| `bearing` | number | Starting rotation in degrees, clockwise from north |
-| `pitch` | number | Starting tilt in degrees, 0 looks straight down |
-| `sources` | object | Data sources by id |
-| `layers` | array | Layers, drawn in order from first to last |
+Maplet checks the whole style before drawing it. If something is wrong you get a single `error` event that lists every problem, like `layers[2].paint.colour: "colour" is not a property of fill layers`. `validateStyle(style)` runs the same check without a map.
 
 ## Sources
 
-### `vector`
+### Vector tiles
 
-Vector tiles in the Mapbox Vector Tile format.
-
-```json
-{ "type": "vector", "url": "https://example.com/city.pmtiles" }
-{ "type": "vector", "tiles": ["https://example.com/tiles/{z}/{x}/{y}.pbf"], "maxZoom": 14 }
+```js
+osm: { type: "vector", url: "seattle.pmtiles" }
+roads: { type: "vector", tiles: ["https://example.com/tiles/{z}/{x}/{y}.pbf"], maxZoom: 14 }
 ```
 
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `url` | | A `.pmtiles` file, a `pmtiles://` URL or a TileJSON document |
-| `tiles` | | One or more tile URL templates. Use `url` or `tiles` |
-| `minZoom` | 0 | Lowest zoom level with tiles |
-| `maxZoom` | 14 | Highest zoom level with tiles. Maplet scales up the last level when you zoom in further |
-| `bounds` | whole world | `[west, south, east, north]`. No tiles are requested outside it |
-| `scheme` | `"xyz"` | `"tms"` if the y axis of the tile grid points north |
-| `attribution` | | Text or HTML links shown in the attribution control |
-| `promoteId` | | Feature property to use as the feature id |
+`url` can point to a `.pmtiles` file or a TileJSON document. `tiles` takes one or more URL templates. Besides `{z}`, `{x}` and `{y}`, templates understand `{-y}`, `{quadkey}` and `{bbox-epsg-3857}` for servers that number tiles differently.
 
-A PMTiles file or TileJSON can supply `minZoom`, `maxZoom`, `bounds` and `attribution`. Values in the style win.
+The other options are `minZoom` and `maxZoom` (0 and 14 unless the file says otherwise), `bounds` as `[west, south, east, north]` to skip requests outside an area, `scheme: "tms"` for tile sets numbered from the south, `attribution` for the credit line, and `promoteId` to use one of the feature's properties as its id. Anything you set in the style wins over what the file says.
 
-Tile URL templates can use `{z}`, `{x}`, `{y}`, `{-y}` (the TMS row), `{quadkey}` and `{bbox-epsg-3857}` (for WMS servers).
+When you zoom past `maxZoom`, Maplet keeps drawing the last level, scaled up.
 
-### `raster`
+### Raster tiles
 
-Image tiles in any format the browser can decode: PNG, JPEG, WebP or AVIF.
-
-```json
-{ "type": "raster", "tiles": ["https://example.com/imagery/{z}/{x}/{y}.jpg"], "tileSize": 256, "maxZoom": 19 }
+```js
+imagery: { type: "raster", tiles: ["https://example.com/imagery/{z}/{x}/{y}.jpg"], tileSize: 256, maxZoom: 19 }
 ```
 
-It takes the same keys as `vector` except `promoteId`, plus `tileSize` (default 256), the size of one tile in pixels. The default `maxZoom` for raster sources is 22.
+Raster sources take the same options as vector ones, minus `promoteId`, plus `tileSize`, which is 256 unless you change it. Any image the browser can decode works. `maxZoom` defaults to 22 here.
 
-### `geojson`
+### GeoJSON
 
-GeoJSON from an object or a URL. Maplet cuts it into tiles in a worker.
-
-```json
-{ "type": "geojson", "data": "https://example.com/stations.geojson" }
+```js
+stations: { type: "geojson", data: "stations.geojson" }
 ```
 
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `data` | | Required. A GeoJSON object or a URL |
-| `maxZoom` | 18 | Tiles are cut up to this zoom. Above it, the last level is scaled up |
-| `tolerance` | 0.375 | How much lines and polygons are simplified at lower zooms, in pixels. 0 keeps every point |
-| `buffer` | 64 | How far each tile reaches past its edge, in pixels of a 512 pixel tile. Raise it for very wide lines or large circles |
-| `attribution` | | Text shown in the attribution control |
-| `promoteId` | | Feature property to use as the feature id |
+`data` is a GeoJSON object or a URL. Maplet cuts the data into tiles in a worker, so even large files stay smooth to pan around. You can change the data later with [`setData()`](api.md#geojson).
 
-Maplet accepts `FeatureCollection`, `Feature`, bare geometries and `GeometryCollection`. Polygon rings can wind either way. Features that cross the 180th meridian are drawn on both sides of it.
+A few options control how the tiles are made. `maxZoom` (18) is the last zoom level that gets its own tiles. `tolerance` (0.375) is how far, in pixels, lines and polygons may be simplified when zoomed out; 0 keeps every point. `buffer` (64) is how far each tile reaches past its edge, in pixels of a 512 pixel tile. Raise it if you draw very wide lines or big circles and see them cut off at tile edges. `attribution` and `promoteId` work as for vector tiles.
 
-To change the data later, call `setData()` on the source. See the [API reference](api.md#geojson-sources).
+Polygon rings can wind either way, and shapes that cross the 180th meridian show up on both sides of it.
 
 ## Layers
 
-Every layer has an `id` and a `type`. Layers that draw data also have a `source`.
+Every layer has an `id` and a `type`. Layers that draw data also name a `source`, and for vector tiles a `sourceLayer`, which is the layer inside the tiles. Layers are drawn in order, so later ones end up on top.
 
-| Key | Meaning |
-| --- | --- |
-| `id` | Unique name |
-| `type` | `background`, `raster`, `fill`, `line`, `circle` or `symbol` |
-| `source` | Id of the source to draw from |
-| `sourceLayer` | For vector tile sources, the layer inside the tiles. Not used with GeoJSON |
-| `filter` | An expression. Only features where it is true are drawn |
-| `minZoom` | The layer is hidden below this zoom |
-| `maxZoom` | The layer is hidden at and above this zoom |
-| `visible` | `false` hides the layer. Default `true` |
-| `paint` | Colours, widths and other drawing properties |
-| `layout` | Properties that change the geometry, such as line caps or label text |
-| `sortKey` | `fill`, `line` and `circle` only. An expression; features with a higher value are drawn on top |
+Any layer can have a `filter` (an expression; only features where it's true get drawn), `minZoom` and `maxZoom` to hide it outside a zoom range, and `visible: false` to hide it altogether. Fill, line and circle layers can also have a `sortKey` expression: features with a higher value are drawn over the others.
 
-Most paint and layout values can be a constant or an [expression](#expressions). The tables below mark which properties can use feature data. All of them can depend on zoom.
+Drawing settings go in `paint`, and settings that change the shape of what's drawn, like line caps or label text, go in `layout`. Most of them can be a fixed value or an [expression](#expressions). In the tables below, "per feature" means the value can come from feature data. Everything can depend on zoom.
 
-### `background`
+### background
 
-Fills the whole map with one color. It is usually the first layer.
+Fills the whole map with one color. It's usually the first layer.
 
 | Paint | Default |
 | --- | --- |
-| `color` | `"#000000"` |
+| `color` | `#000000` |
 | `opacity` | 1 |
 
-### `raster`
+### raster
 
-| Paint | Default | Meaning |
+| Paint | Default | |
 | --- | --- | --- |
 | `opacity` | 1 | |
-| `brightnessMin` | 0 | Maps black to this brightness, 0 to 1 |
-| `brightnessMax` | 1 | Maps white to this brightness, 0 to 1 |
-| `contrast` | 0 | -1 to 1 |
-| `saturation` | 0 | -1 to 1. -1 is greyscale |
-| `hueRotate` | 0 | Degrees |
-| `fadeDuration` | 200 | Fade-in time for new tiles in milliseconds. Constant only |
-| `resampling` | `"linear"` | `"linear"` or `"nearest"`. Constant only |
+| `brightnessMin`, `brightnessMax` | 0, 1 | Squeeze the brightness range, from 0 to 1 |
+| `contrast` | 0 | From -1 to 1 |
+| `saturation` | 0 | From -1 (grey) to 1 |
+| `hueRotate` | 0 | In degrees |
+| `fadeDuration` | 200 | How long new tiles take to fade in, in ms. Fixed value only |
+| `resampling` | `linear` | Or `nearest` for sharp pixels. Fixed value only |
 
-### `fill`
+### fill
 
 Draws polygons.
 
-| Paint | Default | Feature data | Meaning |
-| --- | --- | --- | --- |
-| `color` | `"#000000"` | yes | |
-| `opacity` | 1 | yes | |
-| `outlineColor` | none | yes | Draws a one pixel outline in this colour |
-| `translate` | `[0, 0]` | | Offset in pixels. Constant only |
-| `antialias` | `true` | | Smooths the outline. Constant only |
-
-### `line`
-
-Draws lines, and the outlines of polygons.
-
-| Paint | Default | Feature data | Meaning |
-| --- | --- | --- | --- |
-| `color` | `"#000000"` | yes | |
-| `width` | 1 | yes | Pixels |
-| `opacity` | 1 | yes | |
-| `blur` | 0 | yes | Softens the edges, in pixels |
-| `dash` | none | | Dash pattern in multiples of the line width, for example `[2, 1]`. Constant only |
-
-| Layout | Default | Values |
+| Paint | Default | |
 | --- | --- | --- |
-| `cap` | `"butt"` | `"butt"`, `"round"`, `"square"` |
-| `join` | `"miter"` | `"miter"`, `"round"`, `"bevel"` |
-| `miterLimit` | 2 | Sharp corners longer than this many widths become bevels |
+| `color` | `#000000` | per feature |
+| `opacity` | 1 | per feature |
+| `outlineColor` | the fill color | per feature. The thin line around each polygon |
+| `antialias` | `true` | Draws that outline, which also smooths the edges. Fixed value only |
+| `translate` | `[0, 0]` | Shift in pixels. Fixed value only |
 
-### `circle`
+### line
 
-Draws a circle at every point.
+Draws lines, and the edges of polygons.
 
-| Paint | Default | Feature data | Meaning |
-| --- | --- | --- | --- |
-| `radius` | 5 | yes | Pixels |
-| `color` | `"#000000"` | yes | |
-| `opacity` | 1 | yes | |
-| `strokeColor` | `"#000000"` | yes | |
-| `strokeWidth` | 0 | yes | Pixels |
-| `blur` | 0 | yes | Softens the edge, in pixels |
-
-### `symbol`
-
-Draws text labels. Labels that would overlap are hidden, starting with the lowest `priority`.
-
-| Layout | Default | Feature data | Meaning |
-| --- | --- | --- | --- |
-| `text` | `""` | yes | The label. Usually `["get", "name"]` |
-| `size` | 14 | yes | Font size in pixels |
-| `priority` | 0 | yes | Higher values win when labels collide |
-| `font` | `["sans-serif"]` | | Font families in order of preference. Maplet uses fonts installed on the device |
-| `weight` | `"normal"` | | `"normal"` or `"bold"` |
-| `italic` | `false` | | |
-| `placement` | `"point"` | | `"point"` or `"line"`. Line labels follow the line |
-| `anchor` | `"center"` | | Which part of the label sits on the point: `"center"`, `"top"`, `"bottom"`, `"left"`, `"right"` |
-| `offset` | `[0, 0]` | | Shift in multiples of the font size |
-| `maxWidth` | 10 | | Wrap point labels after this many font sizes |
-| `letterSpacing` | 0 | | Extra space between letters, in multiples of the font size |
-| `padding` | 2 | | Empty space kept around the label, in pixels |
-| `spacing` | 250 | | Distance between repeated line labels, in pixels |
-| `allowOverlap` | `false` | | Draw the label even when it collides |
-| `transform` | `"none"` | | `"none"`, `"uppercase"`, `"lowercase"` |
-
-| Paint | Default | Feature data |
+| Paint | Default | |
 | --- | --- | --- |
-| `color` | `"#000000"` | yes |
-| `haloColor` | transparent | yes |
-| `haloWidth` | 0 | yes |
-| `opacity` | 1 | yes |
+| `color` | `#000000` | per feature |
+| `width` | 1 | per feature, in pixels |
+| `opacity` | 1 | per feature |
+| `blur` | 0 | per feature. Softens the edges, in pixels |
+| `dash` | none | A pattern like `[2, 1]`, measured in line widths. Fixed value only |
+
+| Layout | Default | |
+| --- | --- | --- |
+| `cap` | `butt` | Or `round`, `square` |
+| `join` | `miter` | Or `round`, `bevel` |
+| `miterLimit` | 2 | Sharp corners longer than this many widths are cut off |
+
+### circle
+
+Draws a circle at each point.
+
+| Paint | Default | |
+| --- | --- | --- |
+| `radius` | 5 | per feature, in pixels |
+| `color` | `#000000` | per feature |
+| `opacity` | 1 | per feature |
+| `strokeColor` | `#000000` | per feature |
+| `strokeWidth` | 0 | per feature, in pixels |
+| `blur` | 0 | per feature. Softens the edge, in pixels |
+
+### symbol
+
+Draws text. When labels would overlap, the one with the lower `priority` is hidden.
+
+| Layout | Default | |
+| --- | --- | --- |
+| `text` | empty | per feature. Usually `["get", "name"]` |
+| `size` | 14 | per feature, in pixels |
+| `priority` | 0 | per feature. Higher wins |
+| `font` | `["sans-serif"]` | Font families to try in order. Labels use fonts installed on the device |
+| `weight` | `normal` | Or `bold` |
+| `italic` | `false` | |
+| `placement` | `point` | `line` makes the text follow the line |
+| `anchor` | `center` | Which side of the text sits on the point: `top`, `bottom`, `left` or `right` |
+| `offset` | `[0, 0]` | Shift, measured in font sizes |
+| `maxWidth` | 10 | Wrap point labels after this many font sizes |
+| `letterSpacing` | 0 | Extra space between letters, in font sizes |
+| `padding` | 2 | Space kept clear around the label, in pixels |
+| `spacing` | 250 | Distance between repeats of a line label, in pixels |
+| `allowOverlap` | `false` | Show the label even when it collides |
+| `transform` | `none` | Or `uppercase`, `lowercase` |
+
+| Paint | Default | |
+| --- | --- | --- |
+| `color` | `#000000` | per feature |
+| `haloColor` | transparent | per feature |
+| `haloWidth` | 0 | per feature |
+| `opacity` | 1 | per feature |
 
 ## Colors
 
-Colors are CSS color strings: `"#2f6fdb"`, `"#2f6fdb80"`, `"rgb(47, 111, 219)"`, `"rgba(47, 111, 219, 0.5)"`, `"hsl(218, 70%, 52%)"`, `"transparent"` and the CSS color names such as `"steelblue"`.
+Anything CSS accepts: `#2f6fdb`, `#2f6fdb80`, `rgb(47, 111, 219)`, `rgba(47, 111, 219, 0.5)`, `hsl(218, 70%, 52%)`, `transparent`, or a color name like `steelblue`.
 
 ## Expressions
 
-An expression is an array whose first item names an operation. Expressions compute a value from the zoom level and the feature being drawn.
+An expression is an array that starts with the name of an operation. Maplet works out its value for each feature and zoom level.
 
-```json
+```js
 ["get", "name"]
 ["match", ["get", "class"], "motorway", "#e8a33d", "primary", "#f4c46a", "#ffffff"]
 ["interpolate", ["linear"], ["zoom"], 10, 1, 16, 8]
 ```
 
-### Data
+The first one reads a property. The second picks a color by road class, with white for everything else. The third makes something 1 pixel wide at zoom 10 and 8 pixels wide at zoom 16, growing smoothly in between.
 
-| Expression | Result |
-| --- | --- |
-| `["get", key]` | The value of a feature property |
-| `["has", key]` | `true` if the feature has the property |
-| `["properties"]` | All properties as an object |
-| `["id"]` | The feature id |
-| `["geometry-type"]` | `"Point"`, `"LineString"` or `"Polygon"` |
-| `["zoom"]` | The current zoom level |
-| `["literal", value]` | The value as written, for arrays and objects |
+`interpolate` also takes `["exponential", 1.5]` for a curve that speeds up, and `["cubic-bezier", x1, y1, x2, y2]` like a CSS easing. It works on numbers and colors. `step` jumps instead of blending:
 
-### Decisions
-
-| Expression | Result |
-| --- | --- |
-| `["==", a, b]`, `["!=", a, b]` | Equality |
-| `["<", a, b]`, `["<=", a, b]`, `[">", a, b]`, `[">=", a, b]` | Comparison |
-| `["all", ...]`, `["any", ...]`, `["none", ...]` | And, or, neither |
-| `["!", value]` | Not |
-| `["in", value, list]` | `true` if the list or string contains the value |
-| `["match", input, label, output, ..., fallback]` | The output for the first label equal to the input. A label can be a list of values |
-| `["case", condition, output, ..., fallback]` | The output for the first true condition |
-| `["coalesce", a, b, ...]` | The first value that is not null |
-
-### Ramps
-
-`interpolate` blends between stops. `step` jumps from one stop to the next.
-
-```json
-["interpolate", ["linear"], ["zoom"], 5, 0.5, 12, 2, 16, 6]
-["interpolate", ["exponential", 1.5], ["zoom"], 10, 1, 18, 20]
-["interpolate", ["cubic-bezier", 0.4, 0, 0.6, 1], ["get", "population"], 0, 4, 1000000, 12]
+```js
 ["step", ["zoom"], "#999999", 12, "#555555", 15, "#222222"]
 ```
 
-Colors interpolate too.
+Here's what else is available:
 
-### Math
+- Reading data: `get`, `has`, `properties`, `id`, `geometry-type` (`"Point"`, `"LineString"` or `"Polygon"`), `zoom`, and `literal` for arrays and objects you want used as-is.
+- Decisions: `==`, `!=`, `<`, `<=`, `>`, `>=`, `all`, `any`, `none`, `!`, `in`, `match`, `case` and `coalesce`. In `match`, a label can be a list of values.
+- Math: `+`, `-`, `*`, `/`, `%`, `^`, `abs`, `min`, `max`, `round`, `floor`, `ceil`, `sqrt`, `ln`, `log10`, `log2`, `sin`, `cos`, `tan`, `pi` and `e`.
+- Text: `concat`, `upcase`, `downcase`, `length` and `slice`.
+- Types: `to-string`, `to-number`, `to-boolean`, `to-color`, `rgb`, `rgba` and `typeof`.
 
-`+`, `-`, `*`, `/`, `%`, `^`, `abs`, `min`, `max`, `round`, `floor`, `ceil`, `sqrt`, `ln`, `log10`, `log2`, `sin`, `cos`, `tan`, `pi`, `e`
+A filter is just an expression that comes out true or false:
 
-### Text
-
-`concat`, `upcase`, `downcase`, `length`, `slice`
-
-### Types
-
-`to-string`, `to-number`, `to-boolean`, `to-color`, `rgb`, `rgba`, `typeof`
-
-## Filters
-
-A filter is an expression that returns `true` or `false`.
-
-```json
+```js
 {
-  "id": "major-roads",
-  "type": "line",
-  "source": "osm",
-  "sourceLayer": "road",
-  "filter": ["all", ["in", ["get", "class"], ["literal", ["motorway", "trunk", "primary"]]], ["!=", ["get", "brunnel"], "tunnel"]],
-  "paint": { "color": "#e8a33d", "width": ["interpolate", ["linear"], ["zoom"], 8, 1, 16, 10] }
+  id: "major-roads",
+  type: "line",
+  source: "osm",
+  sourceLayer: "road",
+  filter: ["all", ["in", ["get", "class"], ["literal", ["motorway", "trunk", "primary"]]], ["!=", ["get", "brunnel"], "tunnel"]],
+  paint: { color: "#e8a33d", width: ["interpolate", ["linear"], ["zoom"], 8, 1, 16, 10] },
 }
 ```
 
 ## The built-in style
 
-`lightStyle(options)` returns a complete style for tiles made by `maplet-tiles`.
-
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `url` | `"tiles.pmtiles"` | A `.pmtiles` file or TileJSON URL |
-| `tiles` | | Tile URL templates, instead of `url` |
-| `maxZoom` | 14 | Highest zoom level in the tiles. Used with `tiles` |
-| `attribution` | the credit stored in the tile file | Credit shown in the corner |
-| `labels` | `true` | Include place, road, water and point of interest labels |
-| `buildings` | `true` | Include buildings |
-| `font` | system sans-serif fonts | Font families for labels |
-
-The result is a plain style object, so you can change it before you use it:
+`lightStyle()` gives you a complete street map style for tiles made with `maplet-tiles`:
 
 ```js
 const style = lightStyle({ url: "seattle.pmtiles" });
+```
+
+You can turn off parts of it with `labels: false` or `buildings: false`, choose label fonts with `font`, and replace the credit line with `attribution`. If your tiles come from a URL template instead of a file, pass `tiles` (and `maxZoom` if it isn't 14).
+
+It returns a normal style object, so you can change it before using it:
+
+```js
 style.layers = style.layers.filter((layer) => layer.id !== "poi-label");
-const map = new Map({ container: "map", style });
 ```
