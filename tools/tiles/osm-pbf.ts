@@ -41,36 +41,49 @@ export interface BlockKinds {
   relations: boolean;
 }
 
-export function indexBlobs(path: string): BlobRef[] {
+export interface BlobIndex {
+  blobs: BlobRef[];
+  fileSize: number;
+  damagedAt: number | null;
+  damage: string | null;
+}
+
+export function indexBlobs(path: string): BlobIndex {
   const fd = openSync(path, "r");
   try {
     const size = fstatSync(fd).size;
     const refs: BlobRef[] = [];
     const lengthBuf = Buffer.alloc(4);
     let pos = 0;
+    const stop = (damage: string): BlobIndex => ({ blobs: refs, fileSize: size, damagedAt: pos, damage });
     while (pos < size) {
-      if (readSync(fd, lengthBuf, 0, 4, pos) !== 4) throw new Error(`Truncated blob header length at ${pos}`);
+      if (readSync(fd, lengthBuf, 0, 4, pos) !== 4) return stop("the file ends inside a blob header");
       const headerLength = lengthBuf.readUInt32BE(0);
-      if (headerLength > 64 * 1024) throw new Error(`Blob header at ${pos} is too large (${headerLength} bytes)`);
+      if (headerLength === 0 || headerLength > 64 * 1024) return stop(`a blob header claims ${headerLength} bytes`);
       const header = Buffer.alloc(headerLength);
       if (readSync(fd, header, 0, headerLength, pos + 4) !== headerLength)
-        throw new Error(`Truncated blob header at ${pos}`);
-      const r = new Reader(header);
+        return stop("the file ends inside a blob header");
       let type = "";
       let dataSize = 0;
-      while (!r.done) {
-        const tag = r.tag();
-        const field = tag >> 3;
-        if (field === 1) type = r.string();
-        else if (field === 3) dataSize = r.varint();
-        else r.skip(tag & 7);
+      try {
+        const r = new Reader(header);
+        while (!r.done) {
+          const tag = r.tag();
+          const field = tag >> 3;
+          if (field === 1) type = r.string();
+          else if (field === 3) dataSize = r.varint();
+          else r.skip(tag & 7);
+        }
+      } catch {
+        return stop("a blob header could not be parsed");
       }
-      if (dataSize <= 0 || dataSize > 64 * 1024 * 1024)
-        throw new Error(`Blob at ${pos} has an invalid size ${dataSize}`);
+      if (type !== "OSMHeader" && type !== "OSMData") return stop(`a blob has the unknown type "${type.slice(0, 40)}"`);
+      if (dataSize <= 0 || dataSize > 64 * 1024 * 1024) return stop(`a blob claims ${dataSize} bytes of data`);
+      if (pos + 4 + headerLength + dataSize > size) return stop("the last blob is cut off");
       refs.push({ offset: pos + 4 + headerLength, size: dataSize, type });
       pos += 4 + headerLength + dataSize;
     }
-    return refs;
+    return { blobs: refs, fileSize: size, damagedAt: null, damage: null };
   } finally {
     closeSync(fd);
   }
