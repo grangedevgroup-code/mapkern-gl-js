@@ -335,6 +335,12 @@ export class Transform {
     const cam = this.cameraPos;
     const d = this.cameraDistance;
     const limit = options.maxTiles ?? 2000;
+    const pitch = this.pitchDeg * DEG;
+    const bearing = this.bearingDeg * DEG;
+    const dirX = Math.sin(pitch) * Math.sin(bearing);
+    const dirY = -Math.sin(pitch) * Math.cos(bearing);
+    const baseDepth = cam[2] * Math.cos(pitch);
+    const minDepth = this.nearZ;
     let minX = Infinity,
       maxX = -Infinity;
     for (const p of poly) {
