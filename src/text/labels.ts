@@ -7,7 +7,7 @@ import type { StyleLayer } from "../style/layer.ts";
 import type { RenderPiece, TileManager } from "../tiles/manager.ts";
 import type { LabelCandidate } from "../worker/symbols.ts";
 import type { FontSpec, GlyphMetrics } from "./glyphs.ts";
-import { GLYPH_SIZE, GlyphAtlas, SDF_RADIUS, cssFamily, needsWholeShaping, splitGraphemes } from "./glyphs.ts";
+import { cssFamily, GLYPH_SIZE, GlyphAtlas, needsWholeShaping, SDF_RADIUS, splitGraphemes } from "./glyphs.ts";
 import { textShader } from "./shader.ts";
 
 export interface SymbolLayerInput {
@@ -99,7 +99,8 @@ export class LabelRenderer {
   private readonly gl: GL;
   private labels = new Map<string, Label>();
   private lastPlacement = Number.NEGATIVE_INFINITY;
-  private placedVersion = "";
+  private placedStructure = "";
+  private placedCamera = -1;
   private texture: WebGLTexture | null = null;
   private vao: WebGLVertexArrayObject | null = null;
   private vertexBuffer: WebGLBuffer | null = null;
@@ -135,22 +136,39 @@ export class LabelRenderer {
     this.labels.clear();
   }
 
-  update(transform: Transform, inputs: readonly SymbolLayerInput[], now: number, cameraVersion: number, tilesVersion: number, pixelRatio: number): boolean {
-    const version = `${tilesVersion}|${inputs.map((i) => `${i.layer.id}:${i.layer.revision}`).join(",")}`;
-    const cameraKey = `${version}|${cameraVersion}`;
-    const due = cameraKey !== this.placedVersion && (now - this.lastPlacement >= PLACE_INTERVAL || version !== this.placedVersion.slice(0, version.length) || this.pendingGlyphs);
-    if (due) {
+  update(
+    transform: Transform,
+    inputs: readonly SymbolLayerInput[],
+    now: number,
+    cameraVersion: number,
+    pixelRatio: number,
+  ): boolean {
+    const parts: string[] = [];
+    for (const { layer, manager } of inputs) {
+      parts.push(`${layer.id}:${layer.revision}`);
+      for (const piece of manager.pieces) {
+        if (piece.tile.data?.buckets.has(layer.id)) parts.push(`${piece.tile.key}/${piece.wrap}`);
+      }
+    }
+    const structure = parts.join(",");
+    const structureChanged = structure !== this.placedStructure;
+    const cameraChanged = cameraVersion !== this.placedCamera;
+    if (structureChanged || this.pendingGlyphs || (cameraChanged && now - this.lastPlacement >= PLACE_INTERVAL)) {
       this.place(transform, inputs, now);
-      this.placedVersion = cameraKey;
+      this.placedStructure = structure;
+      this.placedCamera = cameraVersion;
       this.lastPlacement = now;
     }
-    let animating = cameraKey !== this.placedVersion || this.pendingGlyphs;
+    let animating = cameraVersion !== this.placedCamera || this.pendingGlyphs;
     const dt = Math.min(100, Math.max(0, now - (this.lastFrame ?? now)));
     this.lastFrame = now;
     for (const [key, label] of this.labels) {
       if (label.opacity !== label.target) {
         const step = dt / FADE_MS;
-        label.opacity = label.target > label.opacity ? Math.min(label.target, label.opacity + step) : Math.max(label.target, label.opacity - step);
+        label.opacity =
+          label.target > label.opacity
+            ? Math.min(label.target, label.opacity + step)
+            : Math.max(label.target, label.opacity - step);
         animating = true;
       }
       if (label.target === 0 && label.opacity <= 0) this.labels.delete(key);
@@ -208,7 +226,17 @@ export class LabelRenderer {
       const { y0, y1 } = atlas.dirty;
       gl.bindTexture(gl.TEXTURE_2D, this.texture);
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y0, atlas.width, y1 - y0, gl.RED, gl.UNSIGNED_BYTE, atlas.data.subarray(y0 * atlas.width, y1 * atlas.width));
+      gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        0,
+        y0,
+        atlas.width,
+        y1 - y0,
+        gl.RED,
+        gl.UNSIGNED_BYTE,
+        atlas.data.subarray(y0 * atlas.width, y1 * atlas.width),
+      );
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
       atlas.dirty = null;
     }
@@ -301,6 +329,8 @@ export class LabelRenderer {
     this.pendingGlyphs = false;
     const ws = transform.worldSize;
     const margin = 64;
+    const shown = new Set<string>();
+    for (const label of this.labels.values()) if (label.target === 1) shown.add(label.dedupe);
     for (let li = inputs.length - 1; li >= 0; li--) {
       const { layer, manager } = inputs[li]!;
       if (!layer.isVisible(zoom)) continue;
@@ -315,7 +345,8 @@ export class LabelRenderer {
         if (!bucket?.labels) continue;
         for (const c of bucket.labels) items.push({ piece, bucket, c, order: order++ });
       }
-      items.sort((a, b) => b.c.priority - a.c.priority || this.wasVisible(layer, a.c) - this.wasVisible(layer, b.c) || a.order - b.order);
+      const was = (c: LabelCandidate) => (shown.has(`${layer.id}|${c.text}`) ? 0 : 1);
+      items.sort((a, b) => b.c.priority - a.c.priority || was(a.c) - was(b.c) || a.order - b.order);
       for (const { piece, bucket, c } of items) {
         const tile = piece.tile;
         const extent = bucket.extent;
@@ -331,10 +362,13 @@ export class LabelRenderer {
           const wy = (tile.y + ty) / n;
           const p = transform.project(wx, wy);
           if (p.w <= 0 || p.w > transform.cameraToCenterDistance * 2.5) continue;
-          if (p.x < -margin || p.y < -margin || p.x > transform.width + margin || p.y > transform.height + margin) continue;
+          if (p.x < -margin || p.y < -margin || p.x > transform.width + margin || p.y > transform.height + margin)
+            continue;
           const laid = this.layout(layer, c.text, c.line, budget);
           if (!laid) continue;
-          ctx.feature = record ? { properties: record.props, id: record.id, geometryType: GEOMETRY[record.type] ?? "Unknown" } : undefined;
+          ctx.feature = record
+            ? { properties: record.props, id: record.id, geometryType: GEOMETRY[record.type] ?? "Unknown" }
+            : undefined;
           const size = layer.layoutValue<number>("size", ctx);
           const scale = size / GLYPH_SIZE;
           const w = laid.width * scale;
@@ -375,7 +409,7 @@ export class LabelRenderer {
           for (let i = 0; i < boxes.length; i += 4) grid.insert(boxes[i]!, boxes[i + 1]!, boxes[i + 2]!, boxes[i + 3]!);
           if (prior) prior.push([p.x, p.y]);
           else placed.set(dedupeKey, [[p.x, p.y]]);
-          const key = `${dedupeKey}|${record?.id ?? ""}|${Math.round(wx * ws / 4)}|${Math.round(wy * ws / 4)}`;
+          const key = `${dedupeKey}|${record?.id ?? ""}|${Math.round((wx * ws) / 4)}|${Math.round((wy * ws) / 4)}`;
           visible.add(key);
           const existing = this.labels.get(key);
           const color = layer.paintValue<RGBA>("color", ctx);
@@ -424,18 +458,12 @@ export class LabelRenderer {
     }
   }
 
-  private wasVisible(layer: StyleLayer, c: LabelCandidate): number {
-    for (const label of this.labels.values()) {
-      if (label.layer === layer && label.text === c.text && label.target === 1) return -1;
-    }
-    return 0;
-  }
-
   private build(transform: Transform, pixelRatio: number): void {
     let glyphs = 0;
     for (const label of this.labels.values()) if (label.opacity > 0) glyphs += label.laid.glyphs.length;
     const needed = glyphs * 4 * STRIDE;
-    if (this.vertexData.byteLength < needed) this.vertexData = new ArrayBuffer(Math.max(needed, this.vertexData.byteLength * 2));
+    if (this.vertexData.byteLength < needed)
+      this.vertexData = new ArrayBuffer(Math.max(needed, this.vertexData.byteLength * 2));
     const f32 = new Float32Array(this.vertexData);
     const u16 = new Uint16Array(this.vertexData);
     const u8 = new Uint8Array(this.vertexData);
@@ -484,7 +512,8 @@ export class LabelRenderer {
             [x1, y1, m.x + m.width, m.y + m.height],
             [x0, y1, m.x, m.y + m.height],
           ] as const;
-          for (const [dx, dy, u, w] of corners) put(q.cx + dx * cos - dy * sin, q.cy + dx * sin + dy * cos, u, w, label);
+          for (const [dx, dy, u, w] of corners)
+            put(q.cx + dx * cos - dy * sin, q.cy + dx * sin + dy * cos, u, w, label);
         }
         continue;
       }
@@ -493,10 +522,10 @@ export class LabelRenderer {
       visible++;
       const ax = Math.round((p.x + label.laid.offsetX * s) * pixelRatio) / pixelRatio;
       const ay = Math.round((p.y + label.laid.offsetY * s) * pixelRatio) / pixelRatio;
-      for (const gl of label.laid.glyphs) {
-        const m = gl.m;
-        const x0 = ax + (gl.x + m.left) * s;
-        const y0 = ay + (gl.y + m.top) * s;
+      for (const glyph of label.laid.glyphs) {
+        const m = glyph.m;
+        const x0 = ax + (glyph.x + m.left) * s;
+        const y0 = ay + (glyph.y + m.top) * s;
         const x1 = x0 + m.width * s;
         const y1 = y0 + m.height * s;
         put(x0, y0, m.x, m.y, label);
@@ -563,15 +592,20 @@ interface PathGlyph {
   advance: number;
 }
 
-function layoutAlongPath(transform: Transform, path: Float64Array, anchorDist: number, laid: Laid, scale: number): PathGlyph[] | null {
+function layoutAlongPath(
+  transform: Transform,
+  path: Float64Array,
+  anchorDist: number,
+  laid: Laid,
+  scale: number,
+): PathGlyph[] | null {
   const n = path.length / 2;
   if (n < 2) return null;
-  const ws = transform.worldSize;
   let target = anchorDist;
   let anchorSeg = 0;
   let anchorT = 0;
   for (let i = 0; i < n - 1; i++) {
-    const len = Math.hypot(path[i * 2 + 2]! - path[i * 2]!, path[i * 2 + 3]! - path[i * 2 + 1]!) * (1 / (1 / ws)) / ws;
+    const len = Math.hypot(path[i * 2 + 2]! - path[i * 2]!, path[i * 2 + 3]! - path[i * 2 + 1]!);
     if (target <= len || i === n - 2) {
       anchorSeg = i;
       anchorT = len > 0 ? Math.min(1, target / len) : 0;
@@ -586,7 +620,8 @@ function layoutAlongPath(transform: Transform, path: Float64Array, anchorDist: n
     screen.push(p.x, p.y);
   }
   const cum: number[] = [0];
-  for (let i = 1; i < n; i++) cum.push(cum[i - 1]! + Math.hypot(screen[i * 2]! - screen[i * 2 - 2]!, screen[i * 2 + 1]! - screen[i * 2 - 1]!));
+  for (let i = 1; i < n; i++)
+    cum.push(cum[i - 1]! + Math.hypot(screen[i * 2]! - screen[i * 2 - 2]!, screen[i * 2 + 1]! - screen[i * 2 - 1]!));
   const total = cum[n - 1]!;
   const anchorAt = cum[anchorSeg]! + (cum[anchorSeg + 1]! - cum[anchorSeg]!) * anchorT;
   const width = laid.width * scale;
