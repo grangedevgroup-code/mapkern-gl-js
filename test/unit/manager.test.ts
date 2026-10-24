@@ -44,7 +44,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 
 const options: ManagerOptions = {
   fadeDuration: 0,
-  backstopLevels: 2,
+  backstopLevels: [2],
   maxRetries: 2,
   cacheBytes: 1e9,
   failureCooldownMs: 60000,
@@ -199,7 +199,7 @@ test("missing data uses the ancestor and counts as no-data without one", async (
   assert.equal(manager.stats.blankPending, 0);
 });
 
-test("tiles that leave the view are aborted and released", async () => {
+test("tiles that leave the view linger briefly, then are aborted and released", async () => {
   const { transform, loader, manager } = setup(6);
   manager.update(transform, 0);
   await flush();
@@ -208,8 +208,26 @@ test("tiles that leave the view are aborted and released", async () => {
   transform.setCenter(-120, -40);
   manager.update(transform, 1);
   await flush();
-  assert.ok(inflight.every((p) => p.signal.aborted));
+  assert.ok(inflight.every((p) => !p.signal.aborted), "in-flight tiles keep loading right after leaving the view");
+  manager.update(transform, 3000);
+  await flush();
+  assert.ok(inflight.every((p) => p.signal.aborted), "tiles that stay out of view are aborted");
   assert.ok(manager.stats.aborted > 0);
+});
+
+test("a tile that returns to view while lingering is reused instead of refetched", async () => {
+  const { transform, loader, manager } = setup(6);
+  manager.update(transform, 0);
+  await flush();
+  const first = loader.pending.slice();
+  transform.setCenter(-120, -40);
+  manager.update(transform, 1);
+  transform.setCenter(10, 20);
+  manager.update(transform, 2);
+  await flush();
+  assert.ok(first.every((p) => !p.signal.aborted));
+  const again = loader.pending.filter((p) => first.some((f) => f.coord.z === p.coord.z && f.coord.x === p.coord.x && f.coord.y === p.coord.y) && !first.includes(p));
+  assert.equal(again.length, 0, "no duplicate requests for tiles still in flight");
 });
 
 test("cache evicts least recently used tiles over budget but keeps visible ones", async () => {
