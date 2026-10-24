@@ -20,6 +20,7 @@ export interface Tiling {
   maxZoom: number;
   roundZoom: boolean;
   bounds: Rect | null;
+  boundsPadding?: number;
 }
 
 export interface RenderPiece<D> {
@@ -259,6 +260,7 @@ export class TileManager<D> {
         this.loader.upload(next);
         const previous = tile.data;
         tile.data = next;
+        tile.revision++;
         if (previous) this.loader.release(previous);
         tile.bytes = this.loader.byteSize(next);
         uploaded = true;
@@ -311,7 +313,13 @@ export class TileManager<D> {
     const b = this.tiling.bounds;
     if (!b) return true;
     const n = 2 ** slot.z;
-    return slot.x / n < b.x1 && (slot.x + 1) / n > b.x0 && slot.y / n < b.y1 && (slot.y + 1) / n > b.y0;
+    const pad = (this.tiling.boundsPadding ?? 0) / n;
+    return (
+      slot.x / n < b.x1 + pad &&
+      (slot.x + 1) / n > b.x0 - pad &&
+      slot.y / n < b.y1 + pad &&
+      (slot.y + 1) / n > b.y0 - pad
+    );
   }
 
   private want(z: number, x: number, y: number, priority: number, now: number): Tile<D> {
@@ -523,6 +531,7 @@ export class TileManager<D> {
         tile.transition("empty");
       } else {
         tile.data = data;
+        tile.revision++;
         tile.bytes = this.loader.byteSize(data);
         tile.transition("prepared");
         if (!this.loader.needsUpload(data)) {
@@ -570,6 +579,7 @@ export class TileManager<D> {
     if (data === null) {
       if (tile.data) this.loader.release(tile.data);
       tile.data = null;
+      tile.revision++;
       tile.bytes = 0;
       tile.transition("empty");
       return;
@@ -581,6 +591,7 @@ export class TileManager<D> {
     }
     const previous = tile.data;
     tile.data = data;
+    tile.revision++;
     if (previous) this.loader.release(previous);
     tile.bytes = this.loader.byteSize(data);
   }
