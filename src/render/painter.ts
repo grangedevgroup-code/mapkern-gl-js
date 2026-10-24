@@ -1,7 +1,7 @@
 import type { Transform } from "../camera/transform.ts";
 import type { RasterSource } from "../sources/raster.ts";
 import type { MapSource } from "../sources/source.ts";
-import type { VectorTile } from "../sources/vector.ts";
+import type { VectorBucket, VectorTile } from "../sources/vector.ts";
 import { isVectorTileSource } from "../sources/vector.ts";
 import type { RGBA } from "../style/color.ts";
 import { premultiply } from "../style/color.ts";
@@ -9,10 +9,13 @@ import type { StyleLayer } from "../style/layer.ts";
 import type { SymbolLayerInput } from "../text/labels.ts";
 import { LabelRenderer } from "../text/labels.ts";
 import { textShader } from "../text/shader.ts";
-import type { TileManager } from "../tiles/manager.ts";
+import type { RenderPiece, TileManager } from "../tiles/manager.ts";
+import type { Tile } from "../tiles/tile.ts";
 import type { GL, Program } from "./gl.ts";
+import { PickBuffer } from "./pick.ts";
 import { rasterShader, solidShader } from "./shaders/raster.ts";
 import { circleShader, extrusionShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
+import type { PickPass } from "./vector-layers.ts";
 import { VectorPainter } from "./vector-layers.ts";
 
 export interface FrameInput {
@@ -22,6 +25,20 @@ export interface FrameInput {
   readonly sources: ReadonlyMap<string, MapSource>;
   readonly now: number;
   readonly cameraVersion: number;
+}
+
+export interface PickBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+export interface PickedFeature {
+  layer: StyleLayer;
+  tile: Tile<VectorTile>;
+  bucket: VectorBucket;
+  feature: number;
 }
 
 export interface PaintStats {
@@ -38,16 +55,19 @@ export class Painter {
   private readonly hue = new Float32Array(9);
   private readonly vector: VectorPainter;
   readonly labels: LabelRenderer;
+  private readonly pickBuffer: PickBuffer;
 
   constructor(gl: GL) {
     this.gl = gl;
     this.vector = new VectorPainter(gl);
     this.labels = new LabelRenderer(gl);
+    this.pickBuffer = new PickBuffer(gl);
     this.init();
   }
 
   init(): void {
     this.labels.reset();
+    this.pickBuffer.reset();
     for (const shader of [
       solidShader,
       rasterShader,
@@ -130,7 +150,60 @@ export class Painter {
     return animating;
   }
 
+  pick(frame: FrameInput, box: PickBox, accept: (layer: StyleLayer) => boolean): PickedFeature[] {
+    if (this.gl.isLost) return [];
+    const t = frame.transform;
+    const zoom = t.zoom;
+    const width = Math.max(1, Math.round((box.x1 - box.x0) * frame.pixelRatio));
+    const height = Math.max(1, Math.round((box.y1 - box.y0) * frame.pixelRatio));
+    const hx = Math.max(box.x1 - box.x0, 1 / frame.pixelRatio) / t.width;
+    const hy = Math.max(box.y1 - box.y0, 1 / frame.pixelRatio) / t.height;
+    const cx = (box.x0 + box.x1) / t.width - 1;
+    const cy = 1 - (box.y0 + box.y1) / t.height;
+    const clip = Float64Array.of(1 / hx, 0, 0, 0, 0, 1 / hy, 0, 0, 0, 0, 1, 0, -cx / hx, -cy / hy, 0, 1);
+    const stats: PaintStats = { drawCalls: 0, pieces: 0 };
+    const found: PickedFeature[] = [];
+    this.pickBuffer.begin(width, height);
+    try {
+      for (let i = frame.layers.length - 1; i >= 0; i--) {
+        const layer = frame.layers[i]!;
+        if (!layer.isVisible(zoom) || !accept(layer)) continue;
+        if (layer.type !== "fill" && layer.type !== "line" && layer.type !== "circle" && layer.type !== "extrusion")
+          continue;
+        const manager = vectorManager(layer.source ? frame.sources.get(layer.source) : undefined);
+        if (!manager) continue;
+        const draws: { piece: RenderPiece<VectorTile>; bucket: VectorBucket }[] = [];
+        const pass: PickPass = {
+          clip,
+          scale: [hx, hy],
+          register: (piece, bucket) => draws.push({ piece, bucket }),
+        };
+        this.pickBuffer.clear();
+        this.vector.draw(frame, layer, manager, stats, pass);
+        if (draws.length === 0) continue;
+        const pixels = this.pickBuffer.read();
+        const seen = new Set<number>();
+        for (let p = 0; p < pixels.length; p += 4) {
+          const draw = pixels[p]!;
+          if (draw === 0) continue;
+          const feature = pixels[p + 1]!;
+          const key = draw * 4294967296 + feature;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const hit = draws[draw - 1];
+          if (hit) found.push({ layer, tile: hit.piece.tile, bucket: hit.bucket, feature });
+        }
+      }
+    } finally {
+      this.pickBuffer.end();
+    }
+    const labels = this.labels.hits(box, (layer) => layer.isVisible(zoom) && accept(layer));
+    const order = new Map(frame.layers.map((l, i) => [l, i]));
+    return [...labels, ...found].sort((a, b) => (order.get(b.layer) ?? 0) - (order.get(a.layer) ?? 0));
+  }
+
   destroy(): void {
+    this.pickBuffer.destroy();
     this.labels.destroy();
     this.gl.deleteBuffer(this.quadBuffer);
     this.gl.deleteVertexArray(this.quadVao);
