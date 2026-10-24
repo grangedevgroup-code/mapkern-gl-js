@@ -1,18 +1,28 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
+import { test } from "node:test";
+import * as mat4 from "../../src/geo/mat4.ts";
 import {
-  MAX_LATITUDE,
   distanceMeters,
   latFromMercatorY,
   lngFromMercatorX,
+  MAX_LATITUDE,
   mercatorX,
   mercatorY,
   metersPerPixel,
   toLngLat,
   wrapLongitude,
 } from "../../src/geo/mercator.ts";
-import { childTiles, isAncestor, parentTile, quadkey, subRect, tileBounds, tileFromKey, tileKey, tmsY } from "../../src/geo/tile.ts";
-import * as mat4 from "../../src/geo/mat4.ts";
+import {
+  childTiles,
+  isAncestor,
+  parentTile,
+  quadkey,
+  subRect,
+  tileBounds,
+  tileFromKey,
+  tileKey,
+  tmsY,
+} from "../../src/geo/tile.ts";
 
 const close = (a: number, b: number, eps = 1e-9) => assert.ok(Math.abs(a - b) <= eps, `${a} != ${b}`);
 
@@ -55,7 +65,12 @@ test("great circle distance", () => {
 });
 
 test("tile keys round trip at every zoom", () => {
-  for (const [z, x, y] of [[0, 0, 0], [1, 1, 0], [14, 2627, 5721], [24, 16777215, 16777215]] as const) {
+  for (const [z, x, y] of [
+    [0, 0, 0],
+    [1, 1, 0],
+    [14, 2627, 5721],
+    [24, 16777215, 16777215],
+  ] as const) {
     assert.deepEqual(tileFromKey(tileKey(z, x, y)), { z, x, y });
   }
   assert.notEqual(tileKey(1, 0, 1), tileKey(2, 0, 1));
