@@ -1,5 +1,6 @@
 import type { Feature, FeatureCollection } from "../geo/geojson.ts";
 import { csvToGeoJSON } from "./csv.ts";
+import type { FeatureFormat } from "./feature-format.ts";
 import { flatgeobufToGeoJSON, isFlatGeobuf } from "./flatgeobuf.ts";
 import { gpxToGeoJSON } from "./gpx.ts";
 import { kmlToGeoJSON } from "./kml.ts";
@@ -8,20 +9,6 @@ import { isTopology, topologyToGeoJSON } from "./topojson.ts";
 import { parseWkt } from "./wkt.ts";
 import type { ZipEntry } from "./zip.ts";
 import { isZip, readZipEntry, zipEntries } from "./zip.ts";
-
-export type FeatureFormat = "geojson" | "topojson" | "kml" | "kmz" | "gpx" | "csv" | "shapefile" | "flatgeobuf" | "wkt";
-
-export const FEATURE_FORMATS: readonly FeatureFormat[] = [
-  "geojson",
-  "topojson",
-  "kml",
-  "kmz",
-  "gpx",
-  "csv",
-  "shapefile",
-  "flatgeobuf",
-  "wkt",
-];
 
 export class FormatError extends Error {
   constructor(message: string) {
@@ -68,7 +55,12 @@ function detect(bytes: Uint8Array, name: string): FeatureFormat {
     return "kml";
   }
   if (head.startsWith("{") || head.startsWith("[")) return "geojson";
-  if (ext === "wkt" || /^(SRID=\d+;)?\s*(POINT|LINESTRING|POLYGON|MULTIPOINT|MULTILINESTRING|MULTIPOLYGON|GEOMETRYCOLLECTION)\b/i.test(head)) {
+  if (
+    ext === "wkt" ||
+    /^(SRID=\d+;)?\s*(POINT|LINESTRING|POLYGON|MULTIPOINT|MULTILINESTRING|MULTIPOLYGON|GEOMETRYCOLLECTION)\b/i.test(
+      head,
+    )
+  ) {
     return "wkt";
   }
   if (ext === "csv" || ext === "tsv" || ext === "txt") return "csv";
@@ -106,7 +98,7 @@ async function fromZip(bytes: Uint8Array): Promise<FeatureCollection> {
   const features: Feature[] = [];
   const add = (data: unknown) => {
     const fc = data as FeatureCollection;
-    if (fc && Array.isArray(fc.features)) features.push(...fc.features);
+    if (fc && Array.isArray(fc.features)) for (const f of fc.features) features.push(f);
   };
   const kml = byExt("kml").sort((a, b) => (a.name === "doc.kml" ? -1 : b.name === "doc.kml" ? 1 : 0));
   for (const entry of kml) add(kmlToGeoJSON(text.decode(await read(entry))));
@@ -130,7 +122,9 @@ async function fromZip(bytes: Uint8Array): Promise<FeatureCollection> {
   for (const entry of byExt("fgb")) add(flatgeobufToGeoJSON(await read(entry)));
   for (const entry of byExt("csv")) add(csvToGeoJSON(text.decode(await read(entry))));
   if (features.length === 0 && kml.length === 0 && byExt("shp").length === 0) {
-    throw new FormatError("The ZIP file has no map data in it (looked for KML, Shapefile, GeoJSON, GPX, FlatGeobuf and CSV)");
+    throw new FormatError(
+      "The ZIP file has no map data in it (looked for KML, Shapefile, GeoJSON, GPX, FlatGeobuf and CSV)",
+    );
   }
   return { type: "FeatureCollection", features };
 }
