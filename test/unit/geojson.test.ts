@@ -306,7 +306,7 @@ test("large data is split level by level and still clips exactly", () => {
   for (const tx of [Math.floor(mercatorX(20) * n) - 1, Math.floor(mercatorX(20) * n), Math.floor(mercatorX(0) * n)]) {
     const pad = BUFFER / 512 / n;
     const rect = { x0: tx / n - pad, y0: ty / n - pad, x1: (tx + 1) / n + pad, y1: (ty + 1) / n + pad };
-    const clipped = clipRing(outer, rect);
+    const clipped = clipRing(world, rect);
     const expected = clipped ? Math.abs(signedArea(clipped)) * (n * EXTENT) ** 2 : 0;
     const got = features(idx, z, tx, ty).reduce(
       (s, f) => s + f.geometry().reduce((a, r) => a + ringArea(r), 0),
