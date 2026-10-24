@@ -203,7 +203,7 @@ A filter is just an expression that comes out true or false:
 `lightStyle()` gives you a complete street map style for tiles made with `maplet-tiles`:
 
 ```js
-const style = lightStyle({ url: "seattle.pmtiles" });
+const style = maplet.lightStyle({ url: "seattle.pmtiles" });
 ```
 
 You can turn off parts of it with `labels: false` or `buildings: false`, choose label fonts with `font`, and replace the credit line with `attribution`. If your tiles come from a URL template instead of a file, pass `tiles` (and `maxZoom` if it isn't 14).
