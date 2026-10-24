@@ -3,7 +3,7 @@ import type { Rect } from "./geometry.ts";
 import { clipLine, clipRing, signedArea, simplify } from "./geometry.ts";
 import type { EncodedFeature, EncodedLayer } from "./mvt-writer.ts";
 import { encodeTile } from "./mvt-writer.ts";
-import { LAYERS } from "./schema.ts";
+import { LAYERS, propsAtZoom } from "./schema.ts";
 
 export interface TilerOptions {
   minZoom: number;
