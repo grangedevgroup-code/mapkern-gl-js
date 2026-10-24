@@ -5,7 +5,8 @@ import type { StyleLayer } from "../style/layer.ts";
 import type { TileManager } from "../tiles/manager.ts";
 import type { GL, Program } from "./gl.ts";
 import type { FrameInput, PaintStats } from "./painter.ts";
-import { circleShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
+import { latFromMercatorY, metersPerPixel } from "../geo/mercator.ts";
+import { circleShader, extrusionShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
 
 type PaintUniform = { name: string; uniform: string; kind: "color" | "number" };
 
@@ -20,6 +21,19 @@ const LINE_PAINT: PaintUniform[] = [
   { name: "opacity", uniform: "u_opacity", kind: "number" },
   { name: "blur", uniform: "u_blur", kind: "number" },
 ];
+
+const EXTRUSION_PAINT: PaintUniform[] = [
+  { name: "color", uniform: "u_color", kind: "color" },
+  { name: "height", uniform: "u_height", kind: "number" },
+  { name: "base", uniform: "u_base", kind: "number" },
+];
+
+const LIGHT = normalize(-0.45, -0.65, 0.75);
+
+function normalize(x: number, y: number, z: number): [number, number, number] {
+  const len = Math.hypot(x, y, z);
+  return [x / len, y / len, z / len];
+}
 
 const CIRCLE_PAINT: PaintUniform[] = [
   { name: "color", uniform: "u_color", kind: "color" },
@@ -49,6 +63,9 @@ export class VectorPainter {
         break;
       case "circle":
         this.drawCircle(frame, layer, manager, stats);
+        break;
+      case "extrusion":
+        this.drawExtrusion(frame, layer, manager, stats);
         break;
       default:
         break;
@@ -231,5 +248,52 @@ export class VectorPainter {
       this.drawGeometry(bucket.main, stats);
       stats.pieces++;
     }
+  }
+
+  private drawExtrusion(
+    frame: FrameInput,
+    layer: StyleLayer,
+    manager: TileManager<VectorTile>,
+    stats: PaintStats,
+  ): void {
+    const g = this.gl;
+    const gl = g.gl;
+    const transform = frame.transform;
+    const zoom = transform.zoom;
+    const opacity = layer.paintValue<number>("opacity", { zoom });
+    if (!(opacity > 0)) return;
+    const program = g.program(extrusionShader);
+    g.use(program);
+    g.setBlend("premultiplied");
+    this.prepare(program, layer, zoom, EXTRUSION_PAINT);
+    gl.uniform1f(program.uniforms.get("u_opacity") ?? null, Math.min(1, opacity));
+    const b = (transform.bearing * Math.PI) / 180;
+    const [sx, sy, sz] = LIGHT;
+    gl.uniform3f(
+      program.uniforms.get("u_light") ?? null,
+      sx * Math.cos(b) - sy * Math.sin(b),
+      sx * Math.sin(b) + sy * Math.cos(b),
+      sz,
+    );
+    const passes = opacity < 1 ? 2 : 1;
+    for (let pass = 0; pass < passes; pass++) {
+      const depthOnly = passes === 2 && pass === 0;
+      gl.colorMask(!depthOnly, !depthOnly, !depthOnly, !depthOnly);
+      g.setDepth(true, depthOnly || passes === 1);
+      gl.depthFunc(passes === 2 && pass === 1 ? gl.EQUAL : gl.LEQUAL);
+      for (const piece of manager.pieces) {
+        const bucket = piece.tile.data?.buckets.get(layer.id);
+        if (!bucket?.main) continue;
+        this.bindPaint(program, layer, bucket, zoom, EXTRUSION_PAINT);
+        this.tileUniforms(program, frame, piece.tile, piece.wrap, bucket.extent, piece.clip);
+        const lat = latFromMercatorY((piece.tile.y + 0.5) / 2 ** piece.tile.z);
+        gl.uniform1f(program.uniforms.get("u_pixels_per_meter") ?? null, 1 / metersPerPixel(lat, zoom));
+        this.drawGeometry(bucket.main, stats);
+        if (pass === passes - 1) stats.pieces++;
+      }
+    }
+    gl.colorMask(true, true, true, true);
+    gl.depthFunc(gl.LEQUAL);
+    g.setDepth(false, false);
   }
 }
