@@ -1,7 +1,7 @@
 import type { RGBA } from "../style/color.ts";
 import type { EvalContext, GeometryType } from "../style/expression.ts";
 import type { StyleLayer } from "../style/layer.ts";
-import type { FeatureRecord } from "../worker/vector-task.ts";
+import type { FeatureTable } from "../worker/packed.ts";
 import type { GL } from "./gl.ts";
 
 export interface PaintSlot {
@@ -23,7 +23,7 @@ export class PaintTable {
   private hasComposite = false;
   private textureSize = [0, 0];
 
-  update(gl: GL, layer: StyleLayer, features: readonly FeatureRecord[], names: readonly string[], zoom: number): void {
+  update(gl: GL, layer: StyleLayer, features: FeatureTable, names: readonly string[], zoom: number): void {
     const layoutChanged = layer.revision !== this.revision;
     if (layoutChanged) {
       this.revision = layer.revision;
@@ -47,24 +47,24 @@ export class PaintTable {
     const base = Math.floor(zoom);
     if (!layoutChanged && (!this.hasComposite || base === this.evaluatedZoom) && this.texture) return;
     this.evaluatedZoom = base;
-    const total = Math.max(1, features.length * this.stride);
+    const total = Math.max(1, features.count * this.stride);
     const width = Math.min(total, 2048);
     const height = Math.ceil(total / width);
     const data = new Float32Array(width * height * 4);
     const ctx: EvalContext = { zoom: base };
+    const props: Record<string, unknown> = {};
     const feature = {
-      properties: {} as Readonly<Record<string, unknown>>,
+      properties: props as Readonly<Record<string, unknown>>,
       id: undefined as number | undefined,
       geometryType: "Unknown" as GeometryType,
     };
     ctx.feature = feature;
     for (const [name, slot] of this.slots) {
       const c = layer.paintProperty<unknown>(name);
-      for (let f = 0; f < features.length; f++) {
-        const record = features[f]!;
-        feature.properties = record.props;
-        feature.id = record.id;
-        feature.geometryType = GEOMETRY[record.type] ?? "Unknown";
+      for (let f = 0; f < features.count; f++) {
+        features.fill(f, props);
+        feature.id = features.id(f);
+        feature.geometryType = GEOMETRY[features.type(f)] ?? "Unknown";
         const at = (f * this.stride + slot.slot) * 4;
         ctx.zoom = base;
         write(data, at, c.evaluate(ctx));
