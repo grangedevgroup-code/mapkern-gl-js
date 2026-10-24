@@ -73,7 +73,10 @@ export class PMTilesWriter {
     }
   }
 
-  private finish(path: string, info: ArchiveInfo): { entries: number; contents: number; bytes: number; leaves: number } {
+  private finish(
+    path: string,
+    info: ArchiveInfo,
+  ): { entries: number; contents: number; bytes: number; leaves: number } {
     const order = this.ids.map((_, i) => i).sort((a, b) => this.ids[a]! - this.ids[b]!);
     const placed = new Float64Array(this.offsets.length).fill(-1);
     const sequence: number[] = [];
@@ -149,7 +152,12 @@ export class PMTilesWriter {
     }
     this.ids = [];
     this.refs = [];
-    return { entries: entries.length, contents: sequence.length, bytes: dataOffset + dataLength, leaves: leaves.length };
+    return {
+      entries: entries.length,
+      contents: sequence.length,
+      bytes: dataOffset + dataLength,
+      leaves: leaves.length,
+    };
   }
 }
 
