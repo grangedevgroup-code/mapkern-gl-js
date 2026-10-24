@@ -259,6 +259,7 @@ export class VectorSource implements MapSource {
             outline: null,
             cpu: b,
             paint: new PaintTable(),
+            labels: b.labels ?? null,
           });
           bytes += geometryBytes(b.main) + geometryBytes(b.outline) + b.features.length * 64;
         }
