@@ -1,5 +1,5 @@
 import type { FeatureType, PropertyValue, VectorFeature } from "../formats/mvt.ts";
-import { ringArea } from "../formats/mvt.ts";
+import { numericId, ringArea } from "../formats/mvt.ts";
 import { ALWAYS_KEEP, clipLine, clipRing, rankVertices, reverseRing, ringBounds, signedArea } from "../geo/clip.ts";
 import { latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY } from "../geo/mercator.ts";
 import type { Rect } from "../geo/tile.ts";
@@ -401,7 +401,7 @@ function readGeoJSON(
     } else if (n.type === "Feature") {
       const properties = readProperties(n.properties);
       const raw = promoteId !== undefined && properties[promoteId] !== undefined ? properties[promoteId] : n.id;
-      if (add(n.geometry, { id: readId(raw), properties })) features++;
+      if (add(n.geometry, { id: numericId(raw), properties })) features++;
     } else if (add(n, { id: undefined, properties: {} })) {
       features++;
     }
@@ -420,12 +420,6 @@ function readProperties(raw: unknown): Record<string, PropertyValue> {
     } else if (value !== null && value !== undefined) out[key] = JSON.stringify(value);
   }
   return out;
-}
-
-function readId(raw: unknown): number | undefined {
-  if (typeof raw === "number") return Number.isFinite(raw) ? raw : undefined;
-  if (typeof raw === "string" && /^\d{1,15}$/.test(raw)) return Number(raw);
-  return undefined;
 }
 
 function readGeometry(g: Record<string, unknown>, feature: SourceFeature): Item | null {
