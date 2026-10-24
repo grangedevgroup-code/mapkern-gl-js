@@ -19,6 +19,7 @@ uniform vec2 u_rows;
 uniform float u_scale;
 uniform vec3 u_light;
 uniform float u_flat;
+uniform float u_gain;
 uniform vec4 u_shadow;
 uniform vec4 u_highlight;
 uniform vec4 u_accent;
@@ -30,8 +31,8 @@ void main() {
   float k = cosh(3.14159265 * (1.0 - 2.0 * mix(u_rows.x, u_rows.y, v_uv.y)));
   vec3 n = normalize(vec3(-g * (u_scale * k), 1.0));
   float d = dot(n, u_light) - u_flat;
-  vec4 shade = d < 0.0 ? u_shadow * min(1.0, -d / u_flat) : u_highlight * min(1.0, d / u_flat);
-  vec4 accent = u_accent * (1.0 - n.z);
+  vec4 shade = d < 0.0 ? u_shadow * min(1.0, -d * u_gain) : u_highlight * min(1.0, d * u_gain);
+  vec4 accent = u_accent * min(1.0, (1.0 - n.z) * u_gain);
   vec4 color = shade + accent * (1.0 - shade.a);
   fragColor = color * (texture(u_mask, v_uv).r * u_opacity);
 }
