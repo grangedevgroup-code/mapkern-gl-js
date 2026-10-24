@@ -10,7 +10,7 @@ import type { WorkerPool } from "../worker/pool.ts";
 export interface SourceContext {
   readonly gl: GL;
   readonly scheduler: RequestScheduler;
-  readonly workers: WorkerPool;
+  workers(): WorkerPool;
   readonly transformRequest: TransformRequest | undefined;
   readonly requestTimeoutMs: number;
   readonly cacheBytes: number;
