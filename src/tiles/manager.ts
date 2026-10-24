@@ -566,6 +566,25 @@ export class TileManager<D> {
     }
   }
 
+  private replace(tile: Tile<D>, data: D | null): void {
+    if (data === null) {
+      if (tile.data) this.loader.release(tile.data);
+      tile.data = null;
+      tile.bytes = 0;
+      tile.transition("empty");
+      return;
+    }
+    if (this.loader.needsUpload(data)) {
+      tile.next = data;
+      tile.bytes = (tile.data ? this.loader.byteSize(tile.data) : 0) + this.loader.byteSize(data);
+      return;
+    }
+    const previous = tile.data;
+    tile.data = data;
+    if (previous) this.loader.release(previous);
+    tile.bytes = this.loader.byteSize(data);
+  }
+
   private drop(tile: Tile<D>): void {
     const handle = this.jobs.get(tile.key);
     if (handle) {
@@ -575,6 +594,10 @@ export class TileManager<D> {
     if (tile.controller) {
       tile.controller.abort(new DOMException("Tile dropped", "AbortError"));
       tile.controller = null;
+    }
+    if (tile.next) {
+      this.loader.release(tile.next);
+      tile.next = null;
     }
     if (tile.data) {
       this.loader.release(tile.data);
