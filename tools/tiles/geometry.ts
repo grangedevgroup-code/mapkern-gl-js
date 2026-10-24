@@ -27,7 +27,10 @@ export function signedArea(ring: ArrayLike<number>): number {
 }
 
 export function ringBounds(ring: ArrayLike<number>): Rect {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
   for (let i = 0; i < ring.length; i += 2) {
     const x = ring[i]!;
     const y = ring[i + 1]!;
@@ -43,7 +46,10 @@ export function pointInRing(x: number, y: number, ring: ArrayLike<number>): bool
   let inside = false;
   const n = ring.length;
   for (let i = 0, j = n - 2; i < n; j = i, i += 2) {
-    const xi = ring[i]!, yi = ring[i + 1]!, xj = ring[j]!, yj = ring[j + 1]!;
+    const xi = ring[i]!,
+      yi = ring[i + 1]!,
+      xj = ring[j]!,
+      yj = ring[j + 1]!;
     if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
   }
   return inside;
@@ -178,8 +184,10 @@ export function clipRing(ring: ArrayLike<number>, r: Rect): Float64Array | null 
     const out: number[] = [];
     const n = pts.length;
     for (let i = 0; i < n; i += 2) {
-      const ax = pts[(i - 2 + n) % n]!, ay = pts[(i - 1 + n) % n]!;
-      const bx = pts[i]!, by = pts[i + 1]!;
+      const ax = pts[(i - 2 + n) % n]!,
+        ay = pts[(i - 1 + n) % n]!;
+      const bx = pts[i]!,
+        by = pts[i + 1]!;
       const ina = inside(edge, ax, ay, r);
       const inb = inside(edge, bx, by, r);
       if (inb) {
@@ -245,7 +253,12 @@ export function clipLine(line: ArrayLike<number>, r: Rect): Float64Array[] {
       continue;
     }
     const [ax, ay, bx, by, enteredClipped, exitedClipped] = seg;
-    if (current.length === 0 || enteredClipped || current[current.length - 2] !== ax || current[current.length - 1] !== ay) {
+    if (
+      current.length === 0 ||
+      enteredClipped ||
+      current[current.length - 2] !== ax ||
+      current[current.length - 1] !== ay
+    ) {
       flush();
       current.push(ax, ay);
     }
@@ -299,7 +312,8 @@ export function simplify(points: ArrayLike<number>, tolerance: number, closed: b
   if (closed && n > 3) {
     let far = 1;
     let best = -1;
-    const x0 = points[0]!, y0 = points[1]!;
+    const x0 = points[0]!,
+      y0 = points[1]!;
     for (let i = 1; i < n - 1; i++) {
       const d = (points[i * 2]! - x0) ** 2 + (points[i * 2 + 1]! - y0) ** 2;
       if (d > best) {
@@ -316,8 +330,10 @@ export function simplify(points: ArrayLike<number>, tolerance: number, closed: b
     const first = stack.pop()!;
     let maxD = -1;
     let index = -1;
-    const ax = points[first * 2]!, ay = points[first * 2 + 1]!;
-    const bx = points[last * 2]!, by = points[last * 2 + 1]!;
+    const ax = points[first * 2]!,
+      ay = points[first * 2 + 1]!;
+    const bx = points[last * 2]!,
+      by = points[last * 2 + 1]!;
     for (let i = first + 1; i < last; i++) {
       const d = segmentDistanceSq(points[i * 2]!, points[i * 2 + 1]!, ax, ay, bx, by);
       if (d > maxD) {
