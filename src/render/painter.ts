@@ -10,7 +10,7 @@ import { premultiply } from "../style/color.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import { terrainMesh } from "../terrain/mesh.ts";
 import type { Terrain } from "../terrain/terrain.ts";
-import type { SymbolLayerInput } from "../text/labels.ts";
+import type { LabelTerrain, SymbolLayerInput } from "../text/labels.ts";
 import { LabelRenderer } from "../text/labels.ts";
 import { textShader } from "../text/shader.ts";
 import type { RenderPiece, TileManager } from "../tiles/manager.ts";
@@ -135,6 +135,7 @@ export class Painter {
     this.stats = { drawCalls: 0, pieces: 0, drapes: 0 };
     const terrain = frame.terrain ?? null;
     if (terrain) this.renderDrapes(frame, terrain);
+    else if (this.drapes.count > 0) this.drapes.destroy();
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     g.setViewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
     const zoom = frame.view.zoom;
@@ -170,11 +171,29 @@ export class Painter {
     }
     let animating = false;
     if (symbols.length > 0 || this.labels.visibleCount > 0) {
-      animating = this.labels.update(frame.transform, symbols, frame.now, frame.cameraVersion, frame.pixelRatio);
+      const ground = terrain ? this.labelTerrain(frame.transform, terrain) : null;
+      animating = this.labels.update(
+        frame.transform,
+        symbols,
+        frame.now,
+        frame.cameraVersion,
+        frame.pixelRatio,
+        ground,
+      );
       this.stats.drawCalls += this.labels.draw(frame.transform, frame.pixelRatio);
     }
     gl.bindVertexArray(null);
     return animating || this.drapesBehind;
+  }
+
+  private labelTerrain(transform: Transform, terrain: Terrain): LabelTerrain {
+    const ws = transform.worldSize;
+    const c = transform.cameraPosition;
+    const camera = [c[0] / ws, c[1] / ws, c[2] / ws];
+    return {
+      height: (x, y) => terrain.heightAt(x, y),
+      hidden: (x, y, z) => terrain.hidden(camera, x, y, z),
+    };
   }
 
   private drawLayer(frame: FrameInput, layer: StyleLayer): void {
