@@ -12,7 +12,14 @@ rmSync(out, { recursive: true, force: true });
 cpSync(join(root, "site"), out, { recursive: true });
 for (const dir of ["assets", "examples"]) cpSync(join(root, dir), join(out, dir), { recursive: true });
 mkdirSync(join(out, "dist"));
-for (const file of ["maplet.js", "maplet.js.map", "maplet.min.js", "maplet.min.js.map", "maplet.css", "maplet-worker.js"]) {
+for (const file of [
+  "maplet.js",
+  "maplet.js.map",
+  "maplet.min.js",
+  "maplet.min.js.map",
+  "maplet.css",
+  "maplet-worker.js",
+]) {
   cpSync(join(root, "dist", file), join(out, "dist", file));
 }
 if (existsSync(data)) {
