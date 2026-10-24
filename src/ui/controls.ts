@@ -241,7 +241,7 @@ export class ScaleControl implements Control {
         span = meters;
         unit = "m";
       }
-      value = niceNumber(span);
+      const value = niceNumber(span);
       label = `${value} ${unit}`;
       width = `${Math.round((this.maxWidth * value) / span)}px`;
     }
