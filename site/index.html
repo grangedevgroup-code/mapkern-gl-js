@@ -112,7 +112,6 @@ const map = new maplet.Map({
           scrollZoom: false,
         });
         map.addControl(new maplet.NavigationControl());
-        container.addEventListener("click", () => map.getCanvasContainer().focus(), { once: true });
         window.map = map;
       } else {
         container.classList.add("fallback");
