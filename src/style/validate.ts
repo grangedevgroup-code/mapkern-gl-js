@@ -1,3 +1,5 @@
+import type { FeatureFormat } from "../formats/feature-format.ts";
+import { FEATURE_FORMATS } from "../formats/feature-format.ts";
 import { compile, ExpressionError } from "./expression.ts";
 import { LAYOUT, PAINT } from "./layer.ts";
 import type { LayerType, SourceSpec, StyleSpec } from "./types.ts";
@@ -24,7 +26,7 @@ const SOURCE_KEYS: Record<string, Set<string>> = {
     "tileSize",
     "encoding",
   ]),
-  geojson: new Set(["type", "data", "maxZoom", "tolerance", "buffer", "attribution", "promoteId"]),
+  geojson: new Set(["type", "data", "format", "maxZoom", "tolerance", "buffer", "attribution", "promoteId"]),
 };
 const LAYER_KEYS = new Set([
   "id",
@@ -112,7 +114,10 @@ export function validateSource(id: string, source: unknown): StyleIssue[] {
   }
   if (type === "geojson") {
     if (source.data === undefined || (typeof source.data !== "string" && !isObject(source.data))) {
-      issues.push({ path: `${path}.data`, message: "geojson data must be a GeoJSON object or a URL" });
+      issues.push({ path: `${path}.data`, message: "geojson data must be GeoJSON, a URL or a file" });
+    }
+    if (source.format !== undefined && !FEATURE_FORMATS.includes(source.format as FeatureFormat)) {
+      issues.push({ path: `${path}.format`, message: `format must be one of ${FEATURE_FORMATS.join(", ")}` });
     }
     if (isFiniteNumber(source.maxZoom) && source.maxZoom > 24) {
       issues.push({ path: `${path}.maxZoom`, message: "geojson maxZoom must be 24 or less" });
