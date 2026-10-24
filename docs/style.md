@@ -275,7 +275,7 @@ A filter is just an expression that comes out true or false:
 const style = maplet.lightStyle({ url: "seattle.pmtiles" });
 ```
 
-Buildings rise into 3D from zoom 12, starting with the bigger ones and filling in as you zoom closer. Pass `buildings: "flat"` to keep them flat or `buildings: false` to leave them out, and `labels: false` to drop the labels. You can choose label fonts with `font`, and replace the credit line with `attribution`. If your tiles come from a URL template instead of a file, pass `tiles` (and `maxZoom` if it isn't 14).
+Tall buildings stand up in 3D from zoom 12, and all the others join them at zoom 13. Pass `buildings: "flat"` to keep them flat or `buildings: false` to leave them out, and `labels: false` to drop the labels. You can choose label fonts with `font`, and replace the credit line with `attribution`. If your tiles come from a URL template instead of a file, pass `tiles` (and `maxZoom` if it isn't 14).
 
 It returns a normal style object, so you can change it before using it:
 
