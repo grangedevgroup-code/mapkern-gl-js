@@ -1,1 +1,3 @@
-import "./worker.ts";
+import { startWorker } from "./worker.ts";
+
+startWorker({});
