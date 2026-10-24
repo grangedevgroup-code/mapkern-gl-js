@@ -5,6 +5,7 @@ export type PropertyValue = string | number | boolean;
 
 export interface VectorFeature {
   readonly id: number | undefined;
+  readonly source?: number;
   readonly type: FeatureType;
   readonly extent: number;
   properties(): Record<string, PropertyValue>;
