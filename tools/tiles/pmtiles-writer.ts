@@ -2,7 +2,15 @@ import { createHash } from "node:crypto";
 import { closeSync, openSync, writeSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import type { Entry, Header } from "../../src/formats/pmtiles.ts";
-import { Compression, HEADER_SIZE, ROOT_LIMIT, TileType, encodeDirectory, tileId, writeHeader } from "../../src/formats/pmtiles.ts";
+import {
+  Compression,
+  encodeDirectory,
+  HEADER_SIZE,
+  ROOT_LIMIT,
+  TileType,
+  tileId,
+  writeHeader,
+} from "../../src/formats/pmtiles.ts";
 
 export interface ArchiveInfo {
   tileType: number;
