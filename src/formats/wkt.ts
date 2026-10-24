@@ -46,7 +46,9 @@ class Reader {
       case "MULTIPOINT":
         return {
           type: "MultiPoint",
-          coordinates: this.list(() => (this.peek() === "(" ? this.wrapped(() => this.position2(dims)) : this.position2(dims))),
+          coordinates: this.list(() =>
+            this.peek() === "(" ? this.wrapped(() => this.position2(dims)) : this.position2(dims),
+          ),
         };
       case "MULTILINESTRING":
         return { type: "MultiLineString", coordinates: this.list(() => this.positions(dims)) };
