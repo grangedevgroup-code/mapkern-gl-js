@@ -63,6 +63,14 @@ export class Tile<D> implements TileCoord {
     return this.state === "queued" || this.state === "fetching" || this.state === "decoding" || this.state === "prepared";
   }
 
+  get isInFlight(): boolean {
+    return this.state === "fetching" || this.state === "decoding";
+  }
+
+  get isEvicted(): boolean {
+    return this.state === "evicted";
+  }
+
   get isSettled(): boolean {
     return this.state === "ready" || this.state === "empty" || this.state === "failed";
   }
