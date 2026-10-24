@@ -74,7 +74,8 @@ export class GL {
   }
 
   program(source: ProgramSource): Program {
-    const key = source.defines && source.defines.length > 0 ? `${source.name}#${source.defines.join(",")}` : source.name;
+    const key =
+      source.defines && source.defines.length > 0 ? `${source.name}#${source.defines.join(",")}` : source.name;
     const cached = this.programs.get(key);
     if (cached) return cached;
     const program = this.compile(key, source);
