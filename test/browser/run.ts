@@ -34,7 +34,13 @@ function near(actual: RGBA, expected: readonly number[], tolerance = 6): boolean
 
 function isZoomColor(actual: RGBA, z: number): boolean {
   const c = zoomColor(z);
-  return near(actual, c) || near(actual, c.map((v) => Math.round(v * 0.9)));
+  return (
+    near(actual, c) ||
+    near(
+      actual,
+      c.map((v) => Math.round(v * 0.9)),
+    )
+  );
 }
 
 function rasterStyle(base: string, path: string): string {
@@ -62,7 +68,9 @@ async function pixel(page: Page, x: number, y: number): Promise<RGBA> {
 }
 
 async function idle(page: Page): Promise<void> {
-  await page.evaluate(`new Promise((resolve) => { if (window.map.loaded() && !window.map.isMoving()) { window.map.triggerRepaint(); } window.map.once("idle", resolve); window.map.triggerRepaint(); })`);
+  await page.evaluate(
+    `new Promise((resolve) => { if (window.map.loaded() && !window.map.isMoving()) { window.map.triggerRepaint(); } window.map.once("idle", () => resolve(0)); window.map.triggerRepaint(); })`,
+  );
 }
 
 const specs: Spec[] = [
@@ -85,10 +93,16 @@ const specs: Spec[] = [
     name: "parent tiles cover the view while children are slow",
     async run({ page, base, shot }) {
       await createMap(page, rasterStyle(base, "/fixture/slow/2500/5"));
-      await page.evaluate("window.map.jumpTo({ zoom: 4 })");
+      await page.evaluate("void window.map.jumpTo({ zoom: 4 })");
       await new Promise((r) => setTimeout(r, 400));
       await shot("fallback-pending");
-      for (const [x, y] of [[100, 100], [700, 100], [400, 300], [100, 500], [700, 500]] as const) {
+      for (const [x, y] of [
+        [100, 100],
+        [700, 100],
+        [400, 300],
+        [100, 500],
+        [700, 500],
+      ] as const) {
         const c = await pixel(page, x, y);
         if (near(c, [255, 255, 255], 3)) fail(`blank pixel at ${x},${y} while children load`);
         if (!isZoomColor(c, 4) && !near(c, BORDER, 12)) fail(`expected parent (z4) colour at ${x},${y}, got ${c}`);
@@ -106,7 +120,7 @@ const specs: Spec[] = [
     async run({ page, base, shot }) {
       await fetch(`${base}/fixture/reset`);
       await createMap(page, rasterStyle(base, "/fixture/fail/403/5"));
-      await page.evaluate("window.map.jumpTo({ zoom: 4 })");
+      await page.evaluate("void window.map.jumpTo({ zoom: 4 })");
       await idle(page);
       await shot("failed-children");
       const c = await pixel(page, 464, 364);
@@ -145,7 +159,8 @@ const specs: Spec[] = [
       await idle(page);
       const [lng, lat] = await page.evaluate<[number, number]>("window.map.getCenter()");
       const expected = (-100 / 4096) * 360;
-      if (Math.abs(lng - expected) > 0.3 || Math.abs(lat) > 0.3) fail(`expected centre near ${expected},0 after drag, got ${lng},${lat}`);
+      if (Math.abs(lng - expected) > 0.3 || Math.abs(lat) > 0.3)
+        fail(`expected centre near ${expected},0 after drag, got ${lng},${lat}`);
       const anchor = await page.evaluate<[number, number]>("window.map.unproject([600, 200])");
       await page.mouse("mouseWheel", 600, 200, { deltaX: 0, deltaY: -100 });
       await idle(page);
@@ -153,19 +168,26 @@ const specs: Spec[] = [
       const zoom = await page.evaluate<number>("window.map.getZoom()");
       if (Math.abs(zoom - 3.5) > 0.05) fail(`expected zoom 3.5 after one wheel notch, got ${zoom}`);
       const moved = await page.evaluate<{ x: number; y: number }>(`window.map.project(${JSON.stringify(anchor)})`);
-      if (Math.hypot(moved.x - 600, moved.y - 200) > 1) fail(`wheel zoom moved the point under the cursor to ${moved.x},${moved.y}`);
+      if (Math.hypot(moved.x - 600, moved.y - 200) > 1)
+        fail(`wheel zoom moved the point under the cursor to ${moved.x},${moved.y}`);
     },
   },
   {
     name: "pitch and bearing keep the view covered",
     async run({ page, base, shot }) {
       await createMap(page, rasterStyle(base, "/fixture/raster"), { zoom: 4 });
-      await page.evaluate("window.map.jumpTo({ pitch: 60, bearing: 30 })");
+      await page.evaluate("void window.map.jumpTo({ pitch: 60, bearing: 30 })");
       await idle(page);
       await shot("pitched");
       const d = await page.evaluate<{ blankRatio: number }>("window.map.getDiagnostics()");
       if (d.blankRatio > 0) fail(`blank ratio ${d.blankRatio} after load at pitch 60`);
-      for (const [x, y] of [[20, 20], [780, 20], [400, 300], [20, 580], [780, 580]] as const) {
+      for (const [x, y] of [
+        [20, 20],
+        [780, 20],
+        [400, 300],
+        [20, 580],
+        [780, 580],
+      ] as const) {
         const c = await pixel(page, x, y);
         if (near(c, [255, 255, 255], 3)) fail(`blank pixel at ${x},${y} at pitch 60`);
       }
@@ -231,7 +253,8 @@ async function main(): Promise<void> {
       } catch (error) {
         failed++;
         console.log(`FAIL ${spec.name}\n     ${error instanceof Error ? error.message : String(error)}`);
-        for (const entry of page.console.filter((c) => c.type === "error" || c.type === "warning")) console.log(`     console.${entry.type}: ${entry.text}`);
+        for (const entry of page.console.filter((c) => c.type === "error" || c.type === "warning"))
+          console.log(`     console.${entry.type}: ${entry.text}`);
         await page.screenshot(join(output, `${slug}--failure.png`)).catch(() => undefined);
       } finally {
         await page.close().catch(() => undefined);
