@@ -1,8 +1,8 @@
-import type { TileManager } from "../tiles/manager.ts";
 import type { GpuGeometry, VectorBucket, VectorTile } from "../sources/vector.ts";
 import { dataDrivenPaint } from "../sources/vector.ts";
 import type { RGBA } from "../style/color.ts";
 import type { StyleLayer } from "../style/layer.ts";
+import type { TileManager } from "../tiles/manager.ts";
 import type { GL, Program } from "./gl.ts";
 import type { FrameInput, PaintStats } from "./painter.ts";
 import { circleShader, fillShader, lineShader } from "./shaders/vector.ts";
@@ -72,7 +72,13 @@ export class VectorPainter {
     gl.uniform1f(program.uniforms.get("u_zoom_t") ?? null, zoom - Math.floor(zoom));
   }
 
-  private bindPaint(program: Program, layer: StyleLayer, bucket: VectorBucket, zoom: number, paint: PaintUniform[]): void {
+  private bindPaint(
+    program: Program,
+    layer: StyleLayer,
+    bucket: VectorBucket,
+    zoom: number,
+    paint: PaintUniform[],
+  ): void {
     const g = this.gl;
     const gl = g.gl;
     bucket.paint.update(g, layer, bucket.features, dataDrivenPaint(layer.type), zoom);
@@ -86,12 +92,24 @@ export class VectorPainter {
     }
   }
 
-  private tileUniforms(program: Program, frame: FrameInput, tile: { z: number; x: number; y: number }, wrap: number, extent: number, clip: { x0: number; y0: number; x1: number; y1: number }): void {
+  private tileUniforms(
+    program: Program,
+    frame: FrameInput,
+    tile: { z: number; x: number; y: number },
+    wrap: number,
+    extent: number,
+    clip: { x0: number; y0: number; x1: number; y1: number },
+  ): void {
     const gl = this.gl.gl;
     frame.transform.tileMatrix(tile.z, tile.x, tile.y, wrap, extent, this.matrix);
     gl.uniformMatrix4fv(program.uniforms.get("u_matrix") ?? null, false, this.matrix);
-    const pad = clip.x0 <= 0 && clip.y0 <= 0 && clip.x1 >= 1 && clip.y1 >= 1 ? 0 : 0;
-    gl.uniform4f(program.uniforms.get("u_clip") ?? null, clip.x0 * extent - pad, clip.y0 * extent - pad, clip.x1 * extent + pad, clip.y1 * extent + pad);
+    gl.uniform4f(
+      program.uniforms.get("u_clip") ?? null,
+      clip.x0 * extent,
+      clip.y0 * extent,
+      clip.x1 * extent,
+      clip.y1 * extent,
+    );
   }
 
   private drawGeometry(g: GpuGeometry, stats: PaintStats): void {
