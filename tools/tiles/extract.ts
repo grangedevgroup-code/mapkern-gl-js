@@ -28,7 +28,10 @@ type Kind = "nodes" | "ways" | "missing";
 class Pool {
   private readonly workers: Worker[];
   constructor(path: string, size: number) {
-    const url = new URL("./extract-worker.ts", import.meta.url);
+    const url = new URL(
+      import.meta.url.endsWith(".ts") ? "./extract-worker.ts" : "./extract-worker.js",
+      import.meta.url,
+    );
     this.workers = Array.from({ length: size }, () => new Worker(url, { workerData: { path } }));
   }
 
