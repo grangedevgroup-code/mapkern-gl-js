@@ -111,7 +111,7 @@ Most paint and layout values can be a constant or an [expression](#expressions).
 
 ### `background`
 
-Fills the whole map. It is drawn below everything else in the layer list.
+Fills the whole map with one color. It is usually the first layer.
 
 | Paint | Default |
 | --- | --- |
