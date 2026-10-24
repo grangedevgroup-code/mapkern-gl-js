@@ -1071,6 +1071,7 @@ export class MapletMap extends Emitter<MapEvents> {
         layers: [],
         sources: new Map(),
         now,
+        cameraVersion: this.cameraVersion,
       });
     }
     this.emitCameraEvents();
