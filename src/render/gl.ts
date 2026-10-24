@@ -181,6 +181,61 @@ export class GL {
     return texture;
   }
 
+  createDataTexture(
+    width: number,
+    height: number,
+    format: DataFormat,
+    data: ArrayBufferView,
+    linear: boolean,
+  ): WebGLTexture {
+    const gl = this.gl;
+    const texture = gl.createTexture();
+    if (!texture) throw new MapletError("context-lost", "Could not create a GPU texture");
+    const [internal, layout, type] = this.dataLayout(format);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, internal, width, height, 0, layout, type, data);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    const filter = linear ? gl.LINEAR : gl.NEAREST;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    return texture;
+  }
+
+  updateDataTexture(
+    texture: WebGLTexture,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    format: DataFormat,
+    data: ArrayBufferView,
+  ): void {
+    if (this.isLost) return;
+    const gl = this.gl;
+    const [, layout, type] = this.dataLayout(format);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, width, height, layout, type, data);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+  }
+
+  private dataLayout(format: DataFormat): [GLenum, GLenum, GLenum] {
+    const gl = this.gl;
+    switch (format) {
+      case "rg16f":
+        return [gl.RG16F, gl.RG, gl.FLOAT];
+      case "r32f":
+        return [gl.R32F, gl.RED, gl.FLOAT];
+      case "r8":
+        return [gl.R8, gl.RED, gl.UNSIGNED_BYTE];
+    }
+  }
+
   bindTexture(unit: number, texture: WebGLTexture | null): void {
     const gl = this.gl;
     gl.activeTexture(gl.TEXTURE0 + unit);
