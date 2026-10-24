@@ -1,6 +1,7 @@
 import { rmSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import type { Route } from "../../scripts/server.ts";
+import { encodeTile } from "../../tools/tiles/mvt-writer.ts";
 import { fixtureTile } from "./png.ts";
 
 const cache = new Map<string, Buffer>();
@@ -41,6 +42,21 @@ export const fixtureRoute: Route = async (req, res, url) => {
     hits.clear();
     res.writeHead(204);
     res.end();
+    return true;
+  }
+  const vector = /^\/fixture\/vector\/(\d+)\/(\d+)\/(\d+)\.pbf$/.exec(path);
+  if (vector) {
+    const [z, x, y] = [Number(vector[1]), Number(vector[2]), Number(vector[3])];
+    const square = Int32Array.of(0, 0, 4096, 0, 4096, 4096, 0, 4096, 0, 0);
+    const body = encodeTile([
+      {
+        name: "areas",
+        extent: 4096,
+        features: [{ id: 1000 + z, type: 3, parts: [square], props: { name: `tile ${z}/${x}/${y}`, z } }],
+      },
+    ]);
+    res.writeHead(200, { "content-type": "application/x-protobuf", "cache-control": "no-store" });
+    res.end(Buffer.from(body));
     return true;
   }
   if (path === "/fixture/formats/places.kml") {
