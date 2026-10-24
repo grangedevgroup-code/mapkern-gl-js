@@ -7,8 +7,10 @@ import { premultiply } from "../style/color.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { SymbolLayerInput } from "../text/labels.ts";
 import { LabelRenderer } from "../text/labels.ts";
+import { textShader } from "../text/shader.ts";
 import type { GL, Program } from "./gl.ts";
 import { rasterShader, solidShader } from "./shaders/raster.ts";
+import { circleShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
 import { VectorPainter } from "./vector-layers.ts";
 
 export interface FrameInput {
@@ -44,6 +46,17 @@ export class Painter {
 
   init(): void {
     this.labels.reset();
+    for (const shader of [
+      solidShader,
+      rasterShader,
+      fillShader,
+      fillOutlineShader,
+      lineShader,
+      circleShader,
+      textShader,
+    ]) {
+      this.gl.program(shader);
+    }
     const gl = this.gl.gl;
     this.quadBuffer = this.gl.createBuffer(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]));
     this.quadVao = gl.createVertexArray();
