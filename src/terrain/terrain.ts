@@ -89,14 +89,15 @@ export class Terrain {
       const y = origin[1]! + dy * t;
       return origin[2]! + dz * t - metersToWorld(this.surfaceAt(x, y), y);
     };
-    const start = height(0);
-    if (start <= 0) return null;
-    const step = Math.max(maxDistance / 2048, 1e-12);
-    let previous = 0;
+    let h = height(0);
+    if (h <= 0) return null;
+    const step = Math.max(maxDistance / 4096, 1e-12);
+    const climb = Math.abs(dz) + 3 * Math.max(1, this.exaggeration) * Math.hypot(dx, dy);
     let t = 0;
     while (t < maxDistance) {
-      const next = Math.min(maxDistance, t + Math.max(step, height(t) * 0.5));
-      if (height(next) <= 0) {
+      const next = Math.min(maxDistance, t + Math.max(step, h / climb));
+      const hn = height(next);
+      if (hn <= 0) {
         let lo = t;
         let hi = next;
         for (let i = 0; i < 40; i++) {
@@ -104,12 +105,10 @@ export class Terrain {
           if (height(mid) > 0) lo = mid;
           else hi = mid;
         }
-        const hit = hi;
-        return [origin[0]! + dx * hit, origin[1]! + dy * hit, origin[2]! + dz * hit];
+        return [origin[0]! + dx * hi, origin[1]! + dy * hi, origin[2]! + dz * hi];
       }
-      previous = t;
       t = next;
-      if (t === previous) break;
+      h = hn;
     }
     return null;
   }
