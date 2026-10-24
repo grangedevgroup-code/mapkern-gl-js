@@ -50,7 +50,7 @@ Anything with a name has `name`, the local name, and `name_en` when the English 
 
 Roads have the most fields. `class` is `motorway`, `trunk`, `primary`, `secondary`, `tertiary`, `minor`, `service`, `track` or `path`, and paths and service roads get a `subclass` such as `footway`, `cycleway`, `steps` or `driveway`. `ramp` is 1 on links and slip roads, `oneway` is 1 or -1, `layer` runs from -5 to 5, `surface` is `paved` or `unpaved`, and `name` and `ref` carry the street name and route number. Motorways show up from zoom 4, residential streets from 12 and footpaths from 14.
 
-Lines and shapes are simplified to what each zoom level can show. Zoom 14 keeps full detail, so the map stays sharp when you zoom in further.
+Lines and shapes are simplified to what each zoom level can show, and below zoom 14 the pieces of a road that share the same fields are joined into one line. To keep zoomed-out tiles small, roads and railways leave out `oneway`, `surface` and `layer` below zoom 13, and their names below zoom 12. Zoom 14 keeps everything at full detail, so the map stays sharp when you zoom in further.
 
 ## Credit
 
