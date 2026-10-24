@@ -3,12 +3,18 @@ import type { GpuGeometry, VectorBucket, VectorTile } from "../sources/vector.ts
 import { dataDrivenPaint } from "../sources/vector.ts";
 import type { RGBA } from "../style/color.ts";
 import type { StyleLayer } from "../style/layer.ts";
-import type { TileManager } from "../tiles/manager.ts";
-import type { GL, Program } from "./gl.ts";
+import type { RenderPiece, TileManager } from "../tiles/manager.ts";
+import type { GL, Program, ProgramSource } from "./gl.ts";
 import type { FrameInput, PaintStats } from "./painter.ts";
 import { circleShader, extrusionShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
 
 type PaintUniform = { name: string; uniform: string; kind: "color" | "number" };
+
+export interface PickPass {
+  readonly clip: Float64Array;
+  readonly scale: readonly [number, number];
+  register(piece: RenderPiece<VectorTile>, bucket: VectorBucket): number;
+}
 
 const FILL_PAINT: PaintUniform[] = [
   { name: "color", uniform: "u_color", kind: "color" },
@@ -28,13 +34,6 @@ const EXTRUSION_PAINT: PaintUniform[] = [
   { name: "base", uniform: "u_base", kind: "number" },
 ];
 
-const LIGHT = normalize(-0.45, -0.65, 0.75);
-
-function normalize(x: number, y: number, z: number): [number, number, number] {
-  const len = Math.hypot(x, y, z);
-  return [x / len, y / len, z / len];
-}
-
 const CIRCLE_PAINT: PaintUniform[] = [
   { name: "color", uniform: "u_color", kind: "color" },
   { name: "radius", uniform: "u_radius", kind: "number" },
@@ -44,32 +43,59 @@ const CIRCLE_PAINT: PaintUniform[] = [
   { name: "blur", uniform: "u_blur", kind: "number" },
 ];
 
+const LIGHT = normalize(-0.45, -0.65, 0.75);
+
+const PICK = ["PICK"];
+const PICKING: ReadonlyMap<ProgramSource, ProgramSource> = new Map(
+  [fillShader, lineShader, circleShader, extrusionShader].map((s) => [s, { ...s, defines: PICK }]),
+);
+
+function normalize(x: number, y: number, z: number): [number, number, number] {
+  const len = Math.hypot(x, y, z);
+  return [x / len, y / len, z / len];
+}
+
 export class VectorPainter {
   private readonly gl: GL;
   private readonly matrix = new Float32Array(16);
   private readonly dash = new Float32Array(8);
+  private boundStride = -1;
 
   constructor(gl: GL) {
     this.gl = gl;
   }
 
-  draw(frame: FrameInput, layer: StyleLayer, manager: TileManager<VectorTile>, stats: PaintStats): void {
+  draw(
+    frame: FrameInput,
+    layer: StyleLayer,
+    manager: TileManager<VectorTile>,
+    stats: PaintStats,
+    pick?: PickPass,
+  ): void {
     switch (layer.type) {
       case "fill":
-        this.drawFill(frame, layer, manager, stats);
+        this.drawFill(frame, layer, manager, stats, pick);
         break;
       case "line":
-        this.drawLine(frame, layer, manager, stats);
+        this.drawLine(frame, layer, manager, stats, pick);
         break;
       case "circle":
-        this.drawCircle(frame, layer, manager, stats);
+        this.drawCircle(frame, layer, manager, stats, pick);
         break;
       case "extrusion":
-        this.drawExtrusion(frame, layer, manager, stats);
+        this.drawExtrusion(frame, layer, manager, stats, pick);
         break;
       default:
         break;
     }
+  }
+
+  private program(source: ProgramSource, pick: PickPass | undefined): Program {
+    const g = this.gl;
+    const program = g.program(pick ? (PICKING.get(source) ?? source) : source);
+    g.use(program);
+    g.setBlend(pick ? "none" : "premultiplied");
+    return program;
   }
 
   private prepare(program: Program, layer: StyleLayer, zoom: number, paint: PaintUniform[]): void {
@@ -113,19 +139,23 @@ export class VectorPainter {
     }
   }
 
-  private boundStride = -1;
-
   private tileUniforms(
     program: Program,
     frame: FrameInput,
-    tile: { z: number; x: number; y: number },
-    wrap: number,
-    extent: number,
-    clip: { x0: number; y0: number; x1: number; y1: number },
+    piece: RenderPiece<VectorTile>,
+    bucket: VectorBucket,
+    pick: PickPass | undefined,
   ): void {
     const gl = this.gl.gl;
-    frame.transform.tileMatrix(tile.z, tile.x, tile.y, wrap, extent, this.matrix);
+    const tile = piece.tile;
+    const extent = bucket.extent;
+    frame.transform.tileMatrix(tile.z, tile.x, tile.y, piece.wrap, extent, this.matrix);
+    if (pick) {
+      multiplyInto(this.matrix, pick.clip);
+      gl.uniform1ui(program.uniforms.get("u_draw") ?? null, pick.register(piece, bucket));
+    }
     gl.uniformMatrix4fv(program.uniforms.get("u_matrix") ?? null, false, this.matrix);
+    const clip = piece.clip;
     gl.uniform4f(
       program.uniforms.get("u_clip") ?? null,
       clip.x0 * extent,
@@ -142,13 +172,17 @@ export class VectorPainter {
     stats.drawCalls++;
   }
 
-  private drawFill(frame: FrameInput, layer: StyleLayer, manager: TileManager<VectorTile>, stats: PaintStats): void {
+  private drawFill(
+    frame: FrameInput,
+    layer: StyleLayer,
+    manager: TileManager<VectorTile>,
+    stats: PaintStats,
+    pick: PickPass | undefined,
+  ): void {
     const g = this.gl;
     const gl = g.gl;
     const zoom = frame.transform.zoom;
-    const program = g.program(fillShader);
-    g.use(program);
-    g.setBlend("premultiplied");
+    const program = this.program(fillShader, pick);
     g.setDepth(false, false);
     this.prepare(program, layer, zoom, FILL_PAINT);
     const translate = layer.fixed<[number, number]>("translate") ?? [0, 0];
@@ -158,18 +192,17 @@ export class VectorPainter {
       if (!bucket?.main) continue;
       any = true;
       this.bindPaint(program, layer, bucket, zoom, FILL_PAINT);
-      this.tileUniforms(program, frame, piece.tile, piece.wrap, bucket.extent, piece.clip);
+      this.tileUniforms(program, frame, piece, bucket, pick);
       const units = bucket.extent / (512 * 2 ** (zoom - piece.tile.z));
       gl.uniform2f(program.uniforms.get("u_translate") ?? null, translate[0] * units, translate[1] * units);
       this.drawGeometry(bucket.main, stats);
       stats.pieces++;
     }
-    if (!any || layer.fixed<boolean>("antialias") === false) return;
+    if (pick || !any || layer.fixed<boolean>("antialias") === false) return;
     const opacity = layer.paintValue<number>("opacity", { zoom });
     if (opacity <= 0) return;
     const outline = layer.paintProperty<unknown>("outlineColor");
-    const outlineProgram = g.program(fillOutlineShader);
-    g.use(outlineProgram);
+    const outlineProgram = this.program(fillOutlineShader, undefined);
     const colorSource = outline.constant && outline.evaluate({ zoom }) === null ? "color" : "outlineColor";
     const paint: PaintUniform[] = [
       { name: colorSource, uniform: "u_color", kind: "color" },
@@ -181,7 +214,7 @@ export class VectorPainter {
       const bucket = piece.tile.data?.buckets.get(layer.id);
       if (!bucket?.outline) continue;
       this.bindPaint(outlineProgram, layer, bucket, zoom, paint);
-      this.tileUniforms(outlineProgram, frame, piece.tile, piece.wrap, bucket.extent, piece.clip);
+      this.tileUniforms(outlineProgram, frame, piece, bucket, undefined);
       const units = bucket.extent / (512 * 2 ** (zoom - piece.tile.z));
       gl.uniform2f(outlineProgram.uniforms.get("u_translate") ?? null, translate[0] * units, translate[1] * units);
       gl.bindVertexArray(bucket.outline.vao);
@@ -190,13 +223,17 @@ export class VectorPainter {
     }
   }
 
-  private drawLine(frame: FrameInput, layer: StyleLayer, manager: TileManager<VectorTile>, stats: PaintStats): void {
+  private drawLine(
+    frame: FrameInput,
+    layer: StyleLayer,
+    manager: TileManager<VectorTile>,
+    stats: PaintStats,
+    pick: PickPass | undefined,
+  ): void {
     const g = this.gl;
     const gl = g.gl;
     const zoom = frame.transform.zoom;
-    const program = g.program(lineShader);
-    g.use(program);
-    g.setBlend("premultiplied");
+    const program = this.program(lineShader, pick);
     g.setDepth(false, false);
     this.prepare(program, layer, zoom, LINE_PAINT);
     gl.uniform1f(program.uniforms.get("u_pixel_ratio") ?? null, frame.pixelRatio);
@@ -222,29 +259,34 @@ export class VectorPainter {
       const bucket = piece.tile.data?.buckets.get(layer.id);
       if (!bucket?.main) continue;
       this.bindPaint(program, layer, bucket, zoom, LINE_PAINT);
-      this.tileUniforms(program, frame, piece.tile, piece.wrap, bucket.extent, piece.clip);
+      this.tileUniforms(program, frame, piece, bucket, pick);
       gl.uniform1f(program.uniforms.get("u_units_per_px") ?? null, bucket.extent / (512 * 2 ** (zoom - piece.tile.z)));
       this.drawGeometry(bucket.main, stats);
       stats.pieces++;
     }
   }
 
-  private drawCircle(frame: FrameInput, layer: StyleLayer, manager: TileManager<VectorTile>, stats: PaintStats): void {
+  private drawCircle(
+    frame: FrameInput,
+    layer: StyleLayer,
+    manager: TileManager<VectorTile>,
+    stats: PaintStats,
+    pick: PickPass | undefined,
+  ): void {
     const g = this.gl;
     const gl = g.gl;
     const zoom = frame.transform.zoom;
-    const program = g.program(circleShader);
-    g.use(program);
-    g.setBlend("premultiplied");
+    const program = this.program(circleShader, pick);
     g.setDepth(false, false);
     this.prepare(program, layer, zoom, CIRCLE_PAINT);
     gl.uniform1f(program.uniforms.get("u_pixel_ratio") ?? null, frame.pixelRatio);
-    gl.uniform2f(program.uniforms.get("u_viewport") ?? null, frame.transform.width, frame.transform.height);
+    const [hx, hy] = pick ? pick.scale : [1, 1];
+    gl.uniform2f(program.uniforms.get("u_viewport") ?? null, frame.transform.width * hx, frame.transform.height * hy);
     for (const piece of manager.pieces) {
       const bucket = piece.tile.data?.buckets.get(layer.id);
       if (!bucket?.main) continue;
       this.bindPaint(program, layer, bucket, zoom, CIRCLE_PAINT);
-      this.tileUniforms(program, frame, piece.tile, piece.wrap, bucket.extent, piece.clip);
+      this.tileUniforms(program, frame, piece, bucket, pick);
       this.drawGeometry(bucket.main, stats);
       stats.pieces++;
     }
@@ -255,6 +297,7 @@ export class VectorPainter {
     layer: StyleLayer,
     manager: TileManager<VectorTile>,
     stats: PaintStats,
+    pick: PickPass | undefined,
   ): void {
     const g = this.gl;
     const gl = g.gl;
@@ -262,9 +305,7 @@ export class VectorPainter {
     const zoom = transform.zoom;
     const opacity = layer.paintValue<number>("opacity", { zoom });
     if (!(opacity > 0)) return;
-    const program = g.program(extrusionShader);
-    g.use(program);
-    g.setBlend("premultiplied");
+    const program = this.program(extrusionShader, pick);
     this.prepare(program, layer, zoom, EXTRUSION_PAINT);
     gl.uniform1f(program.uniforms.get("u_opacity") ?? null, Math.min(1, opacity));
     const b = (transform.bearing * Math.PI) / 180;
@@ -275,7 +316,7 @@ export class VectorPainter {
       sx * Math.sin(b) + sy * Math.cos(b),
       sz,
     );
-    const passes = opacity < 1 ? 2 : 1;
+    const passes = opacity < 1 && !pick ? 2 : 1;
     for (let pass = 0; pass < passes; pass++) {
       const depthOnly = passes === 2 && pass === 0;
       gl.colorMask(!depthOnly, !depthOnly, !depthOnly, !depthOnly);
@@ -285,7 +326,7 @@ export class VectorPainter {
         const bucket = piece.tile.data?.buckets.get(layer.id);
         if (!bucket?.main) continue;
         this.bindPaint(program, layer, bucket, zoom, EXTRUSION_PAINT);
-        this.tileUniforms(program, frame, piece.tile, piece.wrap, bucket.extent, piece.clip);
+        this.tileUniforms(program, frame, piece, bucket, pick);
         const lat = latFromMercatorY((piece.tile.y + 0.5) / 2 ** piece.tile.z);
         gl.uniform1f(program.uniforms.get("u_pixels_per_meter") ?? null, 1 / metersPerPixel(lat, zoom));
         this.drawGeometry(bucket.main, stats);
@@ -295,5 +336,31 @@ export class VectorPainter {
     gl.colorMask(true, true, true, true);
     gl.depthFunc(gl.LEQUAL);
     g.setDepth(false, false);
+  }
+}
+
+function multiplyInto(m: Float32Array, a: Float64Array): void {
+  const b0 = m[0]!,
+    b1 = m[1]!,
+    b2 = m[2]!,
+    b3 = m[3]!,
+    b4 = m[4]!,
+    b5 = m[5]!,
+    b6 = m[6]!,
+    b7 = m[7]!,
+    b8 = m[8]!,
+    b9 = m[9]!,
+    b10 = m[10]!,
+    b11 = m[11]!,
+    b12 = m[12]!,
+    b13 = m[13]!,
+    b14 = m[14]!,
+    b15 = m[15]!;
+  const b = [b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15];
+  for (let c = 0; c < 4; c++) {
+    for (let r = 0; r < 4; r++) {
+      m[c * 4 + r] =
+        a[r]! * b[c * 4]! + a[4 + r]! * b[c * 4 + 1]! + a[8 + r]! * b[c * 4 + 2]! + a[12 + r]! * b[c * 4 + 3]!;
+    }
   }
 }
