@@ -756,20 +756,97 @@ export class MapletMap extends Emitter<MapEvents> {
       const wanted = new Set(options.layers);
       accept = (layer) => wanted.has(layer.id);
     }
+    const frame = {
+      transform: this.transform,
+      view: this.transform,
+      terrain: this.terrain,
+      pixelRatio: this.pixelRatioValue,
+      layers: style.layers,
+      sources: style.sources,
+      now: performance.now(),
+      cameraVersion: this.cameraVersion,
+    };
+    const ground = this.terrain ? this.groundQuery(box) : null;
     const picked = this.painter.pick(
-      {
-        transform: this.transform,
-        view: this.transform,
-        pixelRatio: this.pixelRatioValue,
-        layers: style.layers,
-        sources: style.sources,
-        now: performance.now(),
-        cameraVersion: this.cameraVersion,
-      },
+      frame,
       box,
       accept,
+      ground
+        ? { frame: { ...frame, transform: ground.transform, view: ground.transform, terrain: null }, box: ground.box }
+        : undefined,
     );
     return resolveFeatures(picked, style.sources);
+  }
+
+  private groundQuery(box: PickBox): { transform: Transform; box: PickBox } | null {
+    const t = this.transform;
+    const points: [number, number][] = [];
+    const center = this.pickWorld((box.x0 + box.x1) / 2, (box.y0 + box.y1) / 2);
+    if (center) points.push([center[0], center[1]]);
+    const point = box.x1 - box.x0 <= 1.5 && box.y1 - box.y0 <= 1.5;
+    if (!point) {
+      for (const [x, y] of [
+        [box.x0, box.y0],
+        [box.x1, box.y0],
+        [box.x1, box.y1],
+        [box.x0, box.y1],
+      ] as const) {
+        const hit = this.pickWorld(x, y);
+        if (hit) points.push([hit[0], hit[1]]);
+      }
+    }
+    if (points.length === 0) return null;
+    const flat = t.clone();
+    flat.setPitchRange(0, 85);
+    flat.setPitch(0);
+    flat.setElevation(0);
+    flat.setGround(0);
+    if (point) {
+      flat.setCenterWorld(points[0]![0], points[0]![1]);
+      const x = flat.width / 2;
+      const y = flat.height / 2;
+      return { transform: flat, box: { x0: x - 0.5, y0: y - 0.5, x1: x + 0.5, y1: y + 0.5 } };
+    }
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const p of points) {
+      x0 = Math.min(x0, p[0]);
+      y0 = Math.min(y0, p[1]);
+      x1 = Math.max(x1, p[0]);
+      y1 = Math.max(y1, p[1]);
+    }
+    flat.setCenterWorld((x0 + x1) / 2, (y0 + y1) / 2);
+    const extent = () => {
+      let a = Infinity;
+      let b = Infinity;
+      let c = -Infinity;
+      let d = -Infinity;
+      for (const p of points) {
+        const q = flat.project(p[0], p[1]);
+        a = Math.min(a, q.x);
+        b = Math.min(b, q.y);
+        c = Math.max(c, q.x);
+        d = Math.max(d, q.y);
+      }
+      return { x0: a, y0: b, x1: c, y1: d };
+    };
+    let found = extent();
+    const fit = Math.max((found.x1 - found.x0) / flat.width, (found.y1 - found.y0) / flat.height);
+    if (fit > 1) {
+      flat.setZoom(flat.zoom - Math.log2(fit) - 0.01);
+      found = extent();
+    }
+    return {
+      transform: flat,
+      box: {
+        x0: Math.max(0, found.x0),
+        y0: Math.max(0, found.y0),
+        x1: Math.min(flat.width, Math.max(found.x0 + 1, found.x1)),
+        y1: Math.min(flat.height, Math.max(found.y0 + 1, found.y1)),
+      },
+    };
   }
 
   private queryBox(geometry: QueryGeometry | undefined): PickBox {
