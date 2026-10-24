@@ -7,12 +7,21 @@ export function gpxToGeoJSON(text: string): FeatureCollection {
   const features: Feature[] = [];
   for (const point of children(gpx, "wpt")) {
     const position = readPoint(point);
-    if (position) features.push({ type: "Feature", properties: readProperties(point, "waypoint"), geometry: { type: "Point", coordinates: position } });
+    if (position)
+      features.push({
+        type: "Feature",
+        properties: readProperties(point, "waypoint"),
+        geometry: { type: "Point", coordinates: position },
+      });
   }
   for (const route of children(gpx, "rte")) {
     const line = readLine(children(route, "rtept"));
     if (line.length >= 2) {
-      features.push({ type: "Feature", properties: readProperties(route, "route"), geometry: { type: "LineString", coordinates: line } });
+      features.push({
+        type: "Feature",
+        properties: readProperties(route, "route"),
+        geometry: { type: "LineString", coordinates: line },
+      });
     }
   }
   for (const track of children(gpx, "trk")) {
@@ -40,7 +49,8 @@ export function gpxToGeoJSON(text: string): FeatureCollection {
 function readPoint(node: XmlElement): Position | null {
   const lat = Number(node.attrs.lat);
   const lon = Number(node.attrs.lon);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon) || node.attrs.lat === undefined || node.attrs.lon === undefined) return null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || node.attrs.lat === undefined || node.attrs.lon === undefined)
+    return null;
   const ele = child(node, "ele");
   const z = ele ? Number(textOf(ele)) : Number.NaN;
   return Number.isFinite(z) ? [lon, lat, z] : [lon, lat];
