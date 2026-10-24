@@ -200,7 +200,10 @@ export function needsWholeShaping(text: string): boolean {
   return COMPLEX.test(text);
 }
 
+const CLUSTERED = /\p{M}|[\u200c\u200d\ufe00-\ufe0f\u{1f1e6}-\u{1f1ff}\u{10000}-\u{10ffff}]/u;
+
 export function splitGraphemes(text: string): string[] {
+  if (!CLUSTERED.test(text)) return text.split("");
   const segmenter = (
     Intl as unknown as {
       Segmenter?: new (
