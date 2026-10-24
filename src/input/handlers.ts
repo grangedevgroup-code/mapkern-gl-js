@@ -434,7 +434,7 @@ export class InputHandlers {
     if (last && e.timeStamp - last.t < DOUBLE_TAP_MS && Math.hypot(x - last.x, y - last.y) < 30) {
       this.lastTap = null;
       this.host.pointerEvent("dblclick", e, [x, y]);
-      if (this.options.doubleClickZoom) this.zoomBy(1, [x, y]);
+      if (this.options.doubleClickZoom && !e.defaultPrevented) this.zoomBy(1, [x, y]);
       return;
     }
     this.lastTap = { t: e.timeStamp, x, y };
