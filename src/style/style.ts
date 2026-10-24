@@ -51,6 +51,9 @@ export class Style {
   removeSource(id: string): void {
     const source = this.sources.get(id);
     if (!source) throw new MapletError("invalid-option", `There is no source with id "${id}"`);
+    if (this.meta.terrain?.source === id) {
+      throw new MapletError("invalid-option", `Source "${id}" is used for terrain`, { terrain: true });
+    }
     const users = this.layers.filter((l) => l.source === id).map((l) => l.id);
     if (users.length > 0) {
       throw new MapletError("invalid-option", `Source "${id}" is still used by layers: ${users.join(", ")}`, {
