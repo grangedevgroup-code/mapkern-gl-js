@@ -160,6 +160,15 @@ class HomeButton {
 map.addControl(new HomeButton(), "top-left");
 ```
 
+## Tile files from the user's computer
+
+`maplet.openTileFile(file)` takes a PMTiles or MBTiles `File` (from a file input or a drop) and gives you back a URL to use as a source. Nothing is uploaded; tiles are read straight from the file as the map needs them.
+
+```js
+const url = await maplet.openTileFile(input.files[0]);
+map.addSource("mine", { type: "vector", url });
+```
+
 ## Your own tile protocol
 
 `addProtocol` lets you answer requests for a made-up URL scheme yourself, for example to serve tiles from IndexedDB or from a file someone picked:
