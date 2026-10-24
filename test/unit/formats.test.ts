@@ -237,8 +237,7 @@ function shp(type: number, shapes: { parts: number[][][] }[]): Uint8Array {
   for (let r = 0; r < shapes.length; r++) {
     const parts = shapes[r]!.parts;
     const points = parts.flat();
-    const content =
-      type === 1 ? 20 : 44 + parts.length * 4 + points.length * 16;
+    const content = type === 1 ? 20 : 44 + parts.length * 4 + points.length * 16;
     const rec = new Uint8Array(8 + content);
     const v = new DataView(rec.buffer);
     v.setInt32(0, r + 1, false);
@@ -467,8 +466,13 @@ class FlatBuffer {
     this.bytes[at + 3] = (v >>> 24) & 0xff;
   }
 
-  table(fields: (["u8" | "u16" | "u32" | "u64", number] | ["ref"] | null)[]): { at: number; refs: Map<number, number> } {
-    const sizes = fields.map((f) => (f === null ? 0 : f[0] === "u8" ? 1 : f[0] === "u16" ? 2 : f[0] === "u64" ? 8 : 4));
+  table(fields: (["u8" | "u16" | "u32" | "u64", number] | ["ref"] | null)[]): {
+    at: number;
+    refs: Map<number, number>;
+  } {
+    const sizes: number[] = fields.map((f) =>
+      f === null ? 0 : f[0] === "u8" ? 1 : f[0] === "u16" ? 2 : f[0] === "u64" ? 8 : 4,
+    );
     const vtableSize = 4 + fields.length * 2;
     const tableSize = 4 + sizes.reduce((s, x) => s + x, 0);
     const vt = this.length;
@@ -681,4 +685,66 @@ test("formats are recognized from their content", async () => {
   assert.equal(json.type, "Point");
   await assert.rejects(bytesToGeoJSON(encode("{ broken"), "x.json"), /not valid JSON/);
   await assert.rejects(bytesToGeoJSON(zip({ "readme.txt": encode("hi") }), "empty.zip"), /no map data/);
+});
+
+function lccForward(
+  lon: number,
+  lat: number,
+  p: { a: number; invf: number; lat0: number; lon0: number; sp1: number; sp2: number; fe: number; fn: number },
+): [number, number] {
+  const f = 1 / p.invf;
+  const e = Math.sqrt(f * (2 - f));
+  const rad = Math.PI / 180;
+  const m = (phi: number) => Math.cos(phi) / Math.sqrt(1 - e * e * Math.sin(phi) ** 2);
+  const t = (phi: number) =>
+    Math.tan(Math.PI / 4 - phi / 2) / ((1 - e * Math.sin(phi)) / (1 + e * Math.sin(phi))) ** (e / 2);
+  const p1 = p.sp1 * rad;
+  const p2 = p.sp2 * rad;
+  const n = (Math.log(m(p1)) - Math.log(m(p2))) / (Math.log(t(p1)) - Math.log(t(p2)));
+  const big = m(p1) / (n * t(p1) ** n);
+  const rho0 = p.a * big * t(p.lat0 * rad) ** n;
+  const rho = p.a * big * t(lat * rad) ** n;
+  const theta = n * (lon - p.lon0) * rad;
+  return [p.fe + rho * Math.sin(theta), p.fn + rho0 - rho * Math.cos(theta)];
+}
+
+test("Lambert conformal conic files in meters and in US feet", () => {
+  const lambert93 = {
+    a: 6378137,
+    invf: 298.257222101,
+    lat0: 46.5,
+    lon0: 3,
+    sp1: 49,
+    sp2: 44,
+    fe: 700000,
+    fn: 6600000,
+  };
+  const prj93 = `PROJCS["RGF93_Lambert_93",GEOGCS["GCS_RGF_1993",DATUM["D_RGF_1993",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Lambert_Conformal_Conic"],PARAMETER["False_Easting",700000.0],PARAMETER["False_Northing",6600000.0],PARAMETER["Central_Meridian",3.0],PARAMETER["Standard_Parallel_1",49.0],PARAMETER["Standard_Parallel_2",44.0],PARAMETER["Latitude_Of_Origin",46.5],UNIT["Meter",1.0]]`;
+  const paris: [number, number] = [2.3522, 48.8566];
+  const fc = shapefileToGeoJSON({
+    shp: shp(1, [{ parts: [[lccForward(paris[0], paris[1], lambert93)]] }]),
+    prj: prj93,
+  });
+  const [lon, lat] = (fc.features[0]!.geometry as { coordinates: number[] }).coordinates;
+  close(lon!, paris[0], 1e-7, "longitude");
+  close(lat!, paris[1], 1e-7, "latitude");
+
+  const foot = 0.3048006096012192;
+  const waNorth = {
+    a: 6378137,
+    invf: 298.257222101,
+    lat0: 47,
+    lon0: -120.8333333333333,
+    sp1: 48.73333333333333,
+    sp2: 47.5,
+    fe: 500000.0001016,
+    fn: 0,
+  };
+  const prjWa = `PROJCS["NAD_1983_StatePlane_Washington_North_FIPS_4601_Feet",GEOGCS["GCS_North_American_1983",DATUM["D_North_American_1983",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Lambert_Conformal_Conic"],PARAMETER["False_Easting",1640416.666666667],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",-120.8333333333333],PARAMETER["Standard_Parallel_1",47.5],PARAMETER["Standard_Parallel_2",48.73333333333333],PARAMETER["Latitude_Of_Origin",47.0],UNIT["Foot_US",0.3048006096012192]]`;
+  const needle: [number, number] = [-122.3493, 47.6205];
+  const [xm, ym] = lccForward(needle[0], needle[1], waNorth);
+  const fcWa = shapefileToGeoJSON({ shp: shp(1, [{ parts: [[[xm / foot, ym / foot]]] }]), prj: prjWa });
+  const [lon2, lat2] = (fcWa.features[0]!.geometry as { coordinates: number[] }).coordinates;
+  close(lon2!, needle[0], 1e-6, "longitude");
+  close(lat2!, needle[1], 1e-6, "latitude");
 });
