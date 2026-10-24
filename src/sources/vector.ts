@@ -331,11 +331,18 @@ export function uploadGeometry(gl: GL, type: BucketType, g: Geometry): GpuGeomet
   if (!vao) return null;
   ctx.bindVertexArray(vao);
   const vertexBuffer = gl.createBuffer(ctx.ARRAY_BUFFER, new Uint8Array(g.vertices));
-  if (type === "fill" || type === "extrusion") {
+  if (type === "fill") {
     ctx.enableVertexAttribArray(0);
     ctx.vertexAttribPointer(0, 2, ctx.SHORT, false, 8, 0);
     ctx.enableVertexAttribArray(4);
     ctx.vertexAttribIPointer(4, 1, ctx.UNSIGNED_INT, 8, 4);
+  } else if (type === "extrusion") {
+    ctx.enableVertexAttribArray(0);
+    ctx.vertexAttribPointer(0, 2, ctx.SHORT, false, 12, 0);
+    ctx.enableVertexAttribArray(1);
+    ctx.vertexAttribPointer(1, 4, ctx.BYTE, true, 12, 4);
+    ctx.enableVertexAttribArray(4);
+    ctx.vertexAttribIPointer(4, 1, ctx.UNSIGNED_INT, 12, 8);
   } else if (type === "line") {
     ctx.enableVertexAttribArray(0);
     ctx.vertexAttribPointer(0, 2, ctx.SHORT, false, 20, 0);
