@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Maplet with your own tiles</title>
+    <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      #map {
+        position: absolute;
+        inset: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script type="module">
+      import { Map, NavigationControl, ScaleControl, lightStyle } from "../../dist/maplet.js";
+
+      const params = new URLSearchParams(location.search);
+      const file = params.get("tiles") ?? "../../data/puget-sound.pmtiles";
+
+      const map = new Map({
+        container: "map",
+        style: lightStyle({ url: file }),
+        center: [-122.33, 47.6],
+        zoom: 10,
+      });
+      map.addControl(new NavigationControl());
+      map.addControl(new ScaleControl());
+      map.on("error", (event) => console.warn(event.error.message));
+      window.map = map;
+    </script>
+  </body>
+</html>
