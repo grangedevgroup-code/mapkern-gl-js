@@ -83,8 +83,10 @@ async function inflate(bytes: ArrayBuffer): Promise<Uint8Array> {
 class FeatureView implements FeatureContext {
   readonly feature: VectorFeature;
   readonly geometryType: GeometryType;
-  constructor(feature: VectorFeature) {
+  readonly index: number;
+  constructor(feature: VectorFeature, index: number) {
     this.feature = feature;
+    this.index = feature.source ?? index;
     this.geometryType = GEOMETRY_NAMES[feature.type] ?? "Unknown";
   }
   get properties(): Readonly<Record<string, unknown>> {
@@ -125,6 +127,7 @@ function promoteIds(layers: ReadonlyMap<string, FeatureLayer>, key: string): Map
         const feature = layer.feature(index);
         return {
           id: numericId(feature.property(key)),
+          source: index,
           type: feature.type,
           extent: feature.extent,
           properties: () => feature.properties(),
@@ -156,7 +159,7 @@ export function buildBuckets(
     let list = views.get(source.name);
     if (!list) {
       list = [];
-      for (let i = 0; i < source.length; i++) list.push(new FeatureView(source.feature(i)));
+      for (let i = 0; i < source.length; i++) list.push(new FeatureView(source.feature(i), i));
       views.set(source.name, list);
     }
     const filter =
@@ -215,7 +218,7 @@ function buildBucket(
       const polygons = classifyRings(f.feature.geometry());
       if (polygons.length === 0) continue;
       for (const rings of polygons) fill.addPolygon(rings, index);
-      features.add(f.feature);
+      features.add(f.feature, f.index);
     }
     if (fill.vertexCount === 0) return null;
     return {
@@ -234,7 +237,7 @@ function buildBucket(
       const polygons = classifyRings(f.feature.geometry());
       if (polygons.length === 0) continue;
       for (const rings of polygons) extrusion.addPolygon(rings, index);
-      features.add(f.feature);
+      features.add(f.feature, f.index);
     }
     if (extrusion.vertexCount === 0) return null;
     return {
@@ -257,7 +260,7 @@ function buildBucket(
       if (parts.length === 0) continue;
       const closed = f.feature.type === 3;
       for (const part of parts) lines.addLine(part, index, closed);
-      features.add(f.feature);
+      features.add(f.feature, f.index);
     }
     if (lines.vertexCount === 0) return null;
     return {
@@ -284,7 +287,7 @@ function buildBucket(
       const found = labelCandidates(f.feature, index, { zoom, feature: f }, symbol, source.extent);
       if (found.length === 0) continue;
       for (const c of found) labels.add(c.text, c.feature, c.size, c.priority, c.line, c.anchors, c.path);
-      features.add(f.feature);
+      features.add(f.feature, f.index);
     }
     if (labels.count === 0) return null;
     return {
@@ -311,7 +314,7 @@ function buildBucket(
           }
         }
       }
-      if (added) features.add(f.feature);
+      if (added) features.add(f.feature, f.index);
     }
     if (circles.vertexCount === 0) return null;
     return {
