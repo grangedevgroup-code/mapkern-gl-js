@@ -110,7 +110,10 @@ function tileGeometry(feature: VectorFeature, tile: Tile<VectorTile>): Geometry 
   const ring = (part: Int32Array): Position[] => {
     const out: Position[] = [];
     for (let i = 0; i < part.length; i += 2) {
-      out.push([lngFromMercatorX((tile.x + part[i]! / extent) / n), latFromMercatorY((tile.y + part[i + 1]! / extent) / n)]);
+      out.push([
+        lngFromMercatorX((tile.x + part[i]! / extent) / n),
+        latFromMercatorY((tile.y + part[i + 1]! / extent) / n),
+      ]);
     }
     return out;
   };
@@ -119,12 +122,16 @@ function tileGeometry(feature: VectorFeature, tile: Tile<VectorTile>): Geometry 
     case 1: {
       const points = parts.flatMap(ring);
       if (points.length === 0) return null;
-      return points.length === 1 ? { type: "Point", coordinates: points[0]! } : { type: "MultiPoint", coordinates: points };
+      return points.length === 1
+        ? { type: "Point", coordinates: points[0]! }
+        : { type: "MultiPoint", coordinates: points };
     }
     case 2: {
       const lines = parts.map(ring).filter((l) => l.length >= 2);
       if (lines.length === 0) return null;
-      return lines.length === 1 ? { type: "LineString", coordinates: lines[0]! } : { type: "MultiLineString", coordinates: lines };
+      return lines.length === 1
+        ? { type: "LineString", coordinates: lines[0]! }
+        : { type: "MultiLineString", coordinates: lines };
     }
     case 3: {
       const polygons = classifyRings(parts).map((rings) => rings.map(ring));
