@@ -395,18 +395,22 @@ export class TileManager<D> {
   }
 
   private startJob(tile: Tile<D>): void {
-    const manager = this;
-    const handle = this.scheduler.enqueue({
+    let handle: JobHandle | undefined;
+    handle = this.scheduler.enqueue({
       group: this.id,
       priority: tile.priority,
-      run: () => manager.load(tile),
+      run: () => this.load(tile, handle),
     });
     this.jobs.set(tile.key, handle);
   }
 
-  private async load(tile: Tile<D>): Promise<void> {
+  private release(tile: Tile<D>, handle: JobHandle | undefined): void {
+    if (handle && this.jobs.get(tile.key) === handle) this.jobs.delete(tile.key);
+  }
+
+  private async load(tile: Tile<D>, handle: JobHandle | undefined): Promise<void> {
     if (this.destroyed || tile.state !== "queued") {
-      this.jobs.delete(tile.key);
+      this.release(tile, handle);
       return;
     }
     const controller = new AbortController();
