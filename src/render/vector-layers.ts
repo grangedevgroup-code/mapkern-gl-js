@@ -82,15 +82,20 @@ export class VectorPainter {
     const g = this.gl;
     const gl = g.gl;
     bucket.paint.update(g, layer, bucket.features, dataDrivenPaint(layer.type), zoom);
+    const stride = bucket.paint.stride;
+    if (stride === 0 && this.boundStride === 0) return;
+    this.boundStride = stride;
     g.bindTexture(1, bucket.paint.texture);
     gl.uniform1i(program.uniforms.get("u_paint_width") ?? null, bucket.paint.width);
-    gl.uniform1i(program.uniforms.get("u_paint_stride") ?? null, bucket.paint.stride);
+    gl.uniform1i(program.uniforms.get("u_paint_stride") ?? null, stride);
     for (const p of paint) {
       const slot = bucket.paint.slot(p.name);
       gl.uniform1i(program.uniforms.get(`${p.uniform}_slot`) ?? null, slot.slot);
       gl.uniform1i(program.uniforms.get(`${p.uniform}_comp`) ?? null, slot.composite ? 1 : 0);
     }
   }
+
+  private boundStride = -1;
 
   private tileUniforms(
     program: Program,
