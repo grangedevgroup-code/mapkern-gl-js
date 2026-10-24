@@ -310,3 +310,13 @@ export class Page {
     await this.browser.send("Target.closeTarget", { targetId: this.targetId });
   }
 }
+
+function readPortFile(path: string): string | null {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "EBUSY" || code === "EPERM" || code === "EACCES") return null;
+    throw error;
+  }
+}
