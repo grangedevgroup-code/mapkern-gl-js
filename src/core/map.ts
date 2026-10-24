@@ -1052,13 +1052,15 @@ export class MapletMap extends Emitter<MapEvents> {
         source.update(this.transform, now, predicted);
       }
       if (moreUploads) animating = true;
-      this.painter.render({
+      const labelsBusy = this.painter.render({
         transform: this.transform,
         pixelRatio: this.pixelRatioValue,
         layers: style.layers,
         sources: style.sources,
         now,
+        cameraVersion: this.cameraVersion,
       });
+      if (labelsBusy) animating = true;
       for (const source of style.sources.values()) {
         if (source.isFading()) animating = true;
       }
