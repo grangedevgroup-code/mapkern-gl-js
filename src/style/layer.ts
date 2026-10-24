@@ -200,7 +200,9 @@ export class StyleLayer {
     const def = PAINT[this.type][name];
     if (!def) throw new Error(`"${name}" is not a paint property of ${this.type} layers`);
     this.setProperty(this.paint, "paint", name, def, value);
-    const paint = ((this.spec as { paint?: Record<string, unknown> }).paint ??= {});
+    const holder = this.spec as { paint?: Record<string, unknown> };
+    holder.paint ??= {};
+    const paint = holder.paint;
     if (value === undefined) delete paint[name];
     else paint[name] = structuredClone(value);
     this.revision++;
@@ -210,7 +212,9 @@ export class StyleLayer {
     const def = LAYOUT[this.type][name];
     if (!def) throw new Error(`"${name}" is not a layout property of ${this.type} layers`);
     this.setProperty(this.layout, "layout", name, def, value);
-    const layout = ((this.spec as { layout?: Record<string, unknown> }).layout ??= {});
+    const holder = this.spec as { layout?: Record<string, unknown> };
+    holder.layout ??= {};
+    const layout = holder.layout;
     if (value === undefined) delete layout[name];
     else layout[name] = structuredClone(value);
     this.revision++;
