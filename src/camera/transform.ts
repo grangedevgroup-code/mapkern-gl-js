@@ -207,12 +207,7 @@ export class Transform {
     mat4.scale(this.unitMatrix, this.pixelMatrix, ws, ws, 1);
     const bearing = this.bearingDeg * DEG;
     const horizontal = d * Math.sin(pitch);
-    this.cameraPos = [
-      this.cx * ws - Math.sin(bearing) * horizontal * -1 * -1,
-      this.cy * ws + Math.cos(bearing) * horizontal,
-      camHeight,
-    ];
-    this.cameraPos[0] = this.cx * ws - Math.sin(bearing) * horizontal;
+    this.cameraPos = [this.cx * ws - Math.sin(bearing) * horizontal, this.cy * ws + Math.cos(bearing) * horizontal, camHeight];
   }
 
   tileMatrix(z: number, x: number, y: number, wrap: number, extent: number, out: Float32Array): Float32Array {
