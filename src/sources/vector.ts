@@ -17,6 +17,7 @@ import type {
   VectorTileRequest,
   VectorTileResult,
 } from "../worker/vector-task.ts";
+import type { LabelCandidate } from "../worker/symbols.ts";
 import type { MapSource, SourceContext } from "./source.ts";
 import type { TileSet } from "./tilejson.ts";
 import { resolveTileSet, tileUrl } from "./tilejson.ts";
