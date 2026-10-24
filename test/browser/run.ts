@@ -357,6 +357,30 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "extruded buildings show a lit roof above a shaded wall",
+    async run({ page, shot }) {
+      const block = square(0.001, "#3366cc");
+      const style = JSON.stringify({
+        version: 1,
+        sources: { g: { type: "geojson", data: block } },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "box", type: "extrusion", source: "g", paint: { color: ["get", "color"], height: 300 } },
+        ],
+      });
+      await createMap(page, style, { zoom: 16, pitch: 60 });
+      await shot("extrusion");
+      const column: RGBA[] = [];
+      for (let y = 0; y < 600; y += 4) column.push(await pixel(page, 400, y));
+      const roof = column.findIndex((c) => near(c, [51, 102, 204, 255], 10));
+      const wall = column.findIndex((c, i) => i > roof && c[2]! > 90 && c[2]! < 170 && c[0]! < 45);
+      if (roof < 0) fail("no roof pixels in the center column");
+      if (wall < 0) fail("no shaded wall pixels below the roof");
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
     name: "events from the constructor reach listeners added right after it",
     async run({ page }) {
       const result = await page.evaluate<{ styleload: number; errors: string[] }>(`(async () => {
