@@ -218,6 +218,82 @@ function encode(z: number, x: number, y: number, feats: TileFeature[], options: 
   return encodeTile(out);
 }
 
+function toLocal(part: Float64Array, scale: number, ox: number, oy: number): Float64Array {
+  const local = new Float64Array(part.length);
+  for (let i = 0; i < part.length; i += 2) {
+    local[i] = part[i]! * scale - ox;
+    local[i + 1] = part[i + 1]! * scale - oy;
+  }
+  return local;
+}
+
+export function mergeLines(lines: readonly Float64Array[]): Float64Array[] {
+  const ends = new Map<string, number[]>();
+  const endKey = (line: Float64Array, end: number) =>
+    end === 0 ? `${line[0]},${line[1]}` : `${line[line.length - 2]},${line[line.length - 1]}`;
+  for (let i = 0; i < lines.length; i++) {
+    for (const end of [0, 1]) {
+      const key = endKey(lines[i]!, end);
+      let list = ends.get(key);
+      if (!list) {
+        list = [];
+        ends.set(key, list);
+      }
+      list.push(i * 2 + end);
+    }
+  }
+  const used = new Uint8Array(lines.length);
+  const next = (key: string, from: number): number => {
+    const list = ends.get(key)!;
+    if (list.length !== 2) return -1;
+    const other = list[0] === from ? list[1]! : list[0]!;
+    return used[other >> 1] ? -1 : other;
+  };
+  const out: Float64Array[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (used[i]) continue;
+    used[i] = 1;
+    const forward: number[] = Array.from(lines[i]!);
+    let tail = i * 2 + 1;
+    for (let other = next(endKey(lines[i]!, 1), tail); other >= 0; ) {
+      const j = other >> 1;
+      const line = lines[j]!;
+      used[j] = 1;
+      if ((other & 1) === 0) {
+        for (let k = 2; k < line.length; k++) forward.push(line[k]!);
+        tail = j * 2 + 1;
+      } else {
+        for (let k = line.length - 4; k >= 0; k -= 2) forward.push(line[k]!, line[k + 1]!);
+        tail = j * 2;
+      }
+      other = next(`${forward[forward.length - 2]},${forward[forward.length - 1]}`, tail);
+    }
+    const backward: number[] = [];
+    let head = i * 2;
+    for (let other = next(endKey(lines[i]!, 0), head); other >= 0; ) {
+      const j = other >> 1;
+      const line = lines[j]!;
+      used[j] = 1;
+      if ((other & 1) === 1) {
+        for (let k = line.length - 4; k >= 0; k -= 2) backward.push(line[k]!, line[k + 1]!);
+        head = j * 2;
+      } else {
+        for (let k = 2; k < line.length; k += 2) backward.push(line[k]!, line[k + 1]!);
+        head = j * 2 + 1;
+      }
+      other = next(`${backward[backward.length - 2]},${backward[backward.length - 1]}`, head);
+    }
+    const merged = new Float64Array(backward.length + forward.length);
+    for (let k = 0, m = backward.length - 2; m >= 0; m -= 2, k += 2) {
+      merged[k] = backward[m]!;
+      merged[k + 1] = backward[m + 1]!;
+    }
+    merged.set(forward, backward.length);
+    out.push(merged);
+  }
+  return out;
+}
+
 function quantize(points: Float64Array): Int32Array {
   const out = new Int32Array(points.length);
   let n = 0;
