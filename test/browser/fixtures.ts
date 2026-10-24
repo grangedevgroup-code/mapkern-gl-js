@@ -1,8 +1,9 @@
 import { rmSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import type { Route } from "../../scripts/server.ts";
+import { EARTH_CIRCUMFERENCE, mercatorX, mercatorY } from "../../src/geo/mercator.ts";
 import { encodeTile } from "../../tools/tiles/mvt-writer.ts";
-import { fixtureTile } from "./png.ts";
+import { encodePng, fixtureTile } from "./png.ts";
 
 const cache = new Map<string, Buffer>();
 const hits = new Map<string, number>();
@@ -14,6 +15,44 @@ function tile(z: number, x: number, y: number): Buffer {
     png = fixtureTile(z, x, y);
     cache.set(key, png);
   }
+  return png;
+}
+
+export const HILL: [number, number] = [3, 2];
+const HILL_X = mercatorX(HILL[0]);
+const HILL_Y = mercatorY(HILL[1]);
+const HOLE = 0.53;
+
+export function demHeight(X: number, Y: number): number | null {
+  if ((X > HOLE && Y > HOLE) || X >= 0.75) return null;
+  const dx = (X - HILL_X) * EARTH_CIRCUMFERENCE;
+  const dy = (Y - HILL_Y) * EARTH_CIRCUMFERENCE;
+  return 6000 * Math.exp(-(dx * dx + dy * dy) / 1e10);
+}
+
+const demCache = new Map<string, Buffer>();
+
+function demTile(z: number, x: number, y: number, size = 256): Buffer {
+  const key = `${z}/${x}/${y}`;
+  const cached = demCache.get(key);
+  if (cached) return cached;
+  const n = 2 ** z;
+  const rgba = new Uint8Array(size * size * 4);
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      const h = demHeight((x + (i + 0.5) / size) / n, (y + (j + 0.5) / size) / n);
+      if (h === null) continue;
+      const v = h + 32768;
+      const whole = Math.floor(v);
+      const o = (j * size + i) * 4;
+      rgba[o] = whole >> 8;
+      rgba[o + 1] = whole & 255;
+      rgba[o + 2] = Math.floor((v - whole) * 256);
+      rgba[o + 3] = 255;
+    }
+  }
+  const png = encodePng(size, size, rgba);
+  demCache.set(key, png);
   return png;
 }
 
@@ -57,6 +96,19 @@ export const fixtureRoute: Route = async (req, res, url) => {
     ]);
     res.writeHead(200, { "content-type": "application/x-protobuf", "cache-control": "no-store" });
     res.end(Buffer.from(body));
+    return true;
+  }
+  const dem = /^\/fixture\/dem\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(path);
+  if (dem) {
+    const [z, x, y] = [Number(dem[1]), Number(dem[2]), Number(dem[3])];
+    hits.set(`dem:${z}/${x}/${y}`, (hits.get(`dem:${z}/${x}/${y}`) ?? 0) + 1);
+    if (z > 12 || x >= 2 ** z || y >= 2 ** z || (z > 0 && x / 2 ** z >= 0.75)) {
+      res.writeHead(404);
+      res.end();
+      return true;
+    }
+    res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" });
+    res.end(demTile(z, x, y));
     return true;
   }
   if (path === "/fixture/formats/places.kml") {
