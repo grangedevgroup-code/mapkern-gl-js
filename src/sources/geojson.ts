@@ -6,7 +6,7 @@ import type { GeoJSONData, GeoJSONSourceSpec } from "../style/types.ts";
 import { FetchFailure, fetchBytes, resolveRequest, retryDelay } from "../tiles/fetch.ts";
 import type { TileStats, Tiling } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
-import type { GeoJSONOptions, GeoJSONSummary } from "../worker/geojson.ts";
+import type { GeoJSONOptions, GeoJSONSummary, QueriedSourceFeature } from "../worker/geojson.ts";
 import type { GeoJSONLoadRequest, GeoJSONTileReply, GeoJSONTileRequest } from "../worker/geojson-task.ts";
 import type { MapSource, SourceContext } from "./source.ts";
 import { tileEvents } from "./source.ts";
@@ -104,6 +104,24 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
 
   getData(): GeoJSONData {
     return this.spec.data;
+  }
+
+  async features(indices: readonly number[]): Promise<QueriedSourceFeature[]> {
+    if (indices.length === 0 || !this.posted) return [];
+    const pool = this.ctx.workers();
+    const request = { source: this.key, indices: [...indices] };
+    let found = await pool.send<QueriedSourceFeature[] | null>(
+      "geojson-features",
+      request,
+      [],
+      undefined,
+      this.affinity,
+    );
+    if (!found) {
+      await this.restore();
+      found = await pool.send<QueriedSourceFeature[] | null>("geojson-features", request, [], undefined, this.affinity);
+    }
+    return found ?? [];
   }
 
   setLayers(layers: readonly StyleLayer[]): void {
@@ -247,7 +265,7 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
         retryable: false,
       });
     }
-    return vectorTile(reply.tile, signature);
+    return vectorTile(reply.tile, signature, null);
   }
 
   private restore(): Promise<void> {
