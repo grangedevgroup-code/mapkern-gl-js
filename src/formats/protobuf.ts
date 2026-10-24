@@ -32,68 +32,83 @@ export class Reader {
     return this.varint();
   }
 
+  hi = 0;
+  lo = 0;
+
   varint(): number {
     const buf = this.buf;
     let pos = this.pos;
     let b = buf[pos++]!;
-    let value = b & 0x7f;
     if (b < 0x80) {
       this.pos = pos;
-      return value;
+      this.hi = 0;
+      this.lo = b;
+      return b;
     }
+    let value = b & 0x7f;
     b = buf[pos++]!;
     value |= (b & 0x7f) << 7;
     if (b < 0x80) {
       this.pos = pos;
+      this.hi = 0;
+      this.lo = value;
       return value;
     }
     b = buf[pos++]!;
     value |= (b & 0x7f) << 14;
     if (b < 0x80) {
       this.pos = pos;
+      this.hi = 0;
+      this.lo = value;
       return value;
     }
     b = buf[pos++]!;
     value |= (b & 0x7f) << 21;
     if (b < 0x80) {
       this.pos = pos;
-      return value >>> 0;
+      this.hi = 0;
+      this.lo = value;
+      return value;
     }
+    if (pos >= this.end) throw new ProtobufError("Truncated varint");
     b = buf[pos++]!;
-    let low = (value >>> 0) + (b & 0x0f) * 0x10000000;
-    let high = (b & 0x70) >> 4;
-    if (b < 0x80) {
-      this.pos = pos;
-      return low;
-    }
-    let shift = 3;
-    for (let i = 0; i < 5; i++) {
-      if (pos >= this.end + 10 && pos >= buf.length) throw new ProtobufError("Truncated varint");
-      b = buf[pos++]!;
-      high |= (b & 0x7f) << shift;
-      shift += 7;
-      if (b < 0x80) {
-        this.pos = pos;
-        low += (high >>> 0) * 0x800000000;
-        return low;
+    const low = (value | ((b & 0x0f) << 28)) >>> 0;
+    let high = (b & 0x7f) >> 4;
+    if (b >= 0x80) {
+      let shift = 3;
+      for (;;) {
+        if (pos >= this.end) throw new ProtobufError("Truncated varint");
+        b = buf[pos++]!;
+        if (shift === 31) {
+          high |= (b & 0x01) << 31;
+          if (b >= 0x80) throw new ProtobufError("Varint is longer than 10 bytes");
+          break;
+        }
+        high |= (b & 0x7f) << shift;
+        shift += 7;
+        if (b < 0x80) break;
       }
     }
-    throw new ProtobufError("Varint is longer than 10 bytes");
+    this.pos = pos;
+    this.hi = high >>> 0;
+    this.lo = low;
+    return this.hi * 0x100000000 + low;
   }
 
   int64(): number {
     const v = this.varint();
-    return v >= 2 ** 63 ? v - 2 ** 64 : v;
+    if (this.hi < 0x80000000) return v;
+    return -((0xffffffff - this.hi) * 0x100000000 + (0x100000000 - this.lo));
   }
 
   int32(): number {
-    return this.varint() | 0;
+    this.varint();
+    return this.lo | 0;
   }
 
   svarint(): number {
     const v = this.varint();
-    if (v <= 0xffffffff) return v & 1 ? -((v + 1) / 2) : v / 2;
-    return v % 2 === 1 ? -(v + 1) / 2 : v / 2;
+    return this.lo & 1 ? -(v + 1) / 2 : v / 2;
   }
 
   bool(): boolean {
