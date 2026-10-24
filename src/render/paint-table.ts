@@ -52,7 +52,11 @@ export class PaintTable {
     const height = Math.ceil(total / width);
     const data = new Float32Array(width * height * 4);
     const ctx: EvalContext = { zoom: base };
-    const feature = { properties: {} as Readonly<Record<string, unknown>>, id: undefined as number | undefined, geometryType: "Unknown" as GeometryType };
+    const feature = {
+      properties: {} as Readonly<Record<string, unknown>>,
+      id: undefined as number | undefined,
+      geometryType: "Unknown" as GeometryType,
+    };
     ctx.feature = feature;
     for (const [name, slot] of this.slots) {
       const c = layer.paintProperty<unknown>(name);
