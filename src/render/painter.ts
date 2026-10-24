@@ -12,7 +12,7 @@ import { textShader } from "../text/shader.ts";
 import type { TileManager } from "../tiles/manager.ts";
 import type { GL, Program } from "./gl.ts";
 import { rasterShader, solidShader } from "./shaders/raster.ts";
-import { circleShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
+import { circleShader, extrusionShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
 import { VectorPainter } from "./vector-layers.ts";
 
 export interface FrameInput {
@@ -55,6 +55,7 @@ export class Painter {
       fillOutlineShader,
       lineShader,
       circleShader,
+      extrusionShader,
       textShader,
     ]) {
       this.gl.program(shader);
@@ -103,7 +104,8 @@ export class Painter {
         }
         case "fill":
         case "line":
-        case "circle": {
+        case "circle":
+        case "extrusion": {
           const source = layer.source ? frame.sources.get(layer.source) : undefined;
           const manager = vectorManager(source);
           if (manager) this.vector.draw(frame, layer, manager, this.stats);
