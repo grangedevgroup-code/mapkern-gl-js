@@ -83,22 +83,32 @@ export class Browser {
       "about:blank",
     ];
     const proc = spawn(executable, args, { stdio: ["ignore", "ignore", "pipe"] });
-    const endpoint = await new Promise<string>((resolve, reject) => {
-      let buffer = "";
-      const timer = setTimeout(() => reject(new Error("Chrome did not start in time")), 30000);
-      proc.stderr?.on("data", (data: Buffer) => {
-        buffer += data.toString();
-        const m = /DevTools listening on (ws:\/\/\S+)/.exec(buffer);
-        if (m) {
-          clearTimeout(timer);
-          resolve(m[1]!);
-        }
-      });
-      proc.once("exit", (code) => {
-        clearTimeout(timer);
-        reject(new Error(`Chrome exited early with code ${code}: ${buffer.slice(-2000)}`));
-      });
+    let stderr = "";
+    proc.stderr?.on("data", (data: Buffer) => {
+      stderr = (stderr + data.toString()).slice(-4000);
     });
+    const portFile = join(profile, "DevToolsActivePort");
+    const deadline = Date.now() + 30000;
+    let endpoint: string | null = null;
+    while (Date.now() < deadline) {
+      const m = /DevTools listening on (ws:\/\/\S+)/.exec(stderr);
+      if (m) {
+        endpoint = m[1]!;
+        break;
+      }
+      if (existsSync(portFile)) {
+        const [port, path] = readFileSync(portFile, "utf8").split(/\r?\n/);
+        if (port && path) {
+          endpoint = `ws://127.0.0.1:${port}${path}`;
+          break;
+        }
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (!endpoint) {
+      proc.kill();
+      throw new Error(`Chrome did not open a DevTools endpoint: ${stderr}`);
+    }
     const socket = new WebSocket(endpoint);
     await new Promise<void>((resolve, reject) => {
       socket.addEventListener("open", () => resolve(), { once: true });
