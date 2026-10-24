@@ -6,6 +6,154 @@ export interface LightStyleOptions {
   maxZoom?: number;
   attribution?: string;
   buildings?: boolean;
+  labels?: boolean;
+  font?: string[];
+}
+
+const DEFAULT_FONT = ["Inter", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "sans-serif"];
+
+function labelLayers(font: string[] = DEFAULT_FONT): LayerSpec[] {
+  const name: Expression = ["coalesce", ["get", "name"], ["get", "name_en"]];
+  const halo = { haloColor: "rgba(255, 255, 255, 0.85)", haloWidth: 1.6 };
+  return [
+    {
+      id: "water-name",
+      type: "symbol",
+      source: "osm",
+      sourceLayer: "water_name",
+      layout: {
+        text: name,
+        font,
+        italic: true,
+        size: linearZoom([
+          [8, 11],
+          [14, 15],
+        ]),
+        maxWidth: 8,
+        priority: 50,
+      },
+      paint: { color: "#557790", haloColor: "rgba(255, 255, 255, 0.6)", haloWidth: 1.2 },
+    },
+    {
+      id: "road-label",
+      type: "symbol",
+      source: "osm",
+      sourceLayer: "road",
+      minZoom: 13,
+      filter: ["all", ["has", "name"], ["!", ["in", ["get", "class"], ["literal", ["path", "track"]]]]],
+      layout: {
+        text: ["get", "name"],
+        font,
+        placement: "line",
+        spacing: 320,
+        size: linearZoom([
+          [13, 10.5],
+          [17, 14],
+        ]),
+        priority: ["match", ["get", "class"], "motorway", 40, "trunk", 38, "primary", 36, "secondary", 34, "tertiary", 32, "minor", 30, 28],
+      },
+      paint: { color: "#57534d", ...halo },
+    },
+    {
+      id: "peak-label",
+      type: "symbol",
+      source: "osm",
+      sourceLayer: "mountain_peak",
+      minZoom: 10,
+      filter: ["has", "name"],
+      layout: { text: name, font, size: 11, maxWidth: 8, priority: 45 },
+      paint: { color: "#76664f", ...halo },
+    },
+    {
+      id: "poi-label",
+      type: "symbol",
+      source: "osm",
+      sourceLayer: "poi",
+      minZoom: 15,
+      filter: ["has", "name"],
+      layout: {
+        text: ["get", "name"],
+        font,
+        size: 11.5,
+        anchor: "top",
+        offset: [0, 0.45],
+        maxWidth: 8,
+        priority: ["-", 20, ["coalesce", ["get", "rank"], 15]],
+      },
+      paint: { color: "#675f54", ...halo },
+    },
+    {
+      id: "place-neighbourhood",
+      type: "symbol",
+      source: "osm",
+      sourceLayer: "place",
+      minZoom: 12,
+      filter: ["in", ["get", "class"], ["literal", ["suburb", "quarter", "neighbourhood"]]],
+      layout: {
+        text: name,
+        font,
+        transform: "uppercase",
+        letterSpacing: 0.08,
+        size: ["match", ["get", "class"], "suburb", 12, 11],
+        maxWidth: 7,
+        priority: ["-", 80, ["get", "rank"]],
+      },
+      paint: { color: "#7a7570", ...halo },
+    },
+    {
+      id: "place-village",
+      type: "symbol",
+      source: "osm",
+      sourceLayer: "place",
+      minZoom: 10,
+      filter: ["in", ["get", "class"], ["literal", ["village", "hamlet", "locality", "island", "islet", "isolated_dwelling"]]],
+      layout: {
+        text: name,
+        font,
+        size: ["match", ["get", "class"], "village", 13, "island", 13, 11.5],
+        maxWidth: 8,
+        priority: ["-", 90, ["get", "rank"]],
+      },
+      paint: { color: "#3f4447", ...halo },
+    },
+    {
+      id: "place-town",
+      type: "symbol",
+      source: "osm",
+      sourceLayer: "place",
+      filter: ["==", ["get", "class"], "town"],
+      layout: {
+        text: name,
+        font,
+        size: linearZoom([
+          [8, 12],
+          [14, 17],
+        ]),
+        maxWidth: 8,
+        priority: ["-", 100, ["get", "rank"]],
+      },
+      paint: { color: "#2f3437", ...halo },
+    },
+    {
+      id: "place-city",
+      type: "symbol",
+      source: "osm",
+      sourceLayer: "place",
+      filter: ["==", ["get", "class"], "city"],
+      layout: {
+        text: name,
+        font,
+        weight: "bold",
+        size: linearZoom([
+          [5, 13],
+          [12, 20],
+        ]),
+        maxWidth: 8,
+        priority: ["-", 120, ["get", "rank"]],
+      },
+      paint: { color: "#24292c", ...halo },
+    },
+  ];
 }
 
 const zoomScale = (stops: [number, number][], base = 1.5): Expression => [
