@@ -1,4 +1,4 @@
-import { MapletError, errorMessage } from "../core/errors.ts";
+import { errorMessage, MapletError } from "../core/errors.ts";
 import type { MapSource } from "../sources/source.ts";
 import { StyleLayer } from "./layer.ts";
 import type { LayerSpec, SourceSpec, StyleSpec } from "./types.ts";
@@ -53,7 +53,9 @@ export class Style {
     if (!source) throw new MapletError("invalid-option", `There is no source with id "${id}"`);
     const users = this.layers.filter((l) => l.source === id).map((l) => l.id);
     if (users.length > 0) {
-      throw new MapletError("invalid-option", `Source "${id}" is still used by layers: ${users.join(", ")}`, { layers: users });
+      throw new MapletError("invalid-option", `Source "${id}" is still used by layers: ${users.join(", ")}`, {
+        layers: users,
+      });
     }
     source.destroy();
     this.sources.delete(id);
@@ -61,7 +63,8 @@ export class Style {
   }
 
   addLayer(spec: LayerSpec, beforeId?: string): StyleLayer {
-    if (this.layerById.has(spec.id)) throw new MapletError("invalid-option", `A layer with id "${spec.id}" already exists`);
+    if (this.layerById.has(spec.id))
+      throw new MapletError("invalid-option", `A layer with id "${spec.id}" already exists`);
     if (beforeId !== undefined && !this.layerById.has(beforeId)) {
       throw new MapletError("invalid-option", `There is no layer with id "${beforeId}" to insert before`);
     }
@@ -131,7 +134,12 @@ export class Style {
         const err =
           error instanceof MapletError
             ? error
-            : new MapletError("source-error", `Source "${id}" failed to load: ${errorMessage(error)}`, { sourceId: id }, error);
+            : new MapletError(
+                "source-error",
+                `Source "${id}" failed to load: ${errorMessage(error)}`,
+                { sourceId: id },
+                error,
+              );
         this.events.sourceFailed(source, err);
       })
       .finally(() => {
