@@ -159,10 +159,11 @@ function encode(z: number, x: number, y: number, feats: TileFeature[], options: 
   for (const f of feats) {
     if (f.minZoom > z) continue;
     if (f.type === 2 && z < options.maxZoom) {
-      const key = JSON.stringify([f.layer, Object.entries(f.props).sort((a, b) => (a[0] < b[0] ? -1 : 1))]);
+      const props = propsAtZoom(f.layer, f.props, z);
+      const key = JSON.stringify([f.layer, Object.entries(props).sort((a, b) => (a[0] < b[0] ? -1 : 1))]);
       let group = groups.get(key);
       if (!group) {
-        group = { feature: f, lines: [] };
+        group = { feature: props === f.props ? f : { ...f, props }, lines: [] };
         groups.set(key, group);
       }
       for (const part of f.parts) group.lines.push(toLocal(part, scale, ox, oy));
