@@ -1,0 +1,230 @@
+const paintChunk = `
+uniform highp sampler2D u_paint;
+uniform int u_paint_width;
+uniform int u_paint_stride;
+uniform float u_zoom_t;
+vec4 paintValue(uint feature, int slot, int composite, vec4 fallback) {
+  if (slot < 0) return fallback;
+  int index = int(feature) * u_paint_stride + slot;
+  vec4 a = texelFetch(u_paint, ivec2(index % u_paint_width, index / u_paint_width), 0);
+  if (composite == 0) return a;
+  int next = index + 1;
+  vec4 b = texelFetch(u_paint, ivec2(next % u_paint_width, next / u_paint_width), 0);
+  return mix(a, b, u_zoom_t);
+}
+`;
+
+const clipChunk = `
+uniform vec4 u_clip;
+`;
+
+export const fillShader = {
+  name: "fill",
+  vertex: `
+layout(location = 0) in vec2 a_pos;
+layout(location = 4) in uint a_feature;
+uniform mat4 u_matrix;
+uniform vec2 u_translate;
+uniform vec4 u_color;
+uniform int u_color_slot;
+uniform int u_color_comp;
+uniform float u_opacity;
+uniform int u_opacity_slot;
+uniform int u_opacity_comp;
+${paintChunk}
+out vec2 v_pos;
+out vec4 v_color;
+void main() {
+  vec4 color = paintValue(a_feature, u_color_slot, u_color_comp, u_color);
+  float opacity = paintValue(a_feature, u_opacity_slot, u_opacity_comp, vec4(u_opacity)).x;
+  v_color = vec4(color.rgb * color.a, color.a) * opacity;
+  v_pos = a_pos;
+  gl_Position = u_matrix * vec4(a_pos + u_translate, 0.0, 1.0);
+}
+`,
+  fragment: `
+${clipChunk}
+in vec2 v_pos;
+in vec4 v_color;
+out vec4 fragColor;
+void main() {
+  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
+  fragColor = v_color;
+}
+`,
+};
+
+export const lineShader = {
+  name: "line",
+  vertex: `
+layout(location = 0) in vec2 a_pos;
+layout(location = 1) in vec2 a_extrude;
+layout(location = 2) in vec4 a_side;
+layout(location = 3) in float a_dist;
+layout(location = 4) in uint a_feature;
+uniform mat4 u_matrix;
+uniform vec2 u_translate;
+uniform float u_units_per_px;
+uniform float u_pixel_ratio;
+uniform vec4 u_color;
+uniform int u_color_slot;
+uniform int u_color_comp;
+uniform float u_width;
+uniform int u_width_slot;
+uniform int u_width_comp;
+uniform float u_opacity;
+uniform int u_opacity_slot;
+uniform int u_opacity_comp;
+uniform float u_blur;
+uniform int u_blur_slot;
+uniform int u_blur_comp;
+uniform float u_min_width;
+${paintChunk}
+out vec2 v_pos;
+out vec2 v_side;
+out float v_square;
+out float v_half;
+out float v_edge;
+out float v_dist;
+out vec4 v_color;
+void main() {
+  vec4 color = paintValue(a_feature, u_color_slot, u_color_comp, u_color);
+  float opacity = paintValue(a_feature, u_opacity_slot, u_opacity_comp, vec4(u_opacity)).x;
+  float width = max(paintValue(a_feature, u_width_slot, u_width_comp, vec4(u_width)).x, u_min_width);
+  float blur = max(paintValue(a_feature, u_blur_slot, u_blur_comp, vec4(u_blur)).x, 0.0);
+  float aa = 1.0 / u_pixel_ratio;
+  float half_width = width * 0.5;
+  float coverage = 1.0;
+  if (width < aa) {
+    coverage = width / aa;
+    half_width = aa * 0.5;
+  }
+  float edge = blur + aa;
+  float outset = half_width + edge * 0.5;
+  v_color = vec4(color.rgb * color.a, color.a) * opacity * coverage;
+  v_half = half_width;
+  v_edge = edge;
+  v_side = a_side.xy * outset;
+  v_square = a_side.z;
+  v_dist = a_dist / u_units_per_px;
+  vec2 pos = a_pos + u_translate + a_extrude * (1.0 / 2048.0) * outset * u_units_per_px;
+  v_pos = pos;
+  gl_Position = u_matrix * vec4(pos, 0.0, 1.0);
+}
+`,
+  fragment: `
+${clipChunk}
+uniform float u_dash[8];
+uniform int u_dash_count;
+uniform float u_dash_total;
+in vec2 v_pos;
+in vec2 v_side;
+in float v_square;
+in float v_half;
+in float v_edge;
+in float v_dist;
+in vec4 v_color;
+out vec4 fragColor;
+void main() {
+  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
+  float d = v_square > 0.5 ? max(abs(v_side.x), abs(v_side.y)) : length(v_side);
+  float alpha = clamp((v_half + v_edge * 0.5 - d) / v_edge, 0.0, 1.0);
+  if (u_dash_count > 0) {
+    float unit = max(v_half * 2.0, 1.0);
+    float t = mod(v_dist / unit, u_dash_total);
+    float start = 0.0;
+    float on = 0.0;
+    for (int i = 0; i < 8; i++) {
+      if (i >= u_dash_count) break;
+      float len = u_dash[i];
+      if (t >= start && t < start + len) {
+        float inside = min(t - start, start + len - t) * unit;
+        on = (i % 2 == 0) ? clamp(inside + 0.5, 0.0, 1.0) : 1.0 - clamp(inside + 0.5, 0.0, 1.0);
+        break;
+      }
+      start += len;
+    }
+    alpha *= on;
+  }
+  if (alpha <= 0.0) discard;
+  fragColor = v_color * alpha;
+}
+`,
+};
+
+export const circleShader = {
+  name: "circle",
+  vertex: `
+layout(location = 0) in vec2 a_pos;
+layout(location = 1) in vec4 a_corner;
+layout(location = 4) in uint a_feature;
+uniform mat4 u_matrix;
+uniform vec2 u_viewport;
+uniform float u_pixel_ratio;
+uniform vec4 u_color;
+uniform int u_color_slot;
+uniform int u_color_comp;
+uniform float u_radius;
+uniform int u_radius_slot;
+uniform int u_radius_comp;
+uniform float u_opacity;
+uniform int u_opacity_slot;
+uniform int u_opacity_comp;
+uniform vec4 u_stroke_color;
+uniform int u_stroke_color_slot;
+uniform int u_stroke_color_comp;
+uniform float u_stroke_width;
+uniform int u_stroke_width_slot;
+uniform int u_stroke_width_comp;
+uniform float u_blur;
+uniform int u_blur_slot;
+uniform int u_blur_comp;
+${paintChunk}
+out vec2 v_offset;
+out float v_radius;
+out float v_stroke;
+out float v_edge;
+out vec4 v_fill;
+out vec4 v_strokeColor;
+out vec2 v_pos;
+void main() {
+  vec4 color = paintValue(a_feature, u_color_slot, u_color_comp, u_color);
+  vec4 stroke = paintValue(a_feature, u_stroke_color_slot, u_stroke_color_comp, u_stroke_color);
+  float opacity = paintValue(a_feature, u_opacity_slot, u_opacity_comp, vec4(u_opacity)).x;
+  float radius = max(paintValue(a_feature, u_radius_slot, u_radius_comp, vec4(u_radius)).x, 0.0);
+  float strokeWidth = max(paintValue(a_feature, u_stroke_width_slot, u_stroke_width_comp, vec4(u_stroke_width)).x, 0.0);
+  float blur = max(paintValue(a_feature, u_blur_slot, u_blur_comp, vec4(u_blur)).x, 0.0);
+  float edge = blur + 1.0 / u_pixel_ratio;
+  float extent = radius + strokeWidth + edge;
+  v_offset = a_corner.xy * extent;
+  v_radius = radius;
+  v_stroke = strokeWidth;
+  v_edge = edge;
+  v_fill = vec4(color.rgb * color.a, color.a) * opacity;
+  v_strokeColor = vec4(stroke.rgb * stroke.a, stroke.a) * opacity;
+  v_pos = a_pos;
+  vec4 center = u_matrix * vec4(a_pos, 0.0, 1.0);
+  gl_Position = center + vec4(a_corner.xy * extent * 2.0 / u_viewport * center.w, 0.0, 0.0);
+}
+`,
+  fragment: `
+${clipChunk}
+in vec2 v_offset;
+in float v_radius;
+in float v_stroke;
+in float v_edge;
+in vec4 v_fill;
+in vec4 v_strokeColor;
+in vec2 v_pos;
+out vec4 fragColor;
+void main() {
+  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
+  float d = length(v_offset);
+  float outer = v_radius + v_stroke;
+  float alpha = clamp((outer + v_edge * 0.5 - d) / v_edge, 0.0, 1.0);
+  if (alpha <= 0.0) discard;
+  float t = v_stroke > 0.0 ? clamp((d - v_radius + v_edge * 0.5) / v_edge, 0.0, 1.0) : 0.0;
+  fragColor = mix(v_fill, v_strokeColor, t) * alpha;
+}
+`,
+};
