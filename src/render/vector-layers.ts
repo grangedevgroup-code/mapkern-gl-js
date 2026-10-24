@@ -5,7 +5,7 @@ import type { StyleLayer } from "../style/layer.ts";
 import type { TileManager } from "../tiles/manager.ts";
 import type { GL, Program } from "./gl.ts";
 import type { FrameInput, PaintStats } from "./painter.ts";
-import { circleShader, fillShader, lineShader } from "./shaders/vector.ts";
+import { circleShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
 
 type PaintUniform = { name: string; uniform: string; kind: "color" | "number" };
 
