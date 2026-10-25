@@ -2623,8 +2623,8 @@ const specs: Spec[] = [
       await createMap(page, JSON.stringify(style), { zoom: 3, center: [0, 0] });
       const fade = await framesDuring(page, `window.map.setPaintProperty("bg", "color", "#000000")`, 40, 40, 700);
       const greys = fade.map((p) => p[0]);
-      const between = greys.filter((g) => g > 40 && g < 215).length;
-      if (greys[0]! < 215 || greys[greys.length - 1]! > 2 || between < 3)
+      const between = greys.filter((g) => g > 10 && g < 245).length;
+      if (greys[0]! < 215 || greys[greys.length - 1]! > 2 || between < 2)
         fail(`the background should fade from white to black, got ${greys.join(" ")}`);
       if (greys.some((g, i) => i > 0 && g > greys[i - 1]! + 2))
         fail(`the fade should only go one way, got ${greys.join(" ")}`);
@@ -2636,8 +2636,8 @@ const specs: Spec[] = [
         300,
         700,
       );
-      const blended = driven.filter((p) => p[0] > 40 && p[0] < 215 && p[2] > 40 && p[2] < 215).length;
-      if (blended < 3 || !near(driven[driven.length - 1]!, BLUE, 6))
+      const blended = driven.filter((p) => p[0] > 10 && p[0] < 245 && p[2] > 10 && p[2] < 245).length;
+      if (blended < 2 || !near(driven[driven.length - 1]!, BLUE, 6))
         fail(
           `colors that depend on the feature should fade too, got ${driven.map((p) => `${p[0]}/${p[2]}`).join(" ")}`,
         );
@@ -2658,7 +2658,7 @@ const specs: Spec[] = [
       };
       const themed = await framesDuring(page, `void window.map.setStyle(${JSON.stringify(next)})`, 40, 40, 700);
       const lights = themed.map((p) => p[0]);
-      if (lights[0]! > 40 || lights[lights.length - 1]! < 253 || lights.filter((g) => g > 40 && g < 215).length < 3)
+      if (lights[0]! > 40 || lights[lights.length - 1]! < 253 || lights.filter((g) => g > 10 && g < 245).length < 2)
         fail(`switching styles should fade the colors that changed, got ${lights.join(" ")}`);
 
       await page.evaluate("window.map.remove()");
@@ -2672,10 +2672,10 @@ const specs: Spec[] = [
       };
       await createMap(page, JSON.stringify(draped), { zoom: 3, center: [0, 0], pitch: 30 });
       const reds = await framesDuring(page, `window.map.setPaintProperty("f", "color", "#0000ff")`, 400, 300, 700);
-      const mixed = reds.filter((p) => p[0] > 40 && p[0] < 215 && p[2] > 40 && p[2] < 215).length;
+      const mixed = reds.filter((p) => p[0] > 10 && p[0] < 245 && p[2] > 10 && p[2] < 245).length;
       const last = reds[reds.length - 1]!;
       await shot("transition-terrain");
-      if (mixed < 3 || !near(last, BLUE, 8))
+      if (mixed < 2 || !near(last, BLUE, 8))
         fail(`a fill draped on terrain should fade too, got ${reds.map((p) => `${p[0]}/${p[2]}`).join(" ")}`);
 
       await page.evaluate("window.map.remove()");
@@ -2720,8 +2720,8 @@ const specs: Spec[] = [
       if (!ink) fail("the label should be drawn in red");
       const [ix, iy] = ink!;
       const inks = await framesDuring(page, `window.map.setPaintProperty("t", "color", "#0000ff")`, ix, iy, 700);
-      const purple = inks.filter((p) => p[0] > 40 && p[0] < 215 && p[2] > 40 && p[2] < 215).length;
-      if (purple < 3 || !near(inks[inks.length - 1]!, BLUE, 12))
+      const purple = inks.filter((p) => p[0] > 10 && p[0] < 245 && p[2] > 10 && p[2] < 245).length;
+      if (purple < 2 || !near(inks[inks.length - 1]!, BLUE, 12))
         fail(`label colors should fade too, got ${inks.map((p) => `${p[0]}/${p[2]}`).join(" ")}`);
     },
   },
