@@ -52,6 +52,7 @@ const STYLE_KEYS = new Set([
   "layers",
   "terrain",
   "fonts",
+  "metadata",
 ]);
 
 export function validateStyle(style: unknown): StyleIssue[] {
