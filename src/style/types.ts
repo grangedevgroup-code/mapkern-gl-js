@@ -323,6 +323,7 @@ export interface StyleSpec {
   terrain?: TerrainSpec;
   fonts?: Record<string, string[]>;
   sprite?: string | { id: string; url: string }[];
+  glyphs?: string;
   transition?: TransitionSpec;
   metadata?: Record<string, unknown>;
 }
