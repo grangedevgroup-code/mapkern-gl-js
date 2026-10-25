@@ -48,7 +48,7 @@ const map = new maplet.Map({
 | `workerCount` | cores minus one, up to 4 | |
 | `workerUrl` | | URL of `dist/maplet-worker.js`, for sites whose Content Security Policy blocks `blob:` workers |
 | `reducedMotion` | the system setting | `true` turns camera animations into jumps |
-| `locale` | | Your own labels for controls and screen readers: `{ zoomIn, zoomOut, resetNorth, map, marker, popup, closePopup }` |
+| `locale` | | Your own labels for controls and screen readers: `{ zoomIn, zoomOut, resetNorth, map, marker, popup, closePopup, fullscreen, exitFullscreen, geolocate, locationUnavailable, yourLocation }` |
 
 When you're done with a map, call `map.remove()`. It stops drawing and frees the workers and GPU memory.
 
@@ -162,7 +162,7 @@ await map.once("idle");
 - `styleload`: a style has been applied. `load`: the first frame with it has been drawn.
 - `idle`: everything on screen has loaded and nothing is moving.
 - `render` after every frame, `resize` when the map changes size, `remove` when it's removed.
-- `movestart`, `move` and `moveend` whenever the camera changes. There are also `zoom`, `rotate` and `pitch` versions of all three. `originalEvent` is set when a person caused the move.
+- `movestart`, `move` and `moveend` whenever the camera changes. There are also `zoom`, `rotate` and `pitch` versions of all three. `originalEvent` is the mouse, touch, wheel or keyboard event when a person caused the move, and `undefined` when your code did.
 - `boxzoomstart`, `boxzoomend` and `boxzoomcancel` around a Shift-drag box zoom.
 - `click`, `dblclick`, `contextmenu`, `mousemove`, `mousedown`, `mouseup` and `mouseout` (the pointer left the map) carry `point` (`{ x, y }`) and `lngLat`. Call `event.preventDefault()` in `dblclick` to stop the zoom, or in `mousedown` to keep that press from moving the map.
 - `sourcedata` when a source loads (`kind: "metadata"`), gets new data (`"content"`) or fails (`"error"`).
@@ -255,6 +255,18 @@ map.addControl(new maplet.ScaleControl({ unit: "imperial" }), "bottom-left");
 ```
 
 `NavigationControl` has zoom buttons and a compass that turns the map back north and flat. Pass `showZoom: false` or `showCompass: false` to leave one out. `ScaleControl` takes `unit` (`"metric"` or `"imperial"`) and `maxWidth` in pixels. The attribution control is added for you.
+
+`FullscreenControl` fills the screen with the map, or with the element you pass as `container`. Browsers without the Fullscreen API, such as Safari on iPhone, get the same effect by stretching the map over the page. It fires `fullscreenstart` and `fullscreenend`, and `isFullscreen()` tells you which state it's in.
+
+`GeolocateControl` asks the browser where the person is, flies there and marks the spot with a dot and a circle for how accurate the reading is:
+
+```js
+const locate = new maplet.GeolocateControl({ trackUserLocation: true });
+map.addControl(locate);
+locate.on("geolocate", ({ position }) => console.log(position.coords.latitude, position.coords.longitude));
+```
+
+With `trackUserLocation: true` the map keeps following as the person moves, until they pan away; pressing the button again brings the view back, and once more turns tracking off. `positionOptions` goes straight to the browser, `fitBoundsOptions` controls the flight (`maxZoom` is 15), and `showUserLocation: false` or `showAccuracyCircle: false` hide the markers. The control fires `geolocate`, `error`, `trackuserlocationstart` and `trackuserlocationend`, `trigger()` presses the button from code, and `getState()` returns `off`, `waiting`, `active`, `background` or `error`. Browsers only share the location over HTTPS and after asking the person.
 
 The second argument is the corner: `"top-left"`, `"top-right"`, `"bottom-left"` or `"bottom-right"`. `removeControl()` takes it away again.
 
