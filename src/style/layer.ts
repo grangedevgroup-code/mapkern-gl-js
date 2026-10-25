@@ -20,6 +20,13 @@ const p = (kind: OutputKind, def: unknown, feature = true): PropertyDef => ({
   feature,
 });
 
+const checked = (
+  kind: OutputKind,
+  def: unknown,
+  feature: boolean,
+  check: (value: unknown) => string | null,
+): PropertyDef => ({ ...p(kind, def, feature), check });
+
 const fixed = (def: unknown, check: (value: unknown) => string | null): PropertyDef => ({
   kind: "any",
   default: def,
@@ -35,6 +42,13 @@ const oneOf =
 
 const numberAtLeast = (min: number) => (v: unknown) =>
   typeof v === "number" && Number.isFinite(v) && v >= min ? null : `must be a number >= ${min}`;
+
+const numberOrNull = (v: unknown) =>
+  v === null || (typeof v === "number" && Number.isFinite(v)) ? null : "must be a number";
+
+export function isPlainValue(value: unknown): boolean {
+  return !(Array.isArray(value) && typeof value[0] === "string");
+}
 
 const numberPair = (v: unknown) =>
   Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === "number" && Number.isFinite(n))
@@ -183,35 +197,36 @@ export const LAYOUT: Record<LayerType, Record<string, PropertyDef>> = {
     size: p("number", 14),
     weight: fixed("normal", oneOf("normal", "bold")),
     italic: fixed(false, isBoolean),
-    placement: fixed("point", oneOf("point", "line", "line-center")),
-    anchor: fixed("center", oneOf(...ANCHOR_NAMES)),
+    placement: checked("string", "point", false, oneOf("point", "line", "line-center")),
+    anchor: checked("string", "center", true, oneOf(...ANCHOR_NAMES)),
     variableAnchor: fixed(null, anchorList),
-    radialOffset: fixed(null, numberAtLeast(-1000)),
-    justify: fixed("center", oneOf("auto", "left", "center", "right")),
-    lineHeight: fixed(1.2, numberAtLeast(0)),
+    radialOffset: checked("any", null, true, numberOrNull),
+    justify: checked("string", "center", true, oneOf("auto", "left", "center", "right")),
+    lineHeight: checked("number", 1.2, false, numberAtLeast(0)),
     rotate: p("number", 0),
-    ignorePlacement: fixed(false, isBoolean),
-    iconIgnorePlacement: fixed(false, isBoolean),
-    maxAngle: fixed(45, numberAtLeast(0)),
-    keepUpright: fixed(true, isBoolean),
-    offset: fixed([0, 0], numberPair),
-    maxWidth: fixed(10, numberAtLeast(1)),
-    letterSpacing: fixed(0, numberAtLeast(-1)),
-    padding: fixed(2, numberAtLeast(0)),
-    spacing: fixed(250, numberAtLeast(16)),
-    allowOverlap: fixed(false, isBoolean),
-    transform: fixed("none", oneOf("none", "uppercase", "lowercase")),
+    rotationAlignment: checked("string", "auto", false, oneOf("auto", "map", "viewport")),
+    ignorePlacement: checked("boolean", false, false, isBoolean),
+    iconIgnorePlacement: checked("boolean", false, false, isBoolean),
+    maxAngle: checked("number", 45, false, numberAtLeast(0)),
+    keepUpright: checked("boolean", true, false, isBoolean),
+    offset: checked("any", [0, 0], true, numberPair),
+    maxWidth: checked("number", 10, true, numberAtLeast(0)),
+    letterSpacing: checked("number", 0, true, numberAtLeast(-1)),
+    padding: checked("number", 2, false, numberAtLeast(0)),
+    spacing: checked("number", 250, false, numberAtLeast(1)),
+    allowOverlap: checked("boolean", false, false, isBoolean),
+    transform: checked("string", "none", true, oneOf("none", "uppercase", "lowercase")),
     priority: p("number", 0),
-    optional: fixed(false, isBoolean),
+    optional: checked("boolean", false, false, isBoolean),
     icon: p("string", ""),
     iconSize: p("number", 1),
     iconRotate: p("number", 0),
-    iconAnchor: fixed("center", oneOf(...ANCHOR_NAMES)),
-    iconOffset: fixed([0, 0], numberPair),
-    iconPadding: fixed(2, numberAtLeast(0)),
-    iconAllowOverlap: fixed(false, isBoolean),
-    iconOptional: fixed(false, isBoolean),
-    iconRotationAlignment: fixed("auto", oneOf("auto", "map", "viewport")),
+    iconAnchor: checked("string", "center", true, oneOf(...ANCHOR_NAMES)),
+    iconOffset: checked("any", [0, 0], true, numberPair),
+    iconPadding: checked("number", 2, false, numberAtLeast(0)),
+    iconAllowOverlap: checked("boolean", false, false, isBoolean),
+    iconOptional: checked("boolean", false, false, isBoolean),
+    iconRotationAlignment: checked("string", "auto", false, oneOf("auto", "map", "viewport")),
   },
   extrusion: {},
   hillshade: {},
@@ -270,7 +285,7 @@ export class StyleLayer {
   }
 
   isVisible(zoom: number): boolean {
-    return this.visible && zoom >= this.minZoom && zoom < this.maxZoom;
+    return this.visible && (this.minZoom <= 0 || zoom >= this.minZoom) && zoom < this.maxZoom;
   }
 
   paintProperty<T>(name: string): Compiled<T> {
@@ -423,6 +438,10 @@ export class StyleLayer {
       }
       this.fixedValues.set(name, structuredClone(v));
       return;
+    }
+    if (value !== undefined && def.check && isPlainValue(value)) {
+      const problem = def.check(value);
+      if (problem) throw new Error(`${this.id}.${group}.${name} ${problem}`);
     }
     target.set(
       name,
