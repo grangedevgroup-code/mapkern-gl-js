@@ -3400,6 +3400,91 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "the map always fills the screen, with no empty bands past the poles",
+    async run({ page, shot }) {
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          w: {
+            type: "geojson",
+            data: {
+              type: "Feature",
+              properties: {},
+              geometry: {
+                type: "Polygon",
+                coordinates: [
+                  [
+                    [-180, -85.06],
+                    [180, -85.06],
+                    [180, 85.06],
+                    [-180, 85.06],
+                    [-180, -85.06],
+                  ],
+                ],
+              },
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ff00ff" } },
+          { id: "w", type: "fill", source: "w", paint: { color: "#00aa00" } },
+        ],
+      });
+      await page.evaluate(`(() => {
+        const el = document.getElementById("map");
+        el.style.inset = "auto";
+        el.style.left = "0px";
+        el.style.top = "0px";
+        el.style.width = "300px";
+        el.style.height = "580px";
+      })()`);
+      await createMap(page, style, { zoom: -2, center: [0, 0] });
+      const blank = () =>
+        page.evaluate<number>(`(() => {
+          const gl = window.map.getCanvas().getContext("webgl2");
+          const w = gl.drawingBufferWidth;
+          const h = gl.drawingBufferHeight;
+          const px = new Uint8Array(w * h * 4);
+          gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          let n = 0;
+          for (let i = 0; i < px.length; i += 4) if (px[i] > 200 && px[i + 1] < 60 && px[i + 2] > 200) n++;
+          return n;
+        })()`);
+      const move = async (camera: Record<string, unknown>) => {
+        await page.evaluate(`void window.map.jumpTo(${JSON.stringify(camera)})`);
+        await idle(page);
+      };
+      await shot("zoomed-out");
+      const zoom = await page.evaluate<number>("window.map.getZoom()");
+      if (Math.abs(zoom - Math.log2(580 / 512)) > 1e-6)
+        fail(`zooming out should stop where the world fills the height, got zoom ${zoom}`);
+      if ((await blank()) > 0) fail("zoomed all the way out, the map should still fill the screen");
+      const buttons = await page.evaluate<boolean[]>(`(() => {
+        window.map.addControl(new maplet.NavigationControl());
+        return [...document.querySelectorAll(".maplet-navigation button")].slice(0, 2).map((b) => b.disabled);
+      })()`);
+      if (buttons[0] !== false || buttons[1] !== true)
+        fail(`at the world limit only zoom out should be disabled, got ${JSON.stringify(buttons)}`);
+      for (const lat of [89, -89]) {
+        await move({ center: [0, lat], zoom: 1.5 });
+        const left = await blank();
+        if (left > 0) fail(`panned to latitude ${lat}, ${left} pixels showed past the world`);
+      }
+      await shot("at-the-pole");
+      await move({ center: [0, 0], zoom: -2, bearing: 45 });
+      await shot("rotated");
+      const rotated = await blank();
+      if (rotated > 0) fail(`rotated and zoomed out, ${rotated} pixels showed past the world`);
+      await move({ bearing: 0, zoom: -2 });
+      await move({ center: [-122.33, 47.6], zoom: 12 });
+      const [lng, lat] = await page.evaluate<[number, number]>("window.map.getCenter()");
+      if (Math.abs(lng + 122.33) > 1e-6 || Math.abs(lat - 47.6) > 1e-6)
+        fail(`jumping from the zoomed-out world to Seattle should land there, got ${lng}, ${lat}`);
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
