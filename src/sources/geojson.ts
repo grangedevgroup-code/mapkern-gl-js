@@ -157,6 +157,28 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
     return reply;
   }
 
+  async sourceFeatures(filter: unknown): Promise<QueriedSourceFeature[]> {
+    if (!this.manager || !this.posted) return [];
+    if (this.syncing) await this.syncing;
+    const tiles: [number, number, number][] = [];
+    const seen = new Set<number>();
+    for (const piece of this.manager.pieces) {
+      const tile = piece.tile;
+      if (seen.has(tile.key)) continue;
+      seen.add(tile.key);
+      tiles.push([tile.z, tile.x, tile.y]);
+    }
+    if (tiles.length === 0) return [];
+    const pool = this.ctx.workers();
+    const request = { source: this.key, tiles, filter };
+    let found = await pool.send<QueriedSourceFeature[] | null>("geojson-query", request, [], undefined, this.affinity);
+    if (!found) {
+      await this.restore();
+      found = await pool.send<QueriedSourceFeature[] | null>("geojson-query", request, [], undefined, this.affinity);
+    }
+    return found ?? [];
+  }
+
   async features(indices: readonly number[]): Promise<QueriedSourceFeature[]> {
     if (indices.length === 0 || !this.posted) return [];
     const pool = this.ctx.workers();
