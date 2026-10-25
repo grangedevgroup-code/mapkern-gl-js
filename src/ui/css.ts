@@ -249,6 +249,46 @@ export const CSS = `
 .maplet-popup-anchor-bottom-right .maplet-popup-content {
   border-bottom-right-radius: 0;
 }
+.maplet-pseudo-fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 99999;
+}
+.maplet-geolocate-button.maplet-waiting svg {
+  animation: maplet-pulse 1.2s ease-in-out infinite;
+}
+.maplet-geolocate-button.maplet-active {
+  color: var(--maplet-focus, #2f6fdb);
+}
+.maplet-geolocate-button.maplet-background {
+  color: rgba(47, 111, 219, 0.55);
+}
+.maplet-geolocate-button.maplet-error {
+  color: #d9473f;
+}
+.maplet-user-location {
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: var(--maplet-focus, #2f6fdb);
+  box-shadow: 0 0 0 1px rgba(16, 25, 29, 0.25), 0 1px 4px rgba(16, 25, 29, 0.35);
+}
+.maplet-user-accuracy {
+  box-sizing: border-box;
+  border: 1px solid rgba(47, 111, 219, 0.35);
+  border-radius: 50%;
+  background: rgba(47, 111, 219, 0.14);
+  pointer-events: none;
+}
+@keyframes maplet-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
 .maplet-boxzoom {
   position: absolute;
   top: 0;
@@ -291,6 +331,9 @@ export const CSS = `
 @media (prefers-reduced-motion: reduce) {
   .maplet-compass svg {
     transition: none;
+  }
+  .maplet-geolocate-button.maplet-waiting svg {
+    animation: none;
   }
 }
 `;
