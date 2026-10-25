@@ -18,7 +18,7 @@ export interface SymbolLayout {
   icon: Compiled<unknown>;
   size: Compiled<unknown>;
   priority: Compiled<unknown>;
-  placement: "point" | "line";
+  placement: "point" | "line" | "line-center";
   spacing: number;
   transform: "none" | "uppercase" | "lowercase";
 }
@@ -58,12 +58,13 @@ export function lineLabels(
   const { text, icon, size, priority } = info;
   const spacing = Math.max(16, layout.spacing) * (extent / 512);
   const minLength = Math.min(text.length * size * 0.5, 400) * (extent / 512);
+  const centered = layout.placement === "line-center";
   const out: LabelCandidate[] = [];
   for (const part of parts) {
     const length = lineLength(part);
     if (length < minLength) continue;
     const anchors: number[] = [];
-    const count = Math.max(1, Math.floor(length / spacing));
+    const count = centered ? 1 : Math.max(1, Math.floor(length / spacing));
     const step = length / count;
     for (let i = 0; i < count; i++) {
       const at = step * (i + 0.5);
@@ -166,7 +167,7 @@ export function labelCandidates(
   const geometry = feature.geometry();
   if (geometry.length === 0) return [];
   const out: LabelCandidate[] = [];
-  if (layout.placement === "line" && (feature.type === 2 || feature.type === 3)) {
+  if (layout.placement !== "point" && (feature.type === 2 || feature.type === 3)) {
     return lineLabels(geometry, info, index, layout, extent);
   }
   if (feature.type === 1) {
