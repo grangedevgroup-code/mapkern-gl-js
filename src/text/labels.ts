@@ -323,6 +323,15 @@ export class LabelRenderer {
     return icons + 2;
   }
 
+  imageTexture(): WebGLTexture | null {
+    this.syncIcons();
+    return this.iconTexture;
+  }
+
+  markMissing(id: string): void {
+    if (!this.images.has(id)) this.missing.add(id);
+  }
+
   private drawIcons(transform: Transform, pixelRatio: number): number {
     if (this.iconCount === 0) return 0;
     const g = this.gl;
@@ -669,12 +678,12 @@ export class LabelRenderer {
       const lineHeight = numberOr(layer.layoutValue<unknown>("lineHeight", at), 1.2);
       const variable = layer.fixed<Anchor[] | null>("variableAnchor");
       const [textShiftX, textShiftY] = screenShift(
-        layer.fixed<[number, number]>("translate"),
+        pairOr(layer.paintValue<unknown>("translate", at)),
         layer.fixed<string>("translateAnchor"),
         transform.bearing,
       );
       const [iconShiftX, iconShiftY] = screenShift(
-        layer.fixed<[number, number]>("iconTranslate"),
+        pairOr(layer.paintValue<unknown>("iconTranslate", at)),
         layer.fixed<string>("iconTranslateAnchor"),
         transform.bearing,
       );
@@ -1042,7 +1051,7 @@ export class LabelRenderer {
       visible++;
       const layer = label.layer;
       const [shiftX, shiftY] = screenShift(
-        layer.fixed<[number, number]>("translate"),
+        pairOr(layer.paintValue<unknown>("translate", { zoom: transform.zoom })),
         layer.fixed<string>("translateAnchor"),
         transform.bearing,
       );
