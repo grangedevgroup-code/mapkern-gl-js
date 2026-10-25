@@ -369,6 +369,8 @@ Return an `ArrayBuffer` or `Uint8Array`, or `null` when there's no tile. `maplet
 
 `map.getDiagnostics()` returns numbers for tracking down slow maps: frame times (`p50`, `p95`, `p99` and `max` over the last 240 frames), draw calls, requests in flight, worker queue length, `blankRatio` (how much of the screen is still waiting for data) and per-source tile counts with retries, cancellations and cache size. With terrain on, `terrain` says how many ground tiles are drawn, how much GPU memory their textures take and how many were redrawn in the last frame.
 
+For a closer look at what the map is doing, set `map.showTileBoundaries = true` to outline the tiles of the first source with their `z/x/y` names, `map.showCollisionBoxes = true` to outline the space each label and icon claims, and `map.showPadding = true` to show the [padding](#moving-the-camera) and the center it leaves. They're drawn on a separate layer over the map, so turning them off leaves the map exactly as it was.
+
 ## Other helpers
 
 `lightStyle(options)` is the built-in street style, described at the end of the [style guide](style.md#the-built-in-style). `validateStyle(style)` returns a list of `{ path, message }` problems. `distanceMeters(a, b)` measures between two positions, `metersPerPixel(latitude, zoom)` tells you how much ground one pixel covers, and `lngLatToWorld` and `worldToLngLat` convert to and from Web Mercator coordinates between 0 and 1. `version` is the library version.
