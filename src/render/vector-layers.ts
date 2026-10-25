@@ -50,6 +50,7 @@ const CIRCLE_PAINT: PaintUniform[] = [
   { name: "opacity", uniform: "u_opacity", kind: "number" },
   { name: "strokeColor", uniform: "u_stroke_color", kind: "color" },
   { name: "strokeWidth", uniform: "u_stroke_width", kind: "number" },
+  { name: "strokeOpacity", uniform: "u_stroke_opacity", kind: "number" },
   { name: "blur", uniform: "u_blur", kind: "number" },
 ];
 
@@ -63,6 +64,15 @@ const EXTRUSION_TERRAIN: ProgramSource = { ...extrusionShader, defines: ["TERRAI
 const EXTRUSION_TERRAIN_PICK: ProgramSource = { ...extrusionShader, defines: ["PICK", "TERRAIN"] };
 
 export const WARM_VARIANTS: readonly ProgramSource[] = [EXTRUSION_TERRAIN];
+
+function screenOffset(layer: StyleLayer, bearing: number): [number, number] {
+  const [x, y] = layer.fixed<[number, number]>("translate") ?? [0, 0];
+  if (layer.fixed<string>("translateAnchor") !== "viewport" || bearing === 0) return [x, y];
+  const b = (bearing * Math.PI) / 180;
+  const cos = Math.cos(b);
+  const sin = Math.sin(b);
+  return [x * cos - y * sin, x * sin + y * cos];
+}
 
 function normalize(x: number, y: number, z: number): [number, number, number] {
   const len = Math.hypot(x, y, z);
@@ -287,7 +297,7 @@ export class VectorPainter {
     const program = this.program(fillShader, pick);
     g.setDepth(false, false);
     this.prepare(program, layer, zoom, FILL_PAINT);
-    const translate = layer.fixed<[number, number]>("translate") ?? [0, 0];
+    const translate = screenOffset(layer, frame.view.bearing);
     let any = false;
     for (const piece of manager.pieces) {
       const bucket = piece.tile.data?.buckets.get(layer.id);
@@ -387,12 +397,21 @@ export class VectorPainter {
     gl.uniform1f(program.uniforms.get("u_pixel_ratio") ?? null, frame.pixelRatio);
     const [hx, hy] = pick ? pick.scale : [1, 1];
     gl.uniform2f(program.uniforms.get("u_viewport") ?? null, frame.view.width * hx, frame.view.height * hy);
+    const u = program.uniforms;
+    const flatView = frame.view !== frame.transform;
+    gl.uniform1i(u.get("u_pitch_align") ?? null, layer.fixed<string>("pitchAlignment") === "map" ? 1 : 0);
+    gl.uniform1i(u.get("u_pitch_scale") ?? null, layer.fixed<string>("pitchScale") === "map" ? 1 : 0);
+    gl.uniform1f(u.get("u_camera_distance") ?? null, flatView ? 1 : frame.transform.cameraToCenterDistance);
+    const translate = screenOffset(layer, frame.view.bearing);
     const near = frame.acceptNear ?? frame.accept;
     for (const piece of manager.pieces) {
       const bucket = piece.tile.data?.buckets.get(layer.id);
       if (!bucket?.main || (near && !near(piece))) continue;
       this.bindPaint(program, layer, bucket, zoom, CIRCLE_PAINT, states);
       this.tileUniforms(program, frame, piece, bucket, pick);
+      const units = bucket.extent / (512 * 2 ** (zoom - piece.tile.z));
+      gl.uniform1f(u.get("u_units_per_px") ?? null, units);
+      gl.uniform2f(u.get("u_translate") ?? null, translate[0] * units, translate[1] * units);
       this.drawGeometry(bucket.main, stats);
       stats.pieces++;
     }
