@@ -42,6 +42,10 @@ export class SlotView implements RenderView {
     return out;
   }
 
+  get rect(): readonly [number, number, number, number] {
+    return [this.x0, this.y0, this.x0 + this.size, this.y0 + this.size];
+  }
+
   overlaps(z: number, x: number, y: number, wrap: number, margin = 0): boolean {
     const n = 2 ** z;
     const pad = margin / n;
