@@ -17,6 +17,8 @@ import { registerPmtilesProtocol } from "../sources/pmtiles.ts";
 import { RasterSource } from "../sources/raster.ts";
 import type { MapSource, SourceContext } from "../sources/source.ts";
 import { VectorSource } from "../sources/vector.ts";
+import type { Compiled } from "../style/expression.ts";
+import { compile } from "../style/expression.ts";
 import type { FeatureTarget, StateLookup } from "../style/feature-state.ts";
 import { FeatureStates } from "../style/feature-state.ts";
 import type { StyleLayer } from "../style/layer.ts";
@@ -39,8 +41,8 @@ import type { ImageInput, ImageOptions } from "./images.ts";
 import { pixelsOf, spriteImages, spriteSheets, spriteUrl, styleImage } from "./images.ts";
 import type { LayerEventType, PointerInput, PointerType } from "./layer-events.ts";
 import { LAYER_EVENT_TYPES, LayerEvents } from "./layer-events.ts";
-import type { QueriedFeature, StateReader } from "./query.ts";
-import { resolveFeatures } from "./query.ts";
+import type { QueriedFeature, SourceQueriedFeature, StateReader } from "./query.ts";
+import { queryVectorSource, resolveFeatures } from "./query.ts";
 
 export interface MapOptions {
   container: HTMLElement | string;
@@ -1247,6 +1249,51 @@ export class MapletMap extends Emitter<MapEvents> {
         : undefined,
     );
     return resolveFeatures(picked, style.sources, this.stateOf);
+  }
+
+  async querySourceFeatures(
+    sourceId: string,
+    options: { sourceLayer?: string; filter?: unknown } = {},
+  ): Promise<SourceQueriedFeature[]> {
+    const style = this.style;
+    if (!style || this.removed) return [];
+    const source = style.sources.get(sourceId);
+    if (!source) {
+      throw new MapletError("invalid-option", `There is no source with id "${sourceId}"`, { sourceId });
+    }
+    if (source.type !== "vector" && source.type !== "geojson") {
+      throw new MapletError(
+        "invalid-option",
+        `querySourceFeatures needs a vector or geojson source, not ${source.type}`,
+        {
+          sourceId,
+        },
+      );
+    }
+    if (options.sourceLayer !== undefined && typeof options.sourceLayer !== "string") {
+      throw new MapletError("invalid-option", "sourceLayer must be the name of a layer in the tiles", { sourceId });
+    }
+    let filter: Compiled<boolean> | null = null;
+    if (options.filter !== undefined && options.filter !== null) {
+      try {
+        filter = compile<boolean>(options.filter, "boolean", false, "filter");
+      } catch (error) {
+        throw new MapletError("invalid-option", errorMessage(error), { sourceId }, error);
+      }
+    }
+    if (source.type === "vector") {
+      return queryVectorSource(source as VectorSource, options.sourceLayer, filter, this.stateOf);
+    }
+    const found = await (source as GeoJSONSource).sourceFeatures(options.filter ?? null);
+    return found.map((f) => ({
+      type: "Feature",
+      id: f.id,
+      properties: { ...f.properties },
+      geometry: f.geometry,
+      source: sourceId,
+      sourceLayer: undefined,
+      state: this.stateOf(sourceId, undefined, f.id),
+    }));
   }
 
   private groundQuery(box: PickBox): { transform: Transform; box: PickBox } | null {
