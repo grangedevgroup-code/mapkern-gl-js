@@ -87,6 +87,8 @@ export const PAINT: Record<LayerType, Record<string, PropertyDef>> = {
     antialias: fixed(true, isBoolean),
   },
   line: {
+    offset: p("number", 0),
+    gapWidth: p("number", 0),
     color: p("color", "#000000"),
     width: p("number", 1),
     opacity: p("number", 1),
