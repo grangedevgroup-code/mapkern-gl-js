@@ -20,6 +20,54 @@ export const clipChunk = `
 uniform vec4 u_clip;
 `;
 
+export const fillPatternShader = {
+  name: "fill-pattern",
+  vertex: `
+layout(location = 0) in vec2 a_pos;
+uniform mat4 u_matrix;
+uniform vec2 u_translate;
+uniform float u_extent;
+uniform float u_tile_size;
+uniform vec4 u_pattern_origin;
+out vec2 v_pos;
+out vec4 v_pattern;
+void main() {
+  vec2 local = a_pos / u_extent * u_tile_size;
+  v_pattern = vec4(local + u_pattern_origin.xy, local * 2.0 + u_pattern_origin.zw);
+  v_pos = a_pos;
+  gl_Position = u_matrix * vec4(a_pos + u_translate, 0.0, 1.0);
+}
+`,
+  fragment: `
+${clipChunk}
+uniform sampler2D u_atlas;
+uniform vec4 u_rect;
+uniform float u_ratio;
+uniform float u_mix;
+uniform float u_opacity;
+in vec2 v_pos;
+in vec4 v_pattern;
+out vec4 fragColor;
+vec4 texel(ivec2 p, ivec2 size) {
+  p = ivec2(p.x >= size.x ? p.x - size.x : p.x, p.y >= size.y ? p.y - size.y : p.y);
+  return texelFetch(u_atlas, ivec2(u_rect.xy) + p, 0);
+}
+vec4 sampleAt(vec2 css) {
+  vec2 p = mod(css * u_ratio - 0.5, u_rect.zw);
+  ivec2 size = ivec2(u_rect.zw);
+  ivec2 base = ivec2(floor(p));
+  vec2 f = fract(p);
+  vec4 top = mix(texel(base, size), texel(base + ivec2(1, 0), size), f.x);
+  vec4 bottom = mix(texel(base + ivec2(0, 1), size), texel(base + ivec2(1, 1), size), f.x);
+  return mix(top, bottom, f.y);
+}
+void main() {
+  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x >= u_clip.z || v_pos.y >= u_clip.w) discard;
+  fragColor = mix(sampleAt(v_pattern.xy), sampleAt(v_pattern.zw), u_mix) * u_opacity;
+}
+`,
+};
+
 export const fillShader = {
   name: "fill",
   vertex: `
