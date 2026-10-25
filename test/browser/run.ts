@@ -1906,6 +1906,66 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "within filters keep only features inside an area",
+    async run({ page }) {
+      const area = {
+        type: "Polygon",
+        coordinates: [
+          [
+            [-10, -10],
+            [10, -10],
+            [10, 10],
+            [-10, 10],
+            [-10, -10],
+          ],
+        ],
+      };
+      const points = [
+        [0, 0],
+        [5, 5],
+        [-15, 0],
+        [15, 3],
+      ].map(([lng, lat], i) => ({
+        type: "Feature",
+        properties: { n: i },
+        geometry: { type: "Point", coordinates: [lng, lat] },
+      }));
+      const style = JSON.stringify({
+        version: 1,
+        sources: { g: { type: "geojson", data: { type: "FeatureCollection", features: points } } },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          {
+            id: "inside",
+            type: "circle",
+            source: "g",
+            filter: ["within", area],
+            paint: { radius: 6, color: "#ff0000" },
+          },
+        ],
+      });
+      await createMap(page, style, { zoom: 3, center: [0, 0] });
+      const at = async (lng: number, lat: number) => {
+        const p = await page.evaluate<{ x: number; y: number }>(`window.map.project([${lng}, ${lat}])`);
+        return pixel(page, Math.round(p.x), Math.round(p.y));
+      };
+      if (!near(await at(0, 0), RED, 10) || !near(await at(5, 5), RED, 10))
+        fail("points inside the area should be drawn");
+      if (!near(await at(-15, 0), WHITE, 10) || !near(await at(15, 3), WHITE, 10))
+        fail("points outside the area should be left out");
+      const found = await page.evaluate<number[]>(
+        `window.map.querySourceFeatures("g", { filter: ["within", ${JSON.stringify(area)}] }).then((fs) => fs.map((f) => f.properties.n).sort())`,
+      );
+      if (JSON.stringify(found) !== JSON.stringify([0, 1]))
+        fail(`querySourceFeatures with within gave ${JSON.stringify(found)}`);
+      const issues = await page.evaluate<unknown[]>(
+        `maplet.validateStyle({ version: 1, sources: { g: { type: "geojson", data: { type: "FeatureCollection", features: [] } } }, layers: [{ id: "c", type: "circle", source: "g", paint: { radius: ["case", ["within", ${JSON.stringify(area)}], 4, 2] } }] })`,
+      );
+      if (!JSON.stringify(issues).includes("only works in layer filters"))
+        fail(`within outside a filter should be reported, got ${JSON.stringify(issues)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
