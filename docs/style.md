@@ -195,7 +195,7 @@ Draws lines, and the edges of polygons.
 | `width` | 1 | per feature, in pixels |
 | `opacity` | 1 | per feature |
 | `blur` | 0 | per feature. Softens the edges, in pixels |
-| `dash` | none | A pattern like `[2, 1]`, measured in line widths. Fixed value only |
+| `dash` | none | A pattern like `[2, 1]`, measured in line widths. It can change with the zoom through `step` |
 | `offset` | 0 | per feature. Moves the line sideways, in pixels: right of the direction it was drawn in, or left for negative values |
 | `gapWidth` | 0 | per feature. Splits the line into two lines of `width` with a gap this wide between them, as for the edges of a bridge |
 
