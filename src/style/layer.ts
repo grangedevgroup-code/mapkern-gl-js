@@ -250,7 +250,9 @@ export class StyleLayer {
     for (const [name, def] of Object.entries(LAYOUT[this.type]))
       this.setProperty(this.layout, "layout", name, def, layout[name]);
     const filter = (spec as { filter?: unknown }).filter;
-    if (filter !== undefined) this.filter = compile<boolean>(filter, "boolean", false, `${this.id}.filter`);
+    if (filter !== undefined) {
+      this.filter = compile<boolean>(filter, "boolean", false, `${this.id}.filter`, { geometry: true });
+    }
   }
 
   get usesState(): boolean {
@@ -315,7 +317,9 @@ export class StyleLayer {
 
   setFilter(filter: unknown): void {
     this.filter =
-      filter === undefined || filter === null ? null : compile<boolean>(filter, "boolean", false, `${this.id}.filter`);
+      filter === undefined || filter === null
+        ? null
+        : compile<boolean>(filter, "boolean", false, `${this.id}.filter`, { geometry: true });
     const spec = this.spec as { filter?: unknown };
     if (filter === undefined || filter === null) delete spec.filter;
     else spec.filter = structuredClone(filter);
