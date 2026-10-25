@@ -347,7 +347,7 @@ map.addImage("cafe", image);
 map.addLayer({ id: "cafes", type: "symbol", source: "places", layout: { icon: "cafe", text: ["get", "name"], anchor: "top", offset: [0, 1] } });
 ```
 
-`addImage(name, image, options)` takes an `<img>` that has finished loading, a canvas, an `ImageBitmap`, an `ImageData`, or `{ width, height, data }` with RGBA bytes. Pass `pixelRatio: 2` for an image drawn at double resolution, and `sdf: true` for a distance field that `iconColor` can paint. `loadImage(url)` fetches an image the same way tiles are fetched, so `transformRequest` applies to it.
+`addImage(name, image, options)` takes an `<img>` that has finished loading, a canvas, an `ImageBitmap`, an `ImageData`, or `{ width, height, data }` with RGBA bytes. Pass `pixelRatio: 2` for an image drawn at double resolution, and `sdf: true` for a distance field that `iconColor` can paint. For icons that stretch around their text with `iconTextFit`, `stretchX` and `stretchY` name the pixel ranges that may grow, like `[[4, 28]]`, and `content: [left, top, right, bottom]` is the part the text goes in, so the rounded corners of a road shield keep their shape. Sprite sheets can carry the same three fields for each image. `loadImage(url)` fetches an image the same way tiles are fetched, so `transformRequest` applies to it.
 
 `updateImage(name, image)` swaps the pixels, which is how you animate an icon. `hasImage`, `removeImage` and `listImages` do what they say. Images you add stay through `setStyle`; images from a style's sprite are replaced by the new style's.
 
