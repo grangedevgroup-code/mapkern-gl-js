@@ -1,3 +1,4 @@
+import { MapletError } from "../core/errors.ts";
 import { Emitter } from "../core/events.ts";
 import type { MapletMap, MapPointerEvent } from "../core/map.ts";
 import type { LngLat, LngLatLike } from "../geo/mercator.ts";
@@ -41,19 +42,18 @@ export class Popup extends Emitter<PopupEvents> {
   private content: Node | null = null;
   private container: HTMLElement | null = null;
   private body: HTMLElement | null = null;
-  private tip: HTMLElement | null = null;
   private offsets: AnchorOffsets;
   private fallbackOffsets: AnchorOffsets | null = null;
   private classes: Set<string>;
   private maxWidth: string;
   private anchorShown: Anchor | null = null;
   private lastTransform = "";
-  private returnFocus: HTMLElement | null = null;
+  private owner: HTMLElement | null = null;
 
   constructor(options: PopupOptions = {}) {
     super();
     if (options.anchor !== undefined && !isAnchor(options.anchor)) {
-      throw new TypeError(`Unknown popup anchor "${String(options.anchor)}"`);
+      throw new MapletError("invalid-option", `Unknown popup anchor "${String(options.anchor)}"`);
     }
     this.options = { ...options };
     this.offsets = anchorOffsets(options.offset);
@@ -77,7 +77,6 @@ export class Popup extends Emitter<PopupEvents> {
     container.addEventListener("keydown", this.onKeyDown);
     this.container = container;
     this.body = body;
-    this.tip = tip;
     this.renderContent();
     this.applyClasses();
     map.getContainer().appendChild(container);
@@ -107,11 +106,10 @@ export class Popup extends Emitter<PopupEvents> {
     this.container?.remove();
     this.container = null;
     this.body = null;
-    this.tip = null;
     this.anchorShown = null;
     this.lastTransform = "";
     this.map = null;
-    if (hadFocus) this.returnFocus?.focus({ preventScroll: true });
+    if (hadFocus) this.owner?.focus({ preventScroll: true });
     this.emit("close", { target: this, type: "close" });
     return this;
   }
@@ -174,8 +172,9 @@ export class Popup extends Emitter<PopupEvents> {
   }
 
   setOffset(offset?: OffsetLike | Partial<Record<Anchor, OffsetLike>>): this {
-    this.options.offset = offset;
     this.offsets = anchorOffsets(offset);
+    if (offset === undefined) delete this.options.offset;
+    else this.options.offset = offset;
     this.update();
     return this;
   }
@@ -200,9 +199,9 @@ export class Popup extends Emitter<PopupEvents> {
     return on;
   }
 
-  attachedOffsets(offsets: AnchorOffsets | null, returnFocus: HTMLElement | null): void {
+  attachedOffsets(offsets: AnchorOffsets | null, owner: HTMLElement | null): void {
     this.fallbackOffsets = offsets;
-    this.returnFocus = returnFocus;
+    this.owner = owner;
   }
 
   private currentOffsets(): AnchorOffsets {
@@ -307,7 +306,9 @@ export class Popup extends Emitter<PopupEvents> {
     this.update();
   };
 
-  private readonly onMapClick = (): void => {
+  private readonly onMapClick = (event: MapPointerEvent): void => {
+    const target = event.originalEvent.target;
+    if (this.owner && target instanceof Node && this.owner.contains(target)) return;
     this.remove();
   };
 
@@ -325,12 +326,4 @@ export class Popup extends Emitter<PopupEvents> {
       this.remove();
     }
   };
-
-  get element(): HTMLElement | null {
-    return this.container;
-  }
-
-  get tipElement(): HTMLElement | null {
-    return this.tip;
-  }
 }
