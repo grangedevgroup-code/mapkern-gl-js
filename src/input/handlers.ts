@@ -11,6 +11,7 @@ export interface InputOptions {
   touchPitch: boolean;
   touchRotate: boolean;
   keyboard: boolean;
+  boxZoom: boolean;
   clickTolerance: number;
 }
 
@@ -35,6 +36,7 @@ export interface InputHost {
     event: MouseEvent,
     point: [number, number],
   ): Promise<boolean> | null;
+  boxZoom(stage: "start" | "end" | "cancel", from: [number, number], to: [number, number], event: Event): void;
 }
 
 interface Hold {
@@ -56,6 +58,7 @@ interface Pointer {
 type Mode =
   | { kind: "idle" }
   | { kind: "press"; pointer: number; rotate: boolean; hold: Hold }
+  | { kind: "box"; pointer: number; startX: number; startY: number; box: HTMLElement | null; hold: Hold }
   | { kind: "pan"; pointer: number; anchor: Point3 }
   | { kind: "rotate"; pointer: number; lastX: number; lastY: number; moved: boolean }
   | {
@@ -209,7 +212,15 @@ export class InputHandlers {
   }
 
   private cancel(): void {
-    if (this.mode.kind !== "idle" && this.mode.kind !== "press") this.host.gesture(false);
+    const mode = this.mode;
+    if (mode.kind === "box") {
+      if (mode.box) {
+        mode.box.remove();
+        this.host.boxZoom("cancel", [mode.startX, mode.startY], [mode.startX, mode.startY], new Event("cancel"));
+      }
+    } else if (mode.kind !== "idle" && mode.kind !== "press") {
+      this.host.gesture(false);
+    }
     this.mode = { kind: "idle" };
     this.pointers.clear();
     this.samples = [];
@@ -249,6 +260,10 @@ export class InputHandlers {
       return;
     }
     if (this.pointers.size > 1) return;
+    if (e.pointerType === "mouse" && e.button === 0 && e.shiftKey && this.options.boxZoom) {
+      this.mode = { kind: "box", pointer: e.pointerId, startX: x, startY: y, box: null, hold };
+      return;
+    }
     const rotate = e.pointerType === "mouse" && (e.button === 2 || e.ctrlKey);
     this.mode = { kind: "press", pointer: e.pointerId, rotate, hold };
     this.samples = [{ t: e.timeStamp, x, y }];
@@ -295,6 +310,10 @@ export class InputHandlers {
         this.host.gesture(true);
       }
     }
+    if (mode.kind === "box" && mode.pointer === e.pointerId) {
+      this.moveBox(mode, x, y, e);
+      return;
+    }
     const current = this.mode;
     if (current.kind === "pan" && current.pointer === e.pointerId) {
       transform.setLocationAtPoint(current.anchor, x, y, current.anchor[2]);
@@ -334,6 +353,18 @@ export class InputHandlers {
       if (e.pointerType === "mouse" && e.button === 2) return;
       this.host.pointerEvent("click", e, [x, y]);
       if (e.pointerType !== "mouse") this.detectDoubleTap(e, x, y);
+      return;
+    }
+    if (mode.kind === "box" && mode.pointer === e.pointerId) {
+      this.mode = { kind: "idle" };
+      if (!mode.box) {
+        if (!cancelled) this.host.pointerEvent("click", e, [x, y]);
+        return;
+      }
+      mode.box.remove();
+      const from: [number, number] = [mode.startX, mode.startY];
+      const big = Math.abs(x - mode.startX) >= 1 && Math.abs(y - mode.startY) >= 1;
+      this.host.boxZoom(cancelled || mode.hold.prevented || !big ? "cancel" : "end", from, [x, y], e);
       return;
     }
     if (mode.kind === "pan" && mode.pointer === e.pointerId) {
@@ -557,7 +588,38 @@ export class InputHandlers {
     this.host.changed();
   }
 
+  private moveBox(mode: Extract<Mode, { kind: "box" }>, x: number, y: number, e: PointerEvent): void {
+    if (mode.hold.prevented) {
+      if (mode.box) this.cancel();
+      return;
+    }
+    if (!mode.box) {
+      if (mode.hold.waiting) return;
+      if (Math.hypot(x - mode.startX, y - mode.startY) < this.options.clickTolerance) return;
+      if (!this.capture(mode.pointer)) {
+        this.cancel();
+        return;
+      }
+      const box = this.host.element.ownerDocument.createElement("div");
+      box.className = "maplet-boxzoom";
+      this.host.element.appendChild(box);
+      mode.box = box;
+      this.host.boxZoom("start", [mode.startX, mode.startY], [x, y], e);
+    }
+    const left = Math.min(mode.startX, x);
+    const top = Math.min(mode.startY, y);
+    const style = mode.box.style;
+    style.transform = `translate(${left}px, ${top}px)`;
+    style.width = `${Math.abs(x - mode.startX)}px`;
+    style.height = `${Math.abs(y - mode.startY)}px`;
+  }
+
   private onKeyDown(e: KeyboardEvent): void {
+    if (e.key === "Escape" && this.mode.kind === "box") {
+      e.preventDefault();
+      this.cancel();
+      return;
+    }
     if (!this.options.keyboard || e.altKey || e.ctrlKey || e.metaKey) return;
     const transform = this.host.transform;
     const duration = this.host.reducedMotion() ? 0 : 300;
