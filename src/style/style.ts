@@ -1,5 +1,7 @@
 import { errorMessage, MapletError } from "../core/errors.ts";
 import type { MapSource } from "../sources/source.ts";
+import type { LayerUpdate } from "./diff.ts";
+import { layerUpdate, sameValue } from "./diff.ts";
 import { StyleLayer } from "./layer.ts";
 import type { LayerSpec, SourceSpec, StyleSpec } from "./types.ts";
 import { formatIssues, validateLayer, validateSource, validateStyle } from "./validate.ts";
@@ -10,6 +12,11 @@ export interface StyleEvents {
   sourceLoaded(source: MapSource): void;
   sourceFailed(source: MapSource, error: MapletError): void;
   changed(): void;
+}
+
+export interface StyleUpdate {
+  dropped: string[];
+  sprite: boolean;
 }
 
 export class Style {
@@ -100,6 +107,39 @@ export class Style {
     const index = beforeId === undefined ? this.layers.length : this.layers.findIndex((l) => l.id === beforeId);
     this.layers.splice(index, 0, layer);
     this.events.changed();
+  }
+
+  apply(next: StyleSpec): StyleUpdate {
+    const { sources, layers, ...meta } = next;
+    const created = new Map<string, StyleLayer>();
+    const updates: [StyleLayer, LayerSpec, LayerUpdate][] = [];
+    for (const spec of layers) {
+      const current = this.layerById.get(spec.id);
+      const update = current ? layerUpdate(current.spec, spec) : null;
+      if (current && update) updates.push([current, spec, update]);
+      else created.set(spec.id, new StyleLayer(spec));
+    }
+    const dropped: string[] = [];
+    for (const [id, source] of [...this.sources]) {
+      const spec = sources[id];
+      if (spec && (sameValue(source.spec, spec) || source.adopt?.(cloneSpec(spec)))) continue;
+      source.destroy();
+      this.sources.delete(id);
+      dropped.push(id);
+    }
+    for (const [id, spec] of Object.entries(sources)) {
+      if (!this.sources.has(id)) this.createSource(id, cloneSpec(spec));
+    }
+    for (const [layer, spec, update] of updates) layer.restyle(spec, update);
+    this.layers = layers.map((spec) => created.get(spec.id) ?? this.layerById.get(spec.id)!);
+    this.layerById.clear();
+    for (const layer of this.layers) this.layerById.set(layer.id, layer);
+    const sprite = !sameValue(this.meta.sprite, meta.sprite);
+    const target = this.meta as Record<string, unknown>;
+    for (const key of Object.keys(target)) delete target[key];
+    Object.assign(target, structuredClone(meta));
+    this.events.changed();
+    return { dropped, sprite };
   }
 
   serialize(): StyleSpec {
