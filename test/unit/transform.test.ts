@@ -235,3 +235,76 @@ test("zoomAround keeps an elevated anchor under the cursor", () => {
   close(p.x, 650, 1e-4);
   close(p.y, 120, 1e-4);
 });
+
+test("padding moves the center to the middle of the free area", () => {
+  for (const pitch of [0, 45, 70]) {
+    for (const bearing of [0, 60]) {
+      const t = make(12, pitch, bearing);
+      t.setPadding({ top: 120, right: 0, bottom: 0, left: 300 });
+      const [px, py] = t.centerPoint;
+      close(px, 550);
+      close(py, 360);
+      const p = t.project(mercatorX(-122.33), mercatorY(47.6));
+      close(p.x, px, 1e-6);
+      close(p.y, py, 1e-6);
+      for (const [x, y] of [
+        [10, 590],
+        [790, 590],
+        [400, 300],
+      ] as const) {
+        const w = t.unproject(x, y);
+        assert.ok(w, `unproject ${x},${y} at pitch ${pitch}`);
+        const back = t.project(w[0], w[1]);
+        close(back.x, x, 1e-6);
+        close(back.y, y, 1e-6);
+      }
+    }
+  }
+});
+
+test("padding keeps the far plane past the top of the screen", () => {
+  const t = make(14, 60, 0);
+  const plain = t.far;
+  t.setPadding({ top: 0, right: 0, bottom: 300, left: 0 });
+  assert.ok(t.far > 0 && t.far < plain, `${t.far} vs ${plain}`);
+  t.setPadding({ top: 300, right: 0, bottom: 0, left: 0 });
+  assert.ok(t.far > plain, `${t.far} vs ${plain}`);
+  const top = t.unprojectClamped(400, 1);
+  const depth = t.project(top[0], top[1]).w;
+  assert.ok(depth < t.far, `the top of the screen at depth ${depth} is beyond the far plane ${t.far}`);
+});
+
+test("max bounds keep the whole view inside", () => {
+  const bounds = { x0: mercatorX(-123), y0: mercatorY(48), x1: mercatorX(-122), y1: mercatorY(47) };
+  for (const bearing of [0, 30, -100]) {
+    const t = make(12, 0, bearing);
+    t.setMaxBounds(bounds);
+    t.setCenter(-130, 50);
+    t.setZoom(3);
+    assert.ok(t.zoom > 8, `zoom ${t.zoom} shows more than the bounds`);
+    for (const [x, y] of [
+      [0, 0],
+      [800, 0],
+      [800, 600],
+      [0, 600],
+    ] as const) {
+      const w = t.unproject(x, y)!;
+      assert.ok(w[0] >= bounds.x0 - 1e-9 && w[0] <= bounds.x1 + 1e-9, `corner ${x},${y} x ${w[0]} outside`);
+      assert.ok(w[1] >= bounds.y0 - 1e-9 && w[1] <= bounds.y1 + 1e-9, `corner ${x},${y} y ${w[1]} outside`);
+    }
+    t.setMaxBounds(null);
+    t.setZoom(3);
+    close(t.zoom, 3);
+  }
+});
+
+test("max bounds across the antimeridian keep the center on the right side", () => {
+  const t = make(6);
+  t.setMaxBounds({ x0: mercatorX(170), y0: mercatorY(10), x1: mercatorX(190), y1: mercatorY(-10) });
+  t.setCenter(-175, 0);
+  const [x] = t.centerWorld;
+  close(x, mercatorX(-175));
+  t.setCenter(0, 0);
+  const [lng] = t.center;
+  assert.ok(lng > 170 || lng < -170, `center escaped to ${lng}`);
+});
