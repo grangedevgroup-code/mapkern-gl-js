@@ -1,4 +1,4 @@
-import type { Transform } from "./transform.ts";
+import type { Padding, Transform } from "./transform.ts";
 
 export interface CameraState {
   x: number;
@@ -6,6 +6,7 @@ export interface CameraState {
   zoom: number;
   bearing: number;
   pitch: number;
+  padding: Padding;
 }
 
 export type Easing = (t: number) => number;
@@ -28,7 +29,28 @@ export interface CameraMotion {
 
 export function readState(transform: Transform): CameraState {
   const [x, y] = transform.centerWorld;
-  return { x, y, zoom: transform.zoom, bearing: transform.bearing, pitch: transform.pitch };
+  return {
+    x,
+    y,
+    zoom: transform.zoom,
+    bearing: transform.bearing,
+    pitch: transform.pitch,
+    padding: transform.padding,
+  };
+}
+
+export function samePadding(a: Padding, b: Padding): boolean {
+  return a.top === b.top && a.right === b.right && a.bottom === b.bottom && a.left === b.left;
+}
+
+function easePadding(transform: Transform, from: Padding, to: Padding, k: number): void {
+  if (samePadding(from, to)) return;
+  transform.setPadding({
+    top: from.top + (to.top - from.top) * k,
+    right: from.right + (to.right - from.right) * k,
+    bottom: from.bottom + (to.bottom - from.bottom) * k,
+    left: from.left + (to.left - from.left) * k,
+  });
 }
 
 export function shortestX(from: number, to: number): number {
@@ -58,6 +80,7 @@ export function easeMotion(
     target: to,
     apply(transform, t) {
       const k = easing(Math.min(1, Math.max(0, t)));
+      easePadding(transform, from.padding, to.padding, k);
       transform.setZoom(from.zoom + (to.zoom - from.zoom) * k);
       transform.setBearing(from.bearing + (tb - from.bearing) * k);
       transform.setPitch(from.pitch + (to.pitch - from.pitch) * k);
@@ -129,6 +152,7 @@ export function flyMotion(from: CameraState, to: CameraState, viewport: number, 
       const s = k * S;
       const u = k >= 1 ? 1 : progressAt(s);
       const zoom = k >= 1 ? to.zoom : from.zoom + Math.log2(w0 / widthAt(s));
+      easePadding(transform, from.padding, to.padding, k);
       transform.setZoom(zoom);
       transform.setBearing(from.bearing + (tb - from.bearing) * k);
       transform.setPitch(from.pitch + (to.pitch - from.pitch) * k);
