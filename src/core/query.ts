@@ -59,7 +59,23 @@ export async function queryVectorSource(
         const properties: Record<string, unknown> = { ...feature.properties() };
         const id = promote ? featureIdValue(properties[promote]) : feature.id;
         if (filter) {
-          const context = { properties, id, geometryType: GEOMETRY_TYPES[feature.type] ?? "Unknown" };
+          const n = 2 ** tile.z;
+          const context = {
+            properties,
+            id,
+            geometryType: GEOMETRY_TYPES[feature.type] ?? "Unknown",
+            geometry: () => ({
+              type: feature.type as 1 | 2 | 3,
+              parts: feature.geometry().map((part) => {
+                const out = new Float64Array(part.length);
+                for (let k = 0; k < part.length; k += 2) {
+                  out[k] = (tile.x + part[k]! / feature.extent) / n;
+                  out[k + 1] = (tile.y + part[k + 1]! / feature.extent) / n;
+                }
+                return out;
+              }),
+            }),
+          };
           if (filter.evaluate({ zoom: tile.z, feature: context }) !== true) continue;
         }
         out.push({
