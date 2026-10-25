@@ -2726,6 +2726,260 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "styles written for MapLibre and Mapbox load as they are",
+    async run({ page, base, shot }) {
+      const v8 = {
+        version: 8,
+        sources: {
+          v: { type: "vector", tiles: [`${base}/fixture/vector/{z}/{x}/{y}.pbf`], maxzoom: 6 },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { "background-color": "#ffffff" } },
+          {
+            id: "areas",
+            type: "fill",
+            source: "v",
+            "source-layer": "areas",
+            filter: ["==", "$type", "Polygon"],
+            paint: {
+              "fill-color": { property: "z", type: "categorical", stops: [[3, "#00ff00"]], default: "#ff0000" },
+              "fill-opacity": {
+                stops: [
+                  [0, 1],
+                  [22, 1],
+                ],
+              },
+            },
+          },
+          { id: "stars", type: "sky" },
+          { id: "marsh", type: "fill", source: "v", "source-layer": "areas", paint: { "fill-pattern": "marsh" } },
+        ],
+      };
+      const result = await page.evaluate<{ skipped: string[]; version: number; ids: string[] }>(`(async () => {
+        window.map = new maplet.Map({ container: "map", style: null, preserveDrawingBuffer: true, fadeDuration: 0, center: [10, 10], zoom: 3 });
+        const loaded = new Promise((resolve) => window.map.once("styleload", resolve));
+        window.map.setStyle(${JSON.stringify(v8)});
+        const event = await loaded;
+        await new Promise((resolve) => window.map.once("idle", resolve));
+        const style = window.map.getStyle();
+        return { skipped: event.skipped, version: style.version, ids: style.layers.map((l) => l.id) };
+      })()`);
+      await shot("v8-style");
+      const green = await pixel(page, 400, 300);
+      if (!near(green, GREEN, 6)) fail(`a v8 style should draw with its own colors, got ${green}`);
+      if (result.version !== 1 || result.ids.join() !== "bg,areas")
+        fail(
+          `the style should come through as a Maplet style without the parts it can't draw, got ${JSON.stringify(result)}`,
+        );
+      if (!result.skipped.some((s) => s.includes("sky")) || !result.skipped.some((s) => s.includes("pattern")))
+        fail(`styleload should list what was left out, got ${JSON.stringify(result.skipped)}`);
+      await page.evaluate("window.map.remove()");
+
+      const fallback = {
+        version: 8,
+        sources: {},
+        layers: [{ id: "bg", type: "background", paint: { "background-color": "#123456" } }],
+      };
+      const first = await page.evaluate<{
+        requested: string[][];
+        zoom: number;
+        lat: number;
+        lng: number;
+      }>(`(async () => {
+        const requested = [];
+        const data = "data:application/json," + encodeURIComponent(${JSON.stringify(JSON.stringify(fallback))});
+        window.map = new maplet.Map({
+          container: "map",
+          preserveDrawingBuffer: true,
+          transformRequest: (url, kind) => {
+            requested.push([url, kind]);
+            return kind === "style" ? { url: data } : undefined;
+          },
+        });
+        await new Promise((resolve) => window.map.once("idle", resolve));
+        const [lng, lat] = window.map.getCenter();
+        return { requested, zoom: window.map.getZoom(), lat, lng };
+      })()`);
+      const fallbackColor = await pixel(page, 400, 300);
+      if (
+        first.requested[0]?.[0] !== "https://tiles.openfreemap.org/styles/liberty" ||
+        first.requested[0]?.[1] !== "style"
+      )
+        fail(`a map without a style should load OpenFreeMap Liberty, asked for ${JSON.stringify(first.requested)}`);
+      if (!near(fallbackColor, [0x12, 0x34, 0x56, 255], 3))
+        fail(`the default style should be drawn, got ${fallbackColor}`);
+      if (
+        Math.abs(first.zoom - Math.log2(800 / 512)) > 0.01 ||
+        Math.abs(first.lat - 24.2) > 0.5 ||
+        Math.abs(first.lng) > 1e-9
+      )
+        fail(`a first map should show the whole world, got zoom ${first.zoom} at ${first.lng}, ${first.lat}`);
+      await page.evaluate("window.map.remove()");
+
+      const blank = await page.evaluate<{ style: unknown; asked: number }>(`(async () => {
+        let asked = 0;
+        window.map = new maplet.Map({ container: "map", style: null, transformRequest: () => { asked++; return undefined; } });
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        return { style: window.map.getStyle(), asked };
+      })()`);
+      if (blank.style !== null || blank.asked !== 0)
+        fail(`style: null should leave the map empty, got ${JSON.stringify(blank)}`);
+    },
+  },
+  {
+    name: "symbol layout follows expressions the way v8 styles use them",
+    async run({ page, shot }) {
+      const red = (x0: number, y0: number, x1: number, y1: number) =>
+        page.evaluate<number[] | null>(`(() => {
+          const gl = window.map.getCanvas().getContext("webgl2");
+          const w = ${x1 - x0}, h = ${y1 - y0};
+          const px = new Uint8Array(w * h * 4);
+          gl.readPixels(${x0}, gl.drawingBufferHeight - ${y1}, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+          for (let row = 0; row < h; row++) {
+            for (let col = 0; col < w; col++) {
+              const i = (row * w + col) * 4;
+              if (px[i] > 150 && px[i + 1] < 110 && px[i + 2] < 110) {
+                const x = ${x0} + col, y = ${y1} - 1 - row;
+                a = Math.min(a, x); b = Math.min(b, y); c = Math.max(c, x); d = Math.max(d, y);
+              }
+            }
+          }
+          return Number.isFinite(a) ? [a, b, c, d] : null;
+        })()`);
+      const feature = (geometry: unknown, properties: Record<string, unknown>) => ({
+        type: "Feature",
+        properties,
+        geometry,
+      });
+      const style = {
+        version: 1,
+        sources: {
+          g: {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: [
+                feature(
+                  {
+                    type: "LineString",
+                    coordinates: [
+                      [3, 3],
+                      [20, 19],
+                    ],
+                  },
+                  { name: "WWWWWW", kind: "road" },
+                ),
+              ],
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          {
+            id: "t",
+            type: "symbol",
+            source: "g",
+            layout: {
+              text: ["get", "name"],
+              size: 26,
+              allowOverlap: true,
+              spacing: 5000,
+              placement: ["step", ["zoom"], "point", 4, "line"],
+            },
+            paint: { color: "#ff0000" },
+          },
+        ],
+      };
+      await createMap(page, JSON.stringify(style), { zoom: 3.5, center: [11.5, 11] });
+      const flat = await red(0, 0, 800, 600);
+      await page.evaluate("void window.map.jumpTo({ zoom: 4.5 })");
+      await idle(page);
+      await shot("placement-line");
+      const along = await red(0, 0, 800, 600);
+      const aspect = (box: number[] | null) => (box ? (box[2]! - box[0]! + 1) / (box[3]! - box[1]! + 1) : 0);
+      if (aspect(flat) < 2.5) fail(`below zoom 4 the label should sit flat as a point label, got ${flat}`);
+      if (aspect(along) > 2 || aspect(along) < 0.5)
+        fail(`from zoom 4 the label should run along the line, got ${along}`);
+      await page.evaluate(`void window.map.setLayoutProperty("t", "rotationAlignment", "viewport")`);
+      await idle(page);
+      await shot("viewport-alignment");
+      const upright = await red(0, 0, 800, 600);
+      if (aspect(upright) < 2.5) fail(`viewport alignment should keep line placed text upright, got ${upright}`);
+      await page.evaluate("window.map.remove()");
+
+      const points = {
+        version: 1,
+        sources: {
+          g: {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: [
+                feature({ type: "Point", coordinates: [-30, 0] }, { name: "XX", side: "left" }),
+                feature({ type: "Point", coordinates: [30, 0] }, { name: "XX", side: "right" }),
+                feature({ type: "Point", coordinates: [0, 25] }, { name: "AAA", lines: 1 }),
+                feature({ type: "Point", coordinates: [0, -25] }, { name: "AAA\nBBB", lines: 2 }),
+              ],
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          {
+            id: "t",
+            type: "symbol",
+            source: "g",
+            layout: {
+              text: ["get", "name"],
+              size: 24,
+              allowOverlap: true,
+              anchor: ["match", ["get", "side"], "left", "left", "right", "right", "center"],
+            },
+            paint: { color: "#ff0000" },
+          },
+        ],
+      };
+      await createMap(page, JSON.stringify(points), { zoom: 2, center: [0, 0] });
+      await shot("anchors-and-lines");
+      const west = await page.evaluate<{ x: number; y: number }>("window.map.project([-30, 0])");
+      const east = await page.evaluate<{ x: number; y: number }>("window.map.project([30, 0])");
+      const north = await page.evaluate<{ x: number; y: number }>("window.map.project([0, 25])");
+      const south = await page.evaluate<{ x: number; y: number }>("window.map.project([0, -25])");
+      const left = await red(
+        Math.round(west.x) - 80,
+        Math.round(west.y) - 30,
+        Math.round(west.x) + 80,
+        Math.round(west.y) + 30,
+      );
+      const right = await red(
+        Math.round(east.x) - 80,
+        Math.round(east.y) - 30,
+        Math.round(east.x) + 80,
+        Math.round(east.y) + 30,
+      );
+      if (!left || left[0]! < west.x - 3)
+        fail(`anchor left should put the text right of its point, got ${left} for ${west.x}`);
+      if (!right || right[2]! > east.x + 3)
+        fail(`anchor right should put the text left of its point, got ${right} for ${east.x}`);
+      const one = await red(
+        Math.round(north.x) - 80,
+        Math.round(north.y) - 60,
+        Math.round(north.x) + 80,
+        Math.round(north.y) + 60,
+      );
+      const two = await red(
+        Math.round(south.x) - 80,
+        Math.round(south.y) - 60,
+        Math.round(south.x) + 80,
+        Math.round(south.y) + 60,
+      );
+      const height = (box: number[] | null) => (box ? box[3]! - box[1]! + 1 : 0);
+      if (height(two) < height(one) * 1.8)
+        fail(`a line break should start a second line, got ${height(two)} against ${height(one)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
@@ -2931,7 +3185,7 @@ const specs: Spec[] = [
     async run({ page }) {
       const errors = await page.evaluate<{ code: string; message: string }[]>(`(async () => {
         const errors = [];
-        const map = new maplet.Map({ container: "map" });
+        const map = new maplet.Map({ container: "map", style: null });
         map.on("error", (e) => errors.push({ code: e.error.code, message: e.error.message }));
         map.setStyle({ version: 1, sources: { a: { type: "raster" } }, layers: [{ id: "x", type: "line", source: "missing", paint: { colour: "red" } }] });
         await new Promise((r) => setTimeout(r, 50));
