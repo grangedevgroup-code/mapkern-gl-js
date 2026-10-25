@@ -1,7 +1,7 @@
 import type { CameraMotion, CameraState, Easing } from "../camera/animation.ts";
 import { easeInOutCubic, easeMotion, easeOutCubic, flyMotion, readState, samePadding } from "../camera/animation.ts";
 import type { Padding, WorldBounds } from "../camera/transform.ts";
-import { Transform } from "../camera/transform.ts";
+import { MIN_ZOOM, Transform } from "../camera/transform.ts";
 import { featureKey } from "../formats/mvt.ts";
 import type { LngLat, LngLatLike } from "../geo/mercator.ts";
 import { latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY, toLngLat, wrapLongitude } from "../geo/mercator.ts";
@@ -22,10 +22,11 @@ import type { Compiled } from "../style/expression.ts";
 import { compile } from "../style/expression.ts";
 import type { FeatureTarget, StateLookup } from "../style/feature-state.ts";
 import { FeatureStates } from "../style/feature-state.ts";
+import { importStyle, isStyleV8 } from "../style/import.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { StyleUpdate } from "../style/style.ts";
 import { assertValid, Style } from "../style/style.ts";
-import type { LayerSpec, SourceSpec, StyleSpec, TerrainSpec } from "../style/types.ts";
+import type { LayerSpec, SourceSpec, StyleSpec, StyleSpecV8, TerrainSpec } from "../style/types.ts";
 import { metersToWorld, Terrain } from "../terrain/terrain.ts";
 import type { TransformRequest } from "../tiles/fetch.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
@@ -55,7 +56,7 @@ export interface SetStyleOptions {
 
 export interface MapOptions {
   container: HTMLElement | string;
-  style?: StyleSpec | string;
+  style?: StyleSpec | StyleSpecV8 | string | null;
   center?: LngLatLike;
   zoom?: number;
   bearing?: number;
@@ -225,6 +226,10 @@ export interface StyleImageMissingEvent extends MapEvent {
   readonly id: string;
 }
 
+export interface MapStyleEvent extends MapEvent {
+  readonly skipped: readonly string[];
+}
+
 export interface MapWheelEvent extends MapEvent {
   readonly point: { x: number; y: number };
   readonly lngLat: LngLat | null;
@@ -258,7 +263,7 @@ export interface SourceDataEvent extends MapEvent {
 
 export interface MapEvents {
   load: MapEvent;
-  styleload: MapEvent;
+  styleload: MapStyleEvent;
   idle: MapEvent;
   render: MapEvent;
   resize: MapEvent;
@@ -435,14 +440,17 @@ export class MapletMap extends Emitter<MapEvents> {
       checkNumber(options.maxPitch, "maxPitch", 60),
     );
     this.transform.setZoomRange(
-      checkNumber(options.minZoom, "minZoom", 0),
+      checkNumber(options.minZoom, "minZoom", MIN_ZOOM),
       checkNumber(options.maxZoom, "maxZoom", 22),
     );
+    const world = worldView(container);
     if (options.center !== undefined) {
       const [lng, lat] = toLngLat(options.center);
       this.transform.setCenter(lng, lat);
+    } else if (options.zoom === undefined) {
+      this.transform.setCenter(world.center[0], world.center[1]);
     }
-    this.transform.setZoom(checkNumber(options.zoom, "zoom", 0));
+    this.transform.setZoom(checkNumber(options.zoom, "zoom", world.zoom));
     this.transform.setBearing(checkNumber(options.bearing, "bearing", 0));
     this.transform.setPitch(checkNumber(options.pitch, "pitch", 0));
     if (options.padding !== undefined) this.transform.setPadding(normalizePadding(options.padding));
@@ -562,7 +570,8 @@ export class MapletMap extends Emitter<MapEvents> {
         this.hashPlaced = true;
       }
     }
-    if (options.style !== undefined) this.setStyle(options.style);
+    const style = options.style === undefined ? DEFAULT_STYLE : options.style;
+    if (style !== null) this.setStyle(style);
     this.triggerRepaint();
   }
 
@@ -764,7 +773,7 @@ export class MapletMap extends Emitter<MapEvents> {
   }
 
   setMinZoom(zoom: number): this {
-    this.transform.setZoomRange(checkNumber(zoom, "minZoom", 0), this.transform.maxZoom);
+    this.transform.setZoomRange(checkNumber(zoom, "minZoom", MIN_ZOOM), this.transform.maxZoom);
     this.cameraChanged();
     return this;
   }
@@ -1194,7 +1203,7 @@ export class MapletMap extends Emitter<MapEvents> {
     return ground + 50 * terrain.exaggeration + 2 / pixelsPerMeter - above;
   }
 
-  setStyle(style: StyleSpec | string, options: SetStyleOptions = {}): this {
+  setStyle(style: StyleSpec | StyleSpecV8 | string, options: SetStyleOptions = {}): this {
     const diff = options.diff !== false;
     this.styleRequest?.abort();
     this.styleRequest = null;
@@ -1212,7 +1221,7 @@ export class MapletMap extends Emitter<MapEvents> {
           } catch (error) {
             throw new MapletError("invalid-style", `Style at ${style} is not valid JSON`, {}, error);
           }
-          this.applyStyle(spec as StyleSpec, diff);
+          this.applyStyle(spec as StyleSpec, diff, absoluteUrl(params.url));
         })
         .catch((error: unknown) => {
           if (controller.signal.aborted || this.removed) return;
@@ -1826,7 +1835,21 @@ export class MapletMap extends Emitter<MapEvents> {
     return this.style;
   }
 
-  private applyStyle(spec: StyleSpec, diff = false): void {
+  private applyStyle(input: StyleSpec | StyleSpecV8, diff = false, base?: string): void {
+    let spec = input as StyleSpec;
+    let skipped: string[] = [];
+    if (isStyleV8(input)) {
+      try {
+        const imported = importStyle(input, base);
+        spec = imported.style;
+        skipped = imported.skipped;
+      } catch (error) {
+        this.fail(
+          error instanceof MapletError ? error : new MapletError("invalid-style", errorMessage(error), {}, error),
+        );
+        return;
+      }
+    }
     const current = this.style;
     if (diff && current) {
       try {
@@ -1848,7 +1871,7 @@ export class MapletMap extends Emitter<MapEvents> {
         if (update.sprite) this.loadSprites(spec.sprite);
         queueMicrotask(() => {
           if (this.style !== current || this.removed) return;
-          this.emit("styleload", this.event("styleload"));
+          this.emit("styleload", { ...this.event("styleload"), skipped });
           this.styleChanged();
         });
         this.triggerRepaint();
@@ -1891,7 +1914,7 @@ export class MapletMap extends Emitter<MapEvents> {
     }
     queueMicrotask(() => {
       if (this.style !== style || this.removed) return;
-      this.emit("styleload", this.event("styleload"));
+      this.emit("styleload", { ...this.event("styleload"), skipped });
       this.styleChanged();
     });
     this.triggerRepaint();
@@ -2633,4 +2656,23 @@ function workerFactory(url: string | undefined): WorkerFactory | null {
     blobUrl ??= URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
     return new Worker(blobUrl);
   };
+}
+
+export const DEFAULT_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+
+function worldView(container: HTMLElement): { zoom: number; center: [number, number] } {
+  const top = mercatorY(75);
+  const bottom = mercatorY(-55);
+  const width = container.clientWidth;
+  const height = container.clientHeight;
+  const zoom = width > 0 && height > 0 ? Math.log2(Math.min(width / 512, height / (512 * (bottom - top)))) : 0;
+  return { zoom, center: [0, latFromMercatorY((top + bottom) / 2)] };
+}
+
+function absoluteUrl(url: string): string | undefined {
+  try {
+    return new URL(url, globalThis.location?.href).href;
+  } catch {
+    return undefined;
+  }
 }
