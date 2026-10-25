@@ -1,6 +1,6 @@
 import { bytesToGeoJSON, objectToGeoJSON } from "../formats/convert.ts";
 import type { FeatureFormat } from "../formats/feature-format.ts";
-import type { GeoJSONOptions, GeoJSONSummary, QueriedSourceFeature } from "./geojson.ts";
+import type { GeoJSONOptions, GeoJSONSummary, QueriedSourceFeature, SourceGeoJSONFeature } from "./geojson.ts";
 import { GeoJSONIndex } from "./geojson.ts";
 import type { LayerProgram, VectorTileResult } from "./vector-task.ts";
 import { buildBuckets } from "./vector-task.ts";
@@ -53,6 +53,33 @@ export async function geojsonFeatures(request: {
 }): Promise<{ result: QueriedSourceFeature[] | null }> {
   const index = indexes.get(request.source);
   return { result: index ? index.features(request.indices) : null };
+}
+
+export interface GeoJSONClusterRequest {
+  source: string;
+  op: "expansion" | "children" | "leaves";
+  id: number;
+  limit?: number;
+  offset?: number;
+}
+
+export type GeoJSONClusterReply =
+  | { missing: true }
+  | { missing: false; found: false }
+  | { missing: false; found: true; zoom?: number; features?: SourceGeoJSONFeature[] };
+
+export async function geojsonCluster(request: GeoJSONClusterRequest): Promise<{ result: GeoJSONClusterReply }> {
+  const index = indexes.get(request.source);
+  if (!index) return { result: { missing: true } };
+  if (request.op === "expansion") {
+    const zoom = index.clusterExpansionZoom(request.id);
+    return { result: zoom === null ? { missing: false, found: false } : { missing: false, found: true, zoom } };
+  }
+  const features =
+    request.op === "children"
+      ? index.clusterChildren(request.id)
+      : index.clusterLeaves(request.id, request.limit ?? 10, request.offset ?? 0);
+  return { result: features === null ? { missing: false, found: false } : { missing: false, found: true, features } };
 }
 
 export async function removeGeoJSON(request: { source: string }): Promise<{ result: null }> {
