@@ -33,8 +33,10 @@ export interface FrameInput {
   readonly transform: Transform;
   readonly view: RenderView;
   readonly target?: readonly [number, number];
+  readonly framebuffer?: WebGLFramebuffer | null;
   readonly terrain?: Terrain | null;
   readonly accept?: (piece: RenderPiece<unknown>) => boolean;
+  readonly acceptNear?: (piece: RenderPiece<unknown>) => boolean;
   readonly states?: ((layer: StyleLayer) => StateLookup | null) | undefined;
   readonly pixelRatio: number;
   readonly layers: readonly StyleLayer[];
@@ -70,7 +72,8 @@ interface TerrainGeometry {
   count: number;
 }
 
-const DRAPED: ReadonlySet<string> = new Set(["background", "raster", "hillshade", "fill", "line", "circle"]);
+const POINT_MARGIN = 0.125;
+const DRAPED: ReadonlySet<string> = new Set(["background", "raster", "hillshade", "fill", "line", "circle", "heatmap"]);
 const DRAPE_CACHE_BYTES = 32 * 1024 * 1024;
 
 interface PickSetup {
@@ -149,6 +152,7 @@ export class Painter {
 
   init(): void {
     this.labels.reset();
+    this.vector.reset();
     this.pickBuffer.reset();
     this.drapes.reset();
     this.terrainGeometry = null;
@@ -266,6 +270,7 @@ export class Painter {
       case "fill":
       case "line":
       case "circle":
+      case "heatmap":
       case "extrusion": {
         const source = layer.source ? frame.sources.get(layer.source) : undefined;
         const manager = vectorManager(source);
@@ -290,6 +295,7 @@ export class Painter {
     this.drapesBehind = false;
     const common = this.hash.reset().add(bearing).add(frame.pixelRatio);
     const sources: (readonly RenderPiece<unknown>[])[] = [];
+    const pointSources = new Set<readonly RenderPiece<unknown>[]>();
     for (const layer of layers) {
       common
         .add(layer.uid)
@@ -297,12 +303,13 @@ export class Painter {
         .add(frame.states?.(layer)?.version ?? 0);
       const pieces = this.piecesOf(frame, layer);
       if (pieces && !sources.includes(pieces)) sources.push(pieces);
+      if (pieces && (layer.type === "circle" || layer.type === "heatmap")) pointSources.add(pieces);
     }
     const shared = common.value;
     for (const slot of terrain.slots) {
       const size = drapeSize(t, slot, frame.pixelRatio);
       const view = new SlotView(slot, zoom, bearing, 512 * 2 ** (zoom - slot.z));
-      const signature = this.drapeSignature(shared, sources, view, size);
+      const signature = this.drapeSignature(shared, sources, pointSources, view, size);
       const current = this.drapes.lookup(slot.key);
       const drawn = current !== undefined && !Number.isNaN(current.signature);
       if (drawn && current.size === size && current.signature === signature && Math.abs(current.zoom - zoom) < 0.05)
@@ -322,8 +329,10 @@ export class Painter {
         view,
         pixelRatio: size / view.width,
         target: [size, size],
+        framebuffer: entry.framebuffer,
         terrain: null,
         accept: (piece) => view.overlaps(piece.tile.z, piece.tile.x, piece.tile.y, piece.wrap),
+        acceptNear: (piece) => view.overlaps(piece.tile.z, piece.tile.x, piece.tile.y, piece.wrap, POINT_MARGIN),
       };
       for (const layer of layers) this.drawLayer(sub, layer);
       gl.bindTexture(gl.TEXTURE_2D, entry.texture);
@@ -352,14 +361,16 @@ export class Painter {
   private drapeSignature(
     shared: number,
     sources: readonly (readonly RenderPiece<unknown>[])[],
+    pointSources: ReadonlySet<readonly RenderPiece<unknown>[]>,
     view: SlotView,
     size: number,
   ): number {
     const h = this.hash.reset().add(shared).add(size);
     for (const pieces of sources) {
+      const margin = pointSources.has(pieces) ? POINT_MARGIN : 0;
       for (const p of pieces) {
         const tile = p.tile;
-        if (!view.overlaps(tile.z, tile.x, tile.y, p.wrap)) continue;
+        if (!view.overlaps(tile.z, tile.x, tile.y, p.wrap, margin)) continue;
         h.add(tile.key).add(tile.revision).add(p.opacity).add(p.wrap).add(p.clip.x0).add(p.clip.y0).add(p.clip.x1);
       }
       h.add(-1);
@@ -524,6 +535,7 @@ export class Painter {
   destroy(): void {
     this.pickBuffer.destroy();
     this.labels.destroy();
+    this.vector.destroy();
     this.gl.deleteBuffer(this.quadBuffer);
     this.gl.deleteVertexArray(this.quadVao);
     this.gl.deleteTexture(this.openMask);
