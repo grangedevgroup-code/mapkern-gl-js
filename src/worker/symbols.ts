@@ -5,6 +5,7 @@ import type { Compiled, EvalContext } from "../style/expression.ts";
 export interface LabelCandidate {
   feature: number;
   text: string;
+  icon: string;
   size: number;
   priority: number;
   line: boolean;
@@ -14,6 +15,7 @@ export interface LabelCandidate {
 
 export interface SymbolLayout {
   text: Compiled<unknown>;
+  icon: Compiled<unknown>;
   size: Compiled<unknown>;
   priority: Compiled<unknown>;
   placement: "point" | "line";
@@ -23,6 +25,7 @@ export interface SymbolLayout {
 
 export interface LabelInfo {
   text: string;
+  icon: string;
   size: number;
   priority: number;
 }
@@ -31,11 +34,18 @@ export function labelInfo(ctx: EvalContext, layout: SymbolLayout): LabelInfo | n
   const raw = layout.text.evaluate(ctx);
   let text = typeof raw === "string" ? raw : typeof raw === "number" ? String(raw) : "";
   text = text.replace(/\s+/g, " ").trim();
-  if (text.length === 0) return null;
+  const rawIcon = layout.icon.evaluate(ctx);
+  const icon = typeof rawIcon === "string" ? rawIcon : "";
+  if (text.length === 0 && icon === "") return null;
   if (text.length > 200) text = `${text.slice(0, 199)}…`;
   if (layout.transform === "uppercase") text = text.toLocaleUpperCase();
   else if (layout.transform === "lowercase") text = text.toLocaleLowerCase();
-  return { text, size: numberOr(layout.size.evaluate(ctx), 14), priority: numberOr(layout.priority.evaluate(ctx), 0) };
+  return {
+    text,
+    icon,
+    size: numberOr(layout.size.evaluate(ctx), 14),
+    priority: numberOr(layout.priority.evaluate(ctx), 0),
+  };
 }
 
 export function lineLabels(
@@ -45,7 +55,7 @@ export function lineLabels(
   layout: SymbolLayout,
   extent: number,
 ): LabelCandidate[] {
-  const { text, size, priority } = info;
+  const { text, icon, size, priority } = info;
   const spacing = Math.max(16, layout.spacing) * (extent / 512);
   const minLength = Math.min(text.length * size * 0.5, 400) * (extent / 512);
   const out: LabelCandidate[] = [];
@@ -60,7 +70,16 @@ export function lineLabels(
       const p = pointAlong(part, at);
       anchors.push(p[0], p[1], at);
     }
-    out.push({ feature: index, text, size, priority, line: true, anchors: Float32Array.from(anchors), path: part });
+    out.push({
+      feature: index,
+      text,
+      icon,
+      size,
+      priority,
+      line: true,
+      anchors: Float32Array.from(anchors),
+      path: part,
+    });
   }
   return out;
 }
@@ -143,7 +162,7 @@ export function labelCandidates(
 ): LabelCandidate[] {
   const info = labelInfo(ctx, layout);
   if (!info) return [];
-  const { text, size, priority } = info;
+  const { text, icon, size, priority } = info;
   const geometry = feature.geometry();
   if (geometry.length === 0) return [];
   const out: LabelCandidate[] = [];
@@ -153,7 +172,16 @@ export function labelCandidates(
   if (feature.type === 1) {
     const anchors: number[] = [];
     for (const part of geometry) for (let i = 0; i < part.length; i += 2) anchors.push(part[i]!, part[i + 1]!, 0);
-    out.push({ feature: index, text, size, priority, line: false, anchors: Float32Array.from(anchors), path: null });
+    out.push({
+      feature: index,
+      text,
+      icon,
+      size,
+      priority,
+      line: false,
+      anchors: Float32Array.from(anchors),
+      path: null,
+    });
     return out;
   }
   if (feature.type === 2) {
@@ -171,6 +199,7 @@ export function labelCandidates(
       out.push({
         feature: index,
         text,
+        icon,
         size,
         priority,
         line: false,
@@ -197,6 +226,7 @@ export function labelCandidates(
       out.push({
         feature: index,
         text,
+        icon,
         size,
         priority,
         line: false,
