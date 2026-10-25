@@ -64,6 +64,7 @@ const DATA_DRIVEN: Record<string, readonly string[]> = {
   fill: ["color", "opacity", "outlineColor"],
   line: ["color", "width", "opacity", "blur"],
   circle: ["radius", "color", "opacity", "strokeColor", "strokeWidth", "blur"],
+  heatmap: ["radius", "weight"],
   extrusion: ["color", "height", "base"],
   symbol: ["color", "haloColor", "haloWidth", "opacity"],
 };
@@ -74,7 +75,15 @@ export function dataDrivenPaint(type: string): readonly string[] {
 
 export function layerProgram(layer: StyleLayer): LayerProgram | null {
   const type = layer.type;
-  if (type !== "fill" && type !== "line" && type !== "circle" && type !== "symbol" && type !== "extrusion") return null;
+  if (
+    type !== "fill" &&
+    type !== "line" &&
+    type !== "circle" &&
+    type !== "heatmap" &&
+    type !== "symbol" &&
+    type !== "extrusion"
+  )
+    return null;
   const keys = new Set<string>();
   for (const name of DATA_DRIVEN[type] ?? []) {
     const c = layer.paintProperty<unknown>(name);
@@ -337,36 +346,48 @@ export function uploadGeometry(gl: GL, type: BucketType, g: Geometry): GpuGeomet
   if (!vao) return null;
   ctx.bindVertexArray(vao);
   const vertexBuffer = gl.createBuffer(ctx.ARRAY_BUFFER, new Uint8Array(g.vertices));
-  if (type === "fill") {
-    ctx.enableVertexAttribArray(0);
-    ctx.vertexAttribPointer(0, 2, ctx.SHORT, false, 8, 0);
-    ctx.enableVertexAttribArray(4);
-    ctx.vertexAttribIPointer(4, 1, ctx.UNSIGNED_INT, 8, 4);
-  } else if (type === "extrusion") {
-    ctx.enableVertexAttribArray(0);
-    ctx.vertexAttribPointer(0, 2, ctx.SHORT, false, 12, 0);
-    ctx.enableVertexAttribArray(1);
-    ctx.vertexAttribPointer(1, 4, ctx.BYTE, true, 12, 4);
-    ctx.enableVertexAttribArray(4);
-    ctx.vertexAttribIPointer(4, 1, ctx.UNSIGNED_INT, 12, 8);
-  } else if (type === "line") {
-    ctx.enableVertexAttribArray(0);
-    ctx.vertexAttribPointer(0, 2, ctx.SHORT, false, 20, 0);
-    ctx.enableVertexAttribArray(1);
-    ctx.vertexAttribPointer(1, 2, ctx.SHORT, false, 20, 4);
-    ctx.enableVertexAttribArray(2);
-    ctx.vertexAttribPointer(2, 4, ctx.BYTE, true, 20, 8);
-    ctx.enableVertexAttribArray(3);
-    ctx.vertexAttribPointer(3, 1, ctx.FLOAT, false, 20, 12);
-    ctx.enableVertexAttribArray(4);
-    ctx.vertexAttribIPointer(4, 1, ctx.UNSIGNED_INT, 20, 16);
-  } else if (type === "circle") {
-    ctx.enableVertexAttribArray(0);
-    ctx.vertexAttribPointer(0, 2, ctx.SHORT, false, 12, 0);
-    ctx.enableVertexAttribArray(1);
-    ctx.vertexAttribPointer(1, 4, ctx.BYTE, true, 12, 4);
-    ctx.enableVertexAttribArray(4);
-    ctx.vertexAttribIPointer(4, 1, ctx.UNSIGNED_INT, 12, 8);
+  switch (type) {
+    case "fill":
+      ctx.enableVertexAttribArray(0);
+      ctx.vertexAttribPointer(0, 2, ctx.SHORT, false, 8, 0);
+      ctx.enableVertexAttribArray(4);
+      ctx.vertexAttribIPointer(4, 1, ctx.UNSIGNED_INT, 8, 4);
+      break;
+    case "extrusion":
+      ctx.enableVertexAttribArray(0);
+      ctx.vertexAttribPointer(0, 2, ctx.SHORT, false, 12, 0);
+      ctx.enableVertexAttribArray(1);
+      ctx.vertexAttribPointer(1, 4, ctx.BYTE, true, 12, 4);
+      ctx.enableVertexAttribArray(4);
+      ctx.vertexAttribIPointer(4, 1, ctx.UNSIGNED_INT, 12, 8);
+      break;
+    case "line":
+      ctx.enableVertexAttribArray(0);
+      ctx.vertexAttribPointer(0, 2, ctx.SHORT, false, 20, 0);
+      ctx.enableVertexAttribArray(1);
+      ctx.vertexAttribPointer(1, 2, ctx.SHORT, false, 20, 4);
+      ctx.enableVertexAttribArray(2);
+      ctx.vertexAttribPointer(2, 4, ctx.BYTE, true, 20, 8);
+      ctx.enableVertexAttribArray(3);
+      ctx.vertexAttribPointer(3, 1, ctx.FLOAT, false, 20, 12);
+      ctx.enableVertexAttribArray(4);
+      ctx.vertexAttribIPointer(4, 1, ctx.UNSIGNED_INT, 20, 16);
+      break;
+    case "circle":
+    case "heatmap":
+      ctx.enableVertexAttribArray(0);
+      ctx.vertexAttribPointer(0, 2, ctx.SHORT, false, 12, 0);
+      ctx.enableVertexAttribArray(1);
+      ctx.vertexAttribPointer(1, 4, ctx.BYTE, true, 12, 4);
+      ctx.enableVertexAttribArray(4);
+      ctx.vertexAttribIPointer(4, 1, ctx.UNSIGNED_INT, 12, 8);
+      break;
+    case "symbol":
+      break;
+    default: {
+      const unknown: never = type;
+      throw new Error(`No vertex layout for ${String(unknown)} buckets`);
+    }
   }
   const indexBuffer = gl.createBuffer(ctx.ELEMENT_ARRAY_BUFFER, new Uint32Array(g.indices));
   ctx.bindVertexArray(null);
