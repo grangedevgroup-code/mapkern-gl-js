@@ -1,5 +1,6 @@
 export type { MapletErrorCode } from "./core/errors.ts";
 export { MapletError } from "./core/errors.ts";
+export type { ImageInput, ImageOptions } from "./core/images.ts";
 export type {
   AnimationOptions,
   BoundsLike,
@@ -23,6 +24,7 @@ export type {
   ScreenPosition,
   Source,
   SourceDataEvent,
+  StyleImageMissingEvent,
   TouchZoomRotateSwitch,
   UiText,
 } from "./core/map.ts";
