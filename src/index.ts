@@ -61,6 +61,7 @@ export type { Alignment, MarkerEvent, MarkerEvents, MarkerOptions } from "./ui/m
 export { Marker } from "./ui/marker.ts";
 export type { PopupEvent, PopupEvents, PopupOptions } from "./ui/popup.ts";
 export { Popup } from "./ui/popup.ts";
+export type { SourceGeoJSONFeature } from "./worker/geojson.ts";
 
 declare const MAPLET_VERSION: string | undefined;
 
