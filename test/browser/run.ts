@@ -2456,6 +2456,138 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "setStyle keeps the sources and layers that didn't change",
+    async run({ page, base }) {
+      const polygon = (size: number) => ({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            id: 1,
+            properties: {},
+            geometry: {
+              type: "Polygon",
+              coordinates: [
+                [
+                  [-size, -size],
+                  [size, -size],
+                  [size, size],
+                  [-size, size],
+                  [-size, -size],
+                ],
+              ],
+            },
+          },
+        ],
+      });
+      const raster = { type: "raster", tiles: [`${base}/fixture/raster/{z}/{x}/{y}.png`], tileSize: 256 };
+      const first = {
+        version: 1,
+        sources: { fx: raster, g: { type: "geojson", data: polygon(10) } },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "r", type: "raster", source: "fx", paint: { fadeDuration: 0 } },
+          { id: "f", type: "fill", source: "g", paint: { color: "#ff0000" } },
+        ],
+      };
+      await createMap(page, JSON.stringify(first), { zoom: 3, center: [0, 0] });
+      await page.evaluate(`(() => {
+        window.loads = 0;
+        window.map.on("styleload", () => window.loads++);
+        window.before = { fx: window.map.getSource("fx"), g: window.map.getSource("g") };
+        window.map.setFeatureState({ source: "g", id: 1 }, { picked: true });
+      })()`);
+      const rasterHits = async () => {
+        const hits = (await (await fetch(`${base}/fixture/stats`)).json()) as Record<string, number>;
+        return Object.keys(hits).filter((k) => k.startsWith("raster:")).length;
+      };
+      const restyle = async (style: unknown, options = "{}") => {
+        await fetch(`${base}/fixture/reset`);
+        await page.evaluate(`void window.map.setStyle(${JSON.stringify(style)}, ${options})`);
+        await idle(page);
+      };
+
+      const recolored = {
+        ...first,
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "r", type: "raster", source: "fx", paint: { fadeDuration: 0, opacity: 0.5 } },
+          { id: "f", type: "fill", source: "g", paint: { color: "#0000ff" } },
+        ],
+      };
+      await restyle(recolored);
+      if ((await rasterHits()) !== 0) fail("changing paint should not load any tiles again");
+      const blue = await pixel(page, 400, 300);
+      if (!near(blue, BLUE, 6)) fail(`the fill should turn blue in place, got ${blue}`);
+      const kept = await page.evaluate<{ same: boolean; picked: unknown; style: string; loads: number }>(`(() => ({
+        same: window.map.getSource("fx") === window.before.fx && window.map.getSource("g") === window.before.g,
+        picked: window.map.getFeatureState({ source: "g", id: 1 }).picked,
+        style: JSON.stringify(window.map.getStyle()),
+        loads: window.loads,
+      }))()`);
+      if (!kept.same) fail("unchanged sources should be kept, not created again");
+      if (kept.picked !== true) fail(`feature state on a kept source should survive, got ${kept.picked}`);
+      if (kept.style !== JSON.stringify(recolored))
+        fail(`getStyle should return the new style exactly, got ${kept.style}`);
+      if (kept.loads !== 1) fail(`styleload should fire once after the update, got ${kept.loads}`);
+
+      const reordered = {
+        ...first,
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "f2", type: "fill", source: "g", paint: { color: "#00ff00" } },
+          { id: "r", type: "raster", source: "fx", paint: { fadeDuration: 0, opacity: 0.5 } },
+        ],
+      };
+      await restyle(reordered);
+      const ids = await page.evaluate<string[]>("window.map.getLayerIds()");
+      if (ids.join() !== "bg,f2,r") fail(`layers should be added, removed and moved to match, got ${ids}`);
+      if ((await rasterHits()) !== 0) fail("reordering layers should not load any tiles again");
+
+      const reshaped = {
+        ...first,
+        sources: { fx: raster, g: { type: "geojson", data: polygon(5) } },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "r", type: "raster", source: "fx", paint: { fadeDuration: 0 } },
+          { id: "f2", type: "fill", source: "g", paint: { color: "#00ff00" } },
+        ],
+      };
+      await restyle(reshaped);
+      const edge = await page.evaluate<{ x: number; y: number }>("window.map.project([7.5, 2.5])");
+      const outside = await pixel(page, Math.round(edge.x), Math.round(edge.y));
+      const green = await pixel(page, 400, 300);
+      if (!isZoomColor(outside, 4) || !near(green, GREEN, 6))
+        fail(`new GeoJSON data should replace the old shape, got ${outside} outside and ${green} inside`);
+      const adopted = await page.evaluate<boolean>(`window.map.getSource("g") === window.before.g`);
+      if (!adopted) fail("a GeoJSON source whose data changed should take the new data, not be created again");
+      if ((await rasterHits()) !== 0) fail("new GeoJSON data should not reload the raster tiles");
+
+      const resized = { ...reshaped, sources: { fx: { ...raster, tileSize: 512 }, g: reshaped.sources.g } };
+      await restyle(resized);
+      const replaced = await page.evaluate<boolean>(`window.map.getSource("fx") !== window.before.fx`);
+      if (!replaced || (await rasterHits()) === 0) fail("a source whose tiles changed should be loaded again");
+
+      await page.evaluate(`window.errors = []`);
+      await page.evaluate(
+        `void window.map.setStyle({ version: 1, sources: {}, layers: [{ id: "x", type: "fill", source: "missing" }] })`,
+      );
+      const invalid = await page.evaluate<{ codes: string[]; ids: string[] }>(
+        "({ codes: window.errors.map((e) => e.code), ids: window.map.getLayerIds() })",
+      );
+      if (!invalid.codes.includes("invalid-style") || invalid.ids.join() !== "bg,r,f2")
+        fail(`an invalid style should be reported and leave the map as it was, got ${JSON.stringify(invalid)}`);
+
+      await restyle(resized, "{ diff: false }");
+      const rebuilt = await page.evaluate<{ fresh: boolean; picked: unknown }>(`({
+        fresh: window.map.getSource("g") !== window.before.g,
+        picked: window.map.getFeatureState({ source: "g", id: 1 }).picked,
+      })`);
+      if (!rebuilt.fresh || rebuilt.picked !== undefined || (await rasterHits()) === 0)
+        fail(`diff: false should build everything again, got ${JSON.stringify(rebuilt)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
