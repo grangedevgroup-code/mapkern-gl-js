@@ -83,6 +83,7 @@ export class NavigationControl implements Control {
       el.append(this.compass);
     }
     map.on("move", this.update);
+    map.on("resize", this.update);
     this.element = el;
     this.refresh(map);
     return el;
@@ -90,6 +91,7 @@ export class NavigationControl implements Control {
 
   onRemove(map: MapletMap): void {
     map.off("move", this.update);
+    map.off("resize", this.update);
     this.element?.remove();
     this.element = null;
   }
@@ -102,7 +104,7 @@ export class NavigationControl implements Control {
     if (!m) return;
     const zoom = m.getZoom();
     const atMax = zoom >= m.getMaxZoom() - 1e-9;
-    const atMin = zoom <= m.getMinZoom() + 1e-9;
+    const atMin = zoom <= m.transform.lowestZoom + 1e-9;
     if (this.zoomIn && this.zoomIn.disabled !== atMax) this.zoomIn.disabled = atMax;
     if (this.zoomOut && this.zoomOut.disabled !== atMin) this.zoomOut.disabled = atMin;
     if (this.needle) {
