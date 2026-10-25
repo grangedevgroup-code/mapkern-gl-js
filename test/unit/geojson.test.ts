@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { VectorFeature } from "../../src/formats/mvt.ts";
-import { ringArea } from "../../src/formats/mvt.ts";
+import { featureKey, ringArea } from "../../src/formats/mvt.ts";
 import { clipRing, rankVertices, signedArea, simplify } from "../../src/geo/clip.ts";
 import { latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY } from "../../src/geo/mercator.ts";
 import type { GeoJSONOptions } from "../../src/worker/geojson.ts";
@@ -141,17 +141,26 @@ test("bare geometries and empty input are accepted", () => {
   }
 });
 
-test("ids come from numbers, digit strings or promoteId", () => {
+test("ids come from numbers, strings, promoteId or generateId", () => {
   const data = collection(
     feature({ type: "Point", coordinates: [0, 0] }, {}, 5),
     feature({ type: "Point", coordinates: [1, 0] }, {}, "123"),
     feature({ type: "Point", coordinates: [2, 0] }, {}, "abc"),
     feature({ type: "Point", coordinates: [3, 0] }, { osm: 99 }, 1),
   );
-  const plain = features(index(data), 0, 0, 0).map((f) => f.id);
-  assert.deepEqual(plain, [5, 123, undefined, 1]);
+  const plain = features(index(data), 0, 0, 0);
+  assert.deepEqual(
+    plain.map((f) => f.id),
+    [5, 123, featureKey("abc"), 1],
+  );
+  assert.deepEqual(
+    plain.map((f) => f.textId),
+    [undefined, "123", "abc", undefined],
+  );
   const promoted = features(index(data, { promoteId: "osm" }), 0, 0, 0).map((f) => f.id);
-  assert.deepEqual(promoted, [5, 123, undefined, 99]);
+  assert.deepEqual(promoted, [5, 123, featureKey("abc"), 99]);
+  const generated = features(index(data, { promoteId: "osm", generateId: true }), 0, 0, 0).map((f) => f.id);
+  assert.deepEqual(generated, [0, 1, 2, 3]);
 });
 
 test("rings are wound outer positive and holes negative whatever the input winding", () => {
