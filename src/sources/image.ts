@@ -2,7 +2,8 @@ import type { Transform } from "../camera/transform.ts";
 import { errorMessage, MapletError } from "../core/errors.ts";
 import type { LngLatLike } from "../geo/mercator.ts";
 import { mercatorX, mercatorY, toLngLat } from "../geo/mercator.ts";
-import type { CanvasSourceSpec, ImageSourceSpec, VideoSourceSpec } from "../style/types.ts";
+import { changedKeys } from "../style/diff.ts";
+import type { CanvasSourceSpec, ImageSourceSpec, SourceSpec, VideoSourceSpec } from "../style/types.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileStats } from "../tiles/manager.ts";
 import type { MapSource, SourceContext } from "./source.ts";
@@ -96,6 +97,16 @@ export class ImageSource implements MapSource {
       });
     }
     return this;
+  }
+
+  adopt(spec: SourceSpec): boolean {
+    if (spec.type !== this.spec.type) return false;
+    const keys = changedKeys(this.spec, spec);
+    const movable = spec.type === "image" ? ["url", "coordinates"] : ["coordinates"];
+    if (!keys.every((key) => movable.includes(key))) return false;
+    if (keys.includes("coordinates")) this.setCoordinates((spec as OverlaySpec).coordinates);
+    if (spec.type === "image" && keys.includes("url")) this.updateImage({ url: spec.url });
+    return true;
   }
 
   getVideo(): HTMLVideoElement | null {
