@@ -1,6 +1,7 @@
 import type { CameraMotion, CameraState, Easing } from "../camera/animation.ts";
 import { easeInOutCubic, easeMotion, easeOutCubic, flyMotion, readState } from "../camera/animation.ts";
 import { Transform } from "../camera/transform.ts";
+import { featureKey } from "../formats/mvt.ts";
 import type { LngLat, LngLatLike } from "../geo/mercator.ts";
 import { latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY, toLngLat, wrapLongitude } from "../geo/mercator.ts";
 import type { InputOptions } from "../input/handlers.ts";
@@ -15,6 +16,8 @@ import { registerPmtilesProtocol } from "../sources/pmtiles.ts";
 import { RasterSource } from "../sources/raster.ts";
 import type { MapSource, SourceContext } from "../sources/source.ts";
 import { VectorSource } from "../sources/vector.ts";
+import type { FeatureTarget, StateLookup } from "../style/feature-state.ts";
+import { FeatureStates } from "../style/feature-state.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import { Style } from "../style/style.ts";
 import type { LayerSpec, SourceSpec, StyleSpec, TerrainSpec } from "../style/types.ts";
@@ -30,7 +33,7 @@ import type { WorkerFactory } from "../worker/pool.ts";
 import { WorkerPool } from "../worker/pool.ts";
 import { errorMessage, MapletError } from "./errors.ts";
 import { Emitter } from "./events.ts";
-import type { QueriedFeature } from "./query.ts";
+import type { QueriedFeature, StateReader } from "./query.ts";
 import { resolveFeatures } from "./query.ts";
 
 export interface MapOptions {
@@ -246,6 +249,7 @@ export class MapletMap extends Emitter<MapEvents> {
   private wakeAtTime = Number.POSITIVE_INFINITY;
   private motion: { motion: CameraMotion; start: number; flags: CameraFlags } | null = null;
   private terrain: Terrain | null = null;
+  private featureStates = new FeatureStates();
   private elevationIntent: "zoom" | "camera" = "zoom";
   private elevationFrom = 0;
   private elevationTo: number | null = null;
@@ -842,9 +846,100 @@ export class MapletMap extends Emitter<MapEvents> {
 
   removeSource(id: string): this {
     this.requireStyle().removeSource(id);
+    this.featureStates.dropSource(id);
     this.triggerRepaint();
     return this;
   }
+
+  setFeatureState(feature: FeatureTarget, state: Record<string, unknown>): this {
+    const target = this.stateTarget(feature, "setFeatureState");
+    if (target.key === undefined) {
+      throw new MapletError("invalid-option", "setFeatureState needs a feature id", { sourceId: target.source });
+    }
+    if (typeof state !== "object" || state === null || Array.isArray(state)) {
+      throw new MapletError("invalid-option", "setFeatureState needs a state object such as { hover: true }");
+    }
+    this.featureStates.set(target.source, target.sourceLayer, target.key, state);
+    this.triggerRepaint();
+    return this;
+  }
+
+  getFeatureState(feature: FeatureTarget): Record<string, unknown> {
+    const target = this.stateTarget(feature, "getFeatureState");
+    if (target.key === undefined) {
+      throw new MapletError("invalid-option", "getFeatureState needs a feature id", { sourceId: target.source });
+    }
+    return this.featureStates.get(target.source, target.sourceLayer, target.key);
+  }
+
+  removeFeatureState(feature: FeatureTarget, key?: string): this {
+    const target = this.stateTarget(feature, "removeFeatureState");
+    if (key !== undefined && (typeof key !== "string" || target.key === undefined)) {
+      throw new MapletError(
+        "invalid-option",
+        "removeFeatureState can remove one state key only from a feature with an id",
+        { sourceId: target.source },
+      );
+    }
+    this.featureStates.remove(target.source, target.sourceLayer, target.key, key);
+    this.triggerRepaint();
+    return this;
+  }
+
+  private stateTarget(
+    feature: FeatureTarget,
+    method: string,
+  ): { source: string; sourceLayer: string | undefined; key: number | undefined } {
+    if (typeof feature !== "object" || feature === null || typeof feature.source !== "string") {
+      throw new MapletError("invalid-option", `${method} needs { source, sourceLayer, id }`);
+    }
+    const source = this.requireStyle().sources.get(feature.source);
+    if (!source) {
+      throw new MapletError("invalid-option", `There is no source with id "${feature.source}"`, {
+        sourceId: feature.source,
+      });
+    }
+    if (source.type !== "vector" && source.type !== "geojson") {
+      throw new MapletError("invalid-option", `Feature state needs a vector or geojson source, not ${source.type}`, {
+        sourceId: feature.source,
+      });
+    }
+    let sourceLayer: string | undefined;
+    if (source.type === "vector") {
+      if (typeof feature.sourceLayer !== "string" || feature.sourceLayer === "") {
+        throw new MapletError(
+          "invalid-option",
+          `${method} needs the sourceLayer of vector source "${feature.source}"`,
+          {
+            sourceId: feature.source,
+          },
+        );
+      }
+      sourceLayer = feature.sourceLayer;
+    }
+    let key: number | undefined;
+    if (feature.id !== undefined) {
+      key = featureKey(feature.id);
+      if (key === undefined) {
+        throw new MapletError("invalid-option", "Feature ids are finite numbers or non-empty strings", {
+          sourceId: feature.source,
+        });
+      }
+    }
+    return { source: feature.source, sourceLayer, key };
+  }
+
+  private readonly stateScope = (layer: StyleLayer): StateLookup | null => {
+    if (!layer.usesState || layer.source === undefined) return null;
+    const source = this.style?.sources.get(layer.source);
+    if (source?.type !== "vector" && source?.type !== "geojson") return null;
+    return this.featureStates.scope(layer.source, source.type === "vector" ? layer.sourceLayer : undefined);
+  };
+
+  private readonly readState: StateReader = (source, sourceLayer, id) => {
+    const key = featureKey(id);
+    return key === undefined ? {} : this.featureStates.get(source, sourceLayer, key);
+  };
 
   async queryRenderedFeatures(geometry?: QueryGeometry, options: QueryOptions = {}): Promise<QueriedFeature[]> {
     const style = this.style;
@@ -869,6 +964,7 @@ export class MapletMap extends Emitter<MapEvents> {
       sources: style.sources,
       now: performance.now(),
       cameraVersion: this.cameraVersion,
+      states: this.stateScope,
     };
     const ground = this.terrain ? this.groundQuery(box) : null;
     const picked = await this.painter.pick(
@@ -879,7 +975,7 @@ export class MapletMap extends Emitter<MapEvents> {
         ? { frame: { ...frame, transform: ground.transform, view: ground.transform, terrain: null }, box: ground.box }
         : undefined,
     );
-    return resolveFeatures(picked, style.sources);
+    return resolveFeatures(picked, style.sources, this.readState);
   }
 
   private groundQuery(box: PickBox): { transform: Transform; box: PickBox } | null {
@@ -1246,6 +1342,7 @@ export class MapletMap extends Emitter<MapEvents> {
     const first = this.style === null;
     this.style?.destroy();
     this.style = style;
+    this.featureStates = new FeatureStates();
     if (first) {
       const o = this.options;
       const t = this.transform;
@@ -1495,6 +1592,7 @@ export class MapletMap extends Emitter<MapEvents> {
         sources: style.sources,
         now,
         cameraVersion: this.cameraVersion,
+        states: this.stateScope,
       });
       if (labelsBusy) animating = true;
       for (const source of style.sources.values()) {
