@@ -193,35 +193,36 @@ export interface SymbolLayerSpec extends SourceLayerBase {
     size?: Value<number>;
     weight?: "normal" | "bold";
     italic?: boolean;
-    placement?: "point" | "line" | "line-center";
-    anchor?: SymbolAnchor;
+    placement?: Value<"point" | "line" | "line-center">;
+    anchor?: Value<SymbolAnchor>;
     variableAnchor?: SymbolAnchor[];
-    radialOffset?: number;
-    justify?: "auto" | "left" | "center" | "right";
-    lineHeight?: number;
+    radialOffset?: Value<number>;
+    justify?: Value<"auto" | "left" | "center" | "right">;
+    lineHeight?: Value<number>;
     rotate?: Value<number>;
-    ignorePlacement?: boolean;
-    iconIgnorePlacement?: boolean;
-    maxAngle?: number;
-    keepUpright?: boolean;
-    offset?: [number, number];
-    maxWidth?: number;
-    letterSpacing?: number;
-    padding?: number;
-    spacing?: number;
-    allowOverlap?: boolean;
-    transform?: "none" | "uppercase" | "lowercase";
+    rotationAlignment?: Value<"auto" | "map" | "viewport">;
+    ignorePlacement?: Value<boolean>;
+    iconIgnorePlacement?: Value<boolean>;
+    maxAngle?: Value<number>;
+    keepUpright?: Value<boolean>;
+    offset?: Value<[number, number]>;
+    maxWidth?: Value<number>;
+    letterSpacing?: Value<number>;
+    padding?: Value<number>;
+    spacing?: Value<number>;
+    allowOverlap?: Value<boolean>;
+    transform?: Value<"none" | "uppercase" | "lowercase">;
     priority?: Value<number>;
-    optional?: boolean;
+    optional?: Value<boolean>;
     icon?: Value<string>;
     iconSize?: Value<number>;
     iconRotate?: Value<number>;
-    iconAnchor?: SymbolAnchor;
-    iconOffset?: [number, number];
-    iconPadding?: number;
-    iconAllowOverlap?: boolean;
-    iconOptional?: boolean;
-    iconRotationAlignment?: "auto" | "map" | "viewport";
+    iconAnchor?: Value<SymbolAnchor>;
+    iconOffset?: Value<[number, number]>;
+    iconPadding?: Value<number>;
+    iconAllowOverlap?: Value<boolean>;
+    iconOptional?: Value<boolean>;
+    iconRotationAlignment?: Value<"auto" | "map" | "viewport">;
   };
   paint?: {
     color?: Value<Color>;
@@ -300,6 +301,13 @@ export type LayerType = LayerSpec["type"];
 export interface TerrainSpec {
   source: string;
   exaggeration?: number;
+}
+
+export interface StyleSpecV8 {
+  version: 8;
+  sources: Record<string, unknown>;
+  layers: unknown[];
+  [key: string]: unknown;
 }
 
 export interface StyleSpec {
