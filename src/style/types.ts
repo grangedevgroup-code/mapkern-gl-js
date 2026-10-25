@@ -138,6 +138,17 @@ export interface CircleLayerSpec extends SourceLayerBase {
   sortKey?: Value<number>;
 }
 
+export type SymbolAnchor =
+  | "center"
+  | "top"
+  | "bottom"
+  | "left"
+  | "right"
+  | "top-left"
+  | "top-right"
+  | "bottom-left"
+  | "bottom-right";
+
 export interface SymbolLayerSpec extends SourceLayerBase {
   type: "symbol";
   layout?: {
@@ -146,8 +157,17 @@ export interface SymbolLayerSpec extends SourceLayerBase {
     size?: Value<number>;
     weight?: "normal" | "bold";
     italic?: boolean;
-    placement?: "point" | "line";
-    anchor?: "center" | "top" | "bottom" | "left" | "right";
+    placement?: "point" | "line" | "line-center";
+    anchor?: SymbolAnchor;
+    variableAnchor?: SymbolAnchor[];
+    radialOffset?: number;
+    justify?: "auto" | "left" | "center" | "right";
+    lineHeight?: number;
+    rotate?: Value<number>;
+    ignorePlacement?: boolean;
+    iconIgnorePlacement?: boolean;
+    maxAngle?: number;
+    keepUpright?: boolean;
     offset?: [number, number];
     maxWidth?: number;
     letterSpacing?: number;
@@ -160,16 +180,7 @@ export interface SymbolLayerSpec extends SourceLayerBase {
     icon?: Value<string>;
     iconSize?: Value<number>;
     iconRotate?: Value<number>;
-    iconAnchor?:
-      | "center"
-      | "top"
-      | "bottom"
-      | "left"
-      | "right"
-      | "top-left"
-      | "top-right"
-      | "bottom-left"
-      | "bottom-right";
+    iconAnchor?: SymbolAnchor;
     iconOffset?: [number, number];
     iconPadding?: number;
     iconAllowOverlap?: boolean;
@@ -180,7 +191,12 @@ export interface SymbolLayerSpec extends SourceLayerBase {
     color?: Value<Color>;
     haloColor?: Value<Color>;
     haloWidth?: Value<number>;
+    haloBlur?: Value<number>;
     opacity?: Value<number>;
+    translate?: [number, number];
+    translateAnchor?: "map" | "viewport";
+    iconTranslate?: [number, number];
+    iconTranslateAnchor?: "map" | "viewport";
     iconColor?: Value<Color>;
     iconHaloColor?: Value<Color>;
     iconHaloWidth?: Value<number>;
