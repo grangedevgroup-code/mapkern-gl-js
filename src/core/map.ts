@@ -871,7 +871,7 @@ export class MapletMap extends Emitter<MapEvents> {
       cameraVersion: this.cameraVersion,
     };
     const ground = this.terrain ? this.groundQuery(box) : null;
-    const picked = this.painter.pick(
+    const picked = await this.painter.pick(
       frame,
       box,
       accept,
