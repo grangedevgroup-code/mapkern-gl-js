@@ -2,7 +2,7 @@ import { MapletError } from "../core/errors.ts";
 import type { PropertyDef } from "./layer.ts";
 import { LAYOUT, PAINT, transitionOf } from "./layer.ts";
 import type { LayerSpec, LayerType, SourceSpec, StyleSpec } from "./types.ts";
-import { validateLayer, validateSource } from "./validate.ts";
+import { validateLayer, validateSource, validateStyle } from "./validate.ts";
 
 export interface ImportedStyle {
   style: StyleSpec;
@@ -233,15 +233,28 @@ export function importStyle(input: unknown, base?: string): ImportedStyle {
   const ids = new Set<string>();
   for (const raw of Array.isArray(input.layers) ? input.layers : []) {
     if (!isObject(raw) || typeof raw.id !== "string" || ids.has(raw.id)) continue;
-    const layer = convertLayer(raw, sources, skipped);
-    if (!layer) continue;
-    const checked = settle(layer, raw.id, sources, skipped);
+    const converted = convertLayer(raw, sources, skipped);
+    if (!converted) continue;
+    const checked = settle(converted.layer, converted.origin, raw.id, sources, skipped);
     if (!checked) continue;
     ids.add(raw.id);
     layers.push(checked);
   }
   style.sources = sources;
   style.layers = layers;
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const root = validateStyle(style).filter(
+      (issue) => !issue.path.startsWith("layers") && !issue.path.startsWith("sources"),
+    );
+    if (root.length === 0) break;
+    for (const issue of root) {
+      const key = issue.path.split(".")[0]!;
+      if (key in style && key !== "version") {
+        delete style[key];
+        skipped.add(`${key} couldn't be used: ${issue.message}`);
+      }
+    }
+  }
   return { style: style as unknown as StyleSpec, skipped: skipped.list() };
 }
 
@@ -346,7 +359,11 @@ function tiled(type: string, raw: Json, base: string | undefined): Json {
   return out;
 }
 
-function convertLayer(raw: Json, sources: Record<string, SourceSpec>, skipped: Skipped): Json | null {
+function convertLayer(
+  raw: Json,
+  sources: Record<string, SourceSpec>,
+  skipped: Skipped,
+): { layer: Json; origin: Map<string, string> } | null {
   const id = raw.id as string;
   const type = TYPES[String(raw.type)];
   if (!type) {
@@ -367,6 +384,7 @@ function convertLayer(raw: Json, sources: Record<string, SourceSpec>, skipped: S
   if (raw.filter !== undefined) out.filter = convertFilter(raw.filter);
   const paintOut: Json = {};
   const layoutOut: Json = {};
+  const origin = new Map<string, string>();
   const table = PROPERTIES[type];
   let overlap: unknown;
   let iconOverlap: unknown;
@@ -384,6 +402,7 @@ function convertLayer(raw: Json, sources: Record<string, SourceSpec>, skipped: S
       const target = table[key.slice(0, -"-transition".length)];
       if (target?.group === "paint" && transitionOf(type, `${target.name}Transition`)) {
         paintOut[`${target.name}Transition`] = structuredClone(value);
+        origin.set(`paint.${target.name}Transition`, key);
       }
       continue;
     }
@@ -397,6 +416,7 @@ function convertLayer(raw: Json, sources: Record<string, SourceSpec>, skipped: S
         layoutOut.font = font.families;
         if (font.bold) layoutOut.weight = "bold";
         if (font.italic) layoutOut.italic = true;
+        for (const name of ["font", "weight", "italic"]) origin.set(`layout.${name}`, key);
         continue;
       }
       case "fill-sort-key":
@@ -407,6 +427,7 @@ function convertLayer(raw: Json, sources: Record<string, SourceSpec>, skipped: S
       case "symbol-sort-key": {
         const v = convertValue(value, undefined, key);
         layoutOut.priority = typeof v === "number" ? -v : ["*", -1, v];
+        origin.set("layout.priority", key);
         continue;
       }
       case "text-overlap":
@@ -434,7 +455,9 @@ function convertLayer(raw: Json, sources: Record<string, SourceSpec>, skipped: S
     }
     const def = (target.group === "paint" ? PAINT : LAYOUT)[type][target.name];
     const converted = convertValue(value, def, key);
-    if (converted !== undefined) (target.group === "paint" ? paintOut : layoutOut)[target.name] = converted;
+    if (converted === undefined) continue;
+    (target.group === "paint" ? paintOut : layoutOut)[target.name] = converted;
+    origin.set(`${target.group}.${target.name}`, key);
   }
   if (pattern) {
     skipped.add("pattern fills and lines aren't drawn yet", id);
@@ -442,10 +465,12 @@ function convertLayer(raw: Json, sources: Record<string, SourceSpec>, skipped: S
   }
   if (overlap !== undefined) {
     layoutOut.allowOverlap = overlap === "always";
+    origin.set("layout.allowOverlap", "text-overlap");
     if (overlap === "cooperative") skipped.add("text-overlap cooperative is treated as never", id);
   }
   if (iconOverlap !== undefined) {
     layoutOut.iconAllowOverlap = iconOverlap === "always";
+    origin.set("layout.iconAllowOverlap", "icon-overlap");
     if (iconOverlap === "cooperative") skipped.add("icon-overlap cooperative is treated as never", id);
   }
   if (type === "symbol" && layoutOut.text !== undefined) {
@@ -457,10 +482,16 @@ function convertLayer(raw: Json, sources: Record<string, SourceSpec>, skipped: S
   if (type === "heatmap") paintOut.color ??= structuredClone(V8_HEAT);
   if (Object.keys(paintOut).length > 0) out.paint = paintOut;
   if (Object.keys(layoutOut).length > 0) out.layout = layoutOut;
-  return out;
+  return { layer: out, origin };
 }
 
-function settle(layer: Json, id: string, sources: Record<string, SourceSpec>, skipped: Skipped): LayerSpec | null {
+function settle(
+  layer: Json,
+  origin: Map<string, string>,
+  id: string,
+  sources: Record<string, SourceSpec>,
+  skipped: Skipped,
+): LayerSpec | null {
   for (let attempt = 0; attempt < 64; attempt++) {
     const issues = validateLayer(layer, "layer", sources);
     if (issues.length === 0) return layer as unknown as LayerSpec;
@@ -470,7 +501,7 @@ function settle(layer: Json, id: string, sources: Record<string, SourceSpec>, sk
       const group = m ? (layer[m[1]!] as Json | undefined) : undefined;
       if (m && group && m[2]! in group) {
         delete group[m[2]!];
-        skipped.add(`${m[2]} couldn't be used: ${issue.message}`, id);
+        skipped.add(`${origin.get(`${m[1]}.${m[2]}`) ?? m[2]} couldn't be used: ${issue.message}`, id);
         removed = true;
       } else if (issue.path === "layer.sortKey" && layer.sortKey !== undefined) {
         delete layer.sortKey;
@@ -637,7 +668,12 @@ function ascending(pairs: [unknown, unknown][]): [number, unknown][] {
 
 function categorical(input: unknown, pairs: [unknown, unknown][], fallback: unknown): unknown {
   const seen = new Set<unknown>();
-  const unique = pairs.filter(([k]) => (seen.has(k) ? false : (seen.add(k), true)));
+  const unique: [unknown, unknown][] = [];
+  for (const pair of pairs) {
+    if (seen.has(pair[0])) continue;
+    seen.add(pair[0]);
+    unique.push(pair);
+  }
   const keys = unique.map(([k]) => k);
   if (keys.every((k) => typeof k === "string") || keys.every((k) => Number.isInteger(k))) {
     return ["match", input, ...unique.flat(), fallback];
