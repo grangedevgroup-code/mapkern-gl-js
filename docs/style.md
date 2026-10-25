@@ -315,6 +315,8 @@ Apart from `variableAnchor`, every layout property also takes an expression, so 
 | `iconIgnorePlacement` | `false` | Let other symbols draw over this icon's space |
 | `iconOptional` | `false` | Show the text alone when the icon doesn't fit |
 | `iconRotationAlignment` | `auto` | `map` turns icons with the map, `viewport` keeps them upright. `auto` means `map` on lines and `viewport` on points |
+| `iconTextFit` | `none` | `width`, `height` or `both` stretch the icon to fit its text, the way a road shield grows with the road's number. Only the stretchable parts of the image grow, see [Icons](#icons) |
+| `iconTextFitPadding` | `[0, 0, 0, 0]` | Extra room around the text in pixels, as `[top, right, bottom, left]` |
 
 | Paint | Default | |
 | --- | --- | --- |
@@ -355,6 +357,8 @@ Maplet loads `streets.json` and `streets.png`, or `streets@2x.json` and `streets
 The `image` expression checks that an image exists, which is handy for a fallback: `["coalesce", ["image", ["get", "kind"]], ["image", "dot"]]` shows a generic dot for kinds you have no icon for.
 
 SDF icons are stored as a distance field instead of colors. They stay sharp at any size, and `iconColor` and `iconHaloColor` paint them, so one image can serve many colors.
+
+An entry can also say how it stretches, for icons that grow around their text with `iconTextFit`. `stretchX` and `stretchY` list the pixel ranges that may grow, like `[[4, 28]]`, and `content` is the box the text goes in, as `[left, top, right, bottom]`. Everything outside the stretch ranges keeps its size, so a rounded shield keeps its corners however long the text gets. Without them, the whole image stretches.
 
 ## Colors
 
@@ -474,7 +478,7 @@ const map = new maplet.Map({ container: "map", style: "https://tiles.openfreemap
 
 Property names lose their prefix and move to camel case, so `fill-color` becomes `color` and `text-halo-width` becomes `haloWidth`, `fill-extrusion` layers become `extrusion` layers, and a layer that borrows from another with `ref` gets its type, source, filter and layout. Filters and property functions in the older format, like `["==", "class", "park"]` or `{ "stops": [[5, 1], [10, 4]] }`, become expressions, `{name}` in a label becomes `["get", "name"]`, and relative addresses are read from where the style lives. Where the two formats disagree on a default, such as the text size or the tile size of raster sources, Maplet uses the one the style was written for. Labels are drawn in the style's own fonts from its `glyphs` server, see [Fonts](#fonts). A style without one uses the device's fonts, with `text-font` picking the family, weight and slant.
 
-A few things can't be drawn yet: patterns on lines and patterns that change per feature, `line-gradient`, `icon-text-fit`, icons and point labels lying flat on tilted maps (`icon-pitch-alignment: "map"`), `fog`, `sky` and the globe projection. When a style uses them, Maplet leaves out that property, or the layer when nothing else would make sense, and draws the rest. The `styleload` event lists what was left out in `event.skipped`. Addresses starting with `mapbox://` need Mapbox's own servers and are left out too.
+A few things can't be drawn yet: patterns on lines and patterns that change per feature, `line-gradient`, icons and point labels lying flat on tilted maps (`icon-pitch-alignment: "map"`), `fog`, `sky` and the globe projection. When a style uses them, Maplet leaves out that property, or the layer when nothing else would make sense, and draws the rest. The `styleload` event lists what was left out in `event.skipped`. Addresses starting with `mapbox://` need Mapbox's own servers and are left out too.
 
 `maplet.importStyle(style, url)` does the same conversion without a map and returns `{ style, skipped }`, if you'd like to look at the result or keep it.
 
