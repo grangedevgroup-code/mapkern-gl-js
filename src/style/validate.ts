@@ -62,6 +62,7 @@ const STYLE_KEYS = new Set([
   "layers",
   "terrain",
   "fonts",
+  "sprite",
   "metadata",
 ]);
 
@@ -71,6 +72,9 @@ export function validateStyle(style: unknown): StyleIssue[] {
   if (style.version !== 1) issues.push({ path: "version", message: "version must be 1" });
   for (const key of Object.keys(style)) {
     if (!STYLE_KEYS.has(key)) issues.push({ path: key, message: `unknown style property "${key}"` });
+  }
+  if (style.sprite !== undefined && !isSprite(style.sprite)) {
+    issues.push({ path: "sprite", message: "sprite must be a URL or a list of { id, url }" });
   }
   if (style.center !== undefined && !isLngLat(style.center)) {
     issues.push({ path: "center", message: "center must be [lng, lat]" });
@@ -280,6 +284,20 @@ function isObject(v: unknown): v is Record<string, unknown> {
 
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
+}
+
+function isSprite(v: unknown): boolean {
+  if (typeof v === "string") return v !== "";
+  if (!Array.isArray(v) || v.length === 0) return false;
+  const ids = new Set<string>();
+  for (const entry of v) {
+    if (!isObject(entry) || typeof entry.id !== "string" || typeof entry.url !== "string" || entry.url === "") {
+      return false;
+    }
+    if (ids.has(entry.id)) return false;
+    ids.add(entry.id);
+  }
+  return true;
 }
 
 function isPromoteId(v: unknown, perLayer: boolean): boolean {
