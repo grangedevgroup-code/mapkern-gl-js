@@ -66,7 +66,7 @@ const DATA_DRIVEN: Record<string, readonly string[]> = {
   circle: ["radius", "color", "opacity", "strokeColor", "strokeWidth", "strokeOpacity", "blur"],
   heatmap: ["radius", "weight"],
   extrusion: ["color", "height", "base"],
-  symbol: ["color", "haloColor", "haloWidth", "opacity"],
+  symbol: ["color", "haloColor", "haloWidth", "haloBlur", "opacity"],
 };
 
 export function dataDrivenPaint(type: string): readonly string[] {
@@ -104,11 +104,11 @@ export function layerProgram(layer: StyleLayer): LayerProgram | null {
     layout.placement = layer.fixed<string>("placement");
     layout.spacing = layer.fixed<number>("spacing");
     layout.transform = layer.fixed<string>("transform");
-    for (const name of ["text", "size", "priority", "icon", "iconSize", "iconRotate"]) {
+    for (const name of ["text", "size", "priority", "icon", "iconSize", "iconRotate", "rotate"]) {
       const c = layer.layoutProperty<unknown>(name);
       if (c.featureDependent) for (const k of c.properties) keys.add(k);
     }
-    for (const name of ["iconColor", "iconHaloColor", "iconHaloWidth", "iconOpacity"]) {
+    for (const name of ["iconColor", "iconHaloColor", "iconHaloWidth", "iconOpacity", "haloBlur"]) {
       const c = layer.paintProperty<unknown>(name);
       if (c.featureDependent) for (const k of c.properties) keys.add(k);
     }
