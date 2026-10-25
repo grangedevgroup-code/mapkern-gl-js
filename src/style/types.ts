@@ -203,5 +203,6 @@ export interface StyleSpec {
   layers: LayerSpec[];
   terrain?: TerrainSpec;
   fonts?: Record<string, string[]>;
+  sprite?: string | { id: string; url: string }[];
   metadata?: Record<string, unknown>;
 }
