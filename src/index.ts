@@ -53,10 +53,25 @@ export type {
   AttributionOptions,
   Control,
   ControlPosition,
+  FullscreenEvent,
+  FullscreenEvents,
+  FullscreenOptions,
+  GeolocateErrorEvent,
+  GeolocateEvent,
+  GeolocateEvents,
+  GeolocateOptions,
+  GeolocateState,
+  GeolocateTrackEvent,
   NavigationOptions,
   ScaleOptions,
 } from "./ui/controls.ts";
-export { AttributionControl, NavigationControl, ScaleControl } from "./ui/controls.ts";
+export {
+  AttributionControl,
+  FullscreenControl,
+  GeolocateControl,
+  NavigationControl,
+  ScaleControl,
+} from "./ui/controls.ts";
 export type { Alignment, MarkerEvent, MarkerEvents, MarkerOptions } from "./ui/marker.ts";
 export { Marker } from "./ui/marker.ts";
 export type { PopupEvent, PopupEvents, PopupOptions } from "./ui/popup.ts";
