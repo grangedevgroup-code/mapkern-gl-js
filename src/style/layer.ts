@@ -151,6 +151,8 @@ export class StyleLayer {
   private readonly paint = new Map<string, Compiled<unknown>>();
   private readonly layout = new Map<string, Compiled<unknown>>();
   private readonly fixedValues = new Map<string, unknown>();
+  private stateRevision = -1;
+  private stateUse = false;
   revision = 0;
 
   constructor(spec: LayerSpec) {
@@ -170,6 +172,14 @@ export class StyleLayer {
       this.setProperty(this.layout, "layout", name, def, layout[name]);
     const filter = (spec as { filter?: unknown }).filter;
     if (filter !== undefined) this.filter = compile<boolean>(filter, "boolean", false, `${this.id}.filter`);
+  }
+
+  get usesState(): boolean {
+    if (this.stateRevision !== this.revision) {
+      this.stateRevision = this.revision;
+      this.stateUse = [...this.paint.values()].some((c) => c.stateDependent);
+    }
+    return this.stateUse;
   }
 
   isVisible(zoom: number): boolean {
