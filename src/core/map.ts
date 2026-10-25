@@ -12,6 +12,7 @@ import type { PickBox } from "../render/painter.ts";
 import { Painter } from "../render/painter.ts";
 import { DemSource } from "../sources/dem.ts";
 import { GeoJSONSource } from "../sources/geojson.ts";
+import { ImageSource } from "../sources/image.ts";
 import { registerMbtilesProtocol } from "../sources/mbtiles.ts";
 import { registerPmtilesProtocol } from "../sources/pmtiles.ts";
 import { RasterSource } from "../sources/raster.ts";
@@ -181,7 +182,7 @@ export interface TouchZoomRotateSwitch extends HandlerSwitch {
   isRotationEnabled(): boolean;
 }
 
-export type Source = RasterSource | VectorSource | GeoJSONSource | DemSource;
+export type Source = RasterSource | VectorSource | GeoJSONSource | DemSource | ImageSource;
 
 export type PointLike = [number, number] | { x: number; y: number };
 
@@ -1958,6 +1959,10 @@ export class MapletMap extends Emitter<MapEvents> {
         return new GeoJSONSource(id, spec, ctx);
       case "dem":
         return new DemSource(id, spec, ctx);
+      case "image":
+      case "video":
+      case "canvas":
+        return new ImageSource(id, spec, ctx);
       default: {
         const type = (spec as { type: unknown }).type;
         throw new MapletError("invalid-style", `Source type "${String(type)}" is not supported`, { sourceId: id });
