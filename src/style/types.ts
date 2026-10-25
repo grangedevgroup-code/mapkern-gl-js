@@ -95,6 +95,7 @@ export interface FillLayerSpec extends SourceLayerBase {
     opacity?: Value<number>;
     outlineColor?: Value<Color>;
     translate?: [number, number];
+    translateAnchor?: "map" | "viewport";
     antialias?: boolean;
   };
   sortKey?: Value<number>;
@@ -125,7 +126,12 @@ export interface CircleLayerSpec extends SourceLayerBase {
     opacity?: Value<number>;
     strokeColor?: Value<Color>;
     strokeWidth?: Value<number>;
+    strokeOpacity?: Value<number>;
     blur?: Value<number>;
+    translate?: [number, number];
+    translateAnchor?: "map" | "viewport";
+    pitchScale?: "map" | "viewport";
+    pitchAlignment?: "map" | "viewport";
   };
   sortKey?: Value<number>;
 }
