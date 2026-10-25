@@ -637,6 +637,110 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "feature state recolours features without reloading tiles",
+    async run({ page, base, shot }) {
+      const box = (west: number, east: number) => ({
+        type: "Feature",
+        properties: {},
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [west, -10],
+              [east, -10],
+              [east, 10],
+              [west, 10],
+              [west, -10],
+            ],
+          ],
+        },
+      });
+      const hover = ["case", ["boolean", ["feature-state", "hover"], false], "#ff0000", "#0000ff"];
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          g: {
+            type: "geojson",
+            generateId: true,
+            data: { type: "FeatureCollection", features: [box(-20, -5), box(5, 20)] },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "boxes", type: "fill", source: "g", paint: { color: hover } },
+        ],
+      });
+      await createMap(page, style);
+      if (!near(await pixel(page, 263, 300), BLUE) || !near(await pixel(page, 537, 300), BLUE))
+        fail("expected both boxes blue before any state is set");
+      const requests = await page.evaluate<number>("window.map.getDiagnostics().sources.g.requested");
+      await page.evaluate(`void window.map.setFeatureState({ source: "g", id: 1 }, { hover: true })`);
+      await idle(page);
+      await shot("feature-state-hover");
+      const left = await pixel(page, 263, 300);
+      const right = await pixel(page, 537, 300);
+      if (!near(left, BLUE) || !near(right, RED)) fail(`expected only the second box red, got ${left} and ${right}`);
+      const after = await page.evaluate<number>("window.map.getDiagnostics().sources.g.requested");
+      if (after !== requests) fail(`setting state reloaded tiles (${requests} -> ${after} requests)`);
+      const state = await page.evaluate<unknown>(`window.map.getFeatureState({ source: "g", id: 1 })`);
+      if (JSON.stringify(state) !== JSON.stringify({ hover: true }))
+        fail(`getFeatureState returned ${JSON.stringify(state)}`);
+      const found = await page.evaluate<{ id: unknown; state: unknown }[]>(
+        `window.map.queryRenderedFeatures([537, 300]).then((fs) => fs.map((f) => ({ id: f.id, state: f.state })))`,
+      );
+      if (
+        found.length !== 1 ||
+        found[0]!.id !== 1 ||
+        JSON.stringify(found[0]!.state) !== JSON.stringify({ hover: true })
+      )
+        fail(`expected the hovered box with its state from the query, got ${JSON.stringify(found)}`);
+      await page.evaluate(`void window.map.removeFeatureState({ source: "g", id: 1 }, "hover")`);
+      await idle(page);
+      if (!near(await pixel(page, 537, 300), BLUE)) fail("removing the hover key did not restore the colour");
+
+      const vector = JSON.stringify({
+        version: 1,
+        sources: {
+          v: { type: "vector", tiles: [`${base}/fixture/vector/{z}/{x}/{y}.pbf`], maxZoom: 6, promoteId: "name" },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          {
+            id: "areas",
+            type: "fill",
+            source: "v",
+            sourceLayer: "areas",
+            paint: { color: ["case", ["boolean", ["feature-state", "picked"], false], "#ff0000", "#0000ff"] },
+          },
+        ],
+      });
+      await page.evaluate("window.map.remove()");
+      await createMap(page, vector, { zoom: 3, center: [20, 20] });
+      await page.evaluate(
+        `void window.map.setFeatureState({ source: "v", sourceLayer: "areas", id: "tile 3/4/3" }, { picked: true })`,
+      );
+      await idle(page);
+      const picked = await pixel(page, 400, 300);
+      const other = await pixel(page, 60, 300);
+      if (!near(picked, RED) || !near(other, BLUE))
+        fail(`expected only tile 3/4/3 red with a string id, got ${picked} and ${other}`);
+      const ids = await page.evaluate<unknown[]>(
+        `window.map.queryRenderedFeatures([400, 300]).then((fs) => fs.map((f) => [f.id, f.state.picked]))`,
+      );
+      if (JSON.stringify(ids) !== JSON.stringify([["tile 3/4/3", true]]))
+        fail(`expected the promoted string id in the query, got ${JSON.stringify(ids)}`);
+      const missingLayer = await page.evaluate<string>(
+        `(() => { try { window.map.setFeatureState({ source: "v", id: 1 }, { picked: true }); return "no error"; } catch (e) { return e.code; } })()`,
+      );
+      if (missingLayer !== "invalid-option") fail(`expected invalid-option without sourceLayer, got ${missingLayer}`);
+      const issues = await page.evaluate<unknown[]>(
+        `maplet.validateStyle({ version: 1, sources: {}, layers: [{ id: "x", type: "background", paint: { color: "#fff" } }, { id: "y", type: "circle", source: "s", filter: ["feature-state", "a"] }] })`,
+      );
+      if (!JSON.stringify(issues).includes("only works in paint properties"))
+        fail(`expected feature-state in a filter to be rejected, got ${JSON.stringify(issues)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
