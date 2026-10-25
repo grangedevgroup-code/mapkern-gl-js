@@ -19,6 +19,7 @@ export type {
   PointLike,
   QueryGeometry,
   QueryOptions,
+  ScreenPosition,
   Source,
   SourceDataEvent,
   TouchZoomRotateSwitch,
@@ -44,6 +45,7 @@ export type { RequestParameters, ResourceKind, TransformRequest } from "./tiles/
 export type { TileStats } from "./tiles/manager.ts";
 export type { ProtocolHandler, ProtocolRequest, ProtocolResult } from "./tiles/protocols.ts";
 export { addProtocol, removeProtocol } from "./tiles/protocols.ts";
+export type { Anchor } from "./ui/anchor.ts";
 export type {
   AttributionOptions,
   Control,
@@ -52,6 +54,10 @@ export type {
   ScaleOptions,
 } from "./ui/controls.ts";
 export { AttributionControl, NavigationControl, ScaleControl } from "./ui/controls.ts";
+export type { Alignment, MarkerEvent, MarkerEvents, MarkerOptions } from "./ui/marker.ts";
+export { Marker } from "./ui/marker.ts";
+export type { PopupEvent, PopupEvents, PopupOptions } from "./ui/popup.ts";
+export { Popup } from "./ui/popup.ts";
 
 declare const MAPLET_VERSION: string | undefined;
 
