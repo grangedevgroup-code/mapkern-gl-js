@@ -6,6 +6,9 @@ export interface StyleImage {
   readonly pixelRatio: number;
   readonly sdf: boolean;
   readonly sprite: boolean;
+  readonly stretchX?: readonly (readonly [number, number])[];
+  readonly stretchY?: readonly (readonly [number, number])[];
+  readonly content?: readonly [number, number, number, number];
 }
 
 export interface ImageRect {
