@@ -363,17 +363,15 @@ export function uploadGeometry(gl: GL, type: BucketType, g: Geometry): GpuGeomet
       break;
     case "line":
       ctx.enableVertexAttribArray(0);
-      ctx.vertexAttribPointer(0, 2, ctx.SHORT, false, 24, 0);
+      ctx.vertexAttribPointer(0, 2, ctx.SHORT, false, 20, 0);
       ctx.enableVertexAttribArray(1);
-      ctx.vertexAttribPointer(1, 2, ctx.SHORT, false, 24, 4);
+      ctx.vertexAttribPointer(1, 2, ctx.SHORT, false, 20, 4);
       ctx.enableVertexAttribArray(2);
-      ctx.vertexAttribPointer(2, 4, ctx.BYTE, true, 24, 8);
+      ctx.vertexAttribIPointer(2, 4, ctx.BYTE, 20, 8);
       ctx.enableVertexAttribArray(3);
-      ctx.vertexAttribPointer(3, 1, ctx.FLOAT, false, 24, 12);
+      ctx.vertexAttribPointer(3, 1, ctx.FLOAT, false, 20, 12);
       ctx.enableVertexAttribArray(4);
-      ctx.vertexAttribIPointer(4, 1, ctx.UNSIGNED_INT, 24, 16);
-      ctx.enableVertexAttribArray(5);
-      ctx.vertexAttribPointer(5, 2, ctx.SHORT, false, 24, 20);
+      ctx.vertexAttribIPointer(4, 1, ctx.UNSIGNED_INT, 20, 16);
       break;
     case "circle":
     case "heatmap":
