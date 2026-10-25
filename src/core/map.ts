@@ -53,6 +53,8 @@ export interface MapOptions {
   touchZoomRotate?: boolean;
   touchPitch?: boolean;
   keyboard?: boolean;
+  bearingSnap?: number;
+  clickTolerance?: number;
   pixelRatio?: number;
   maxPixelRatio?: number;
   antialias?: boolean;
@@ -109,6 +111,18 @@ export interface FitBoundsOptions extends AnimationOptions {
 }
 
 export type BoundsLike = [[number, number], [number, number]] | [number, number, number, number];
+
+export interface HandlerSwitch {
+  enable(): void;
+  disable(): void;
+  isEnabled(): boolean;
+}
+
+export interface TouchZoomRotateSwitch extends HandlerSwitch {
+  enableRotation(): void;
+  disableRotation(): void;
+  isRotationEnabled(): boolean;
+}
 
 export type Source = RasterSource | VectorSource | GeoJSONSource | DemSource;
 
@@ -204,6 +218,13 @@ const FRAME_SAMPLES = 240;
 
 export class MapletMap extends Emitter<MapEvents> {
   readonly transform: Transform;
+  readonly dragPan: HandlerSwitch;
+  readonly dragRotate: HandlerSwitch;
+  readonly scrollZoom: HandlerSwitch;
+  readonly doubleClickZoom: HandlerSwitch;
+  readonly touchZoomRotate: TouchZoomRotateSwitch;
+  readonly touchPitch: HandlerSwitch;
+  readonly keyboard: HandlerSwitch;
   private readonly container: HTMLElement;
   private readonly canvasContainer: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
@@ -338,12 +359,27 @@ export class MapletMap extends Emitter<MapEvents> {
         doubleClickZoom: options.doubleClickZoom ?? true,
         touchZoomRotate: options.touchZoomRotate ?? true,
         touchPitch: options.touchPitch ?? true,
+        touchRotate: true,
         keyboard: options.keyboard ?? true,
+        clickTolerance: checkNumber(options.clickTolerance, "clickTolerance", 4),
       };
       this.handlers = new InputHandlers(this.inputHost(), input);
     } else {
       this.handlers = null;
     }
+    this.dragPan = this.handlerSwitch("dragPan");
+    this.dragRotate = this.handlerSwitch("dragRotate");
+    this.scrollZoom = this.handlerSwitch("scrollZoom");
+    this.doubleClickZoom = this.handlerSwitch("doubleClickZoom");
+    this.touchPitch = this.handlerSwitch("touchPitch");
+    this.keyboard = this.handlerSwitch("keyboard");
+    const rotation = this.handlerSwitch("touchRotate");
+    this.touchZoomRotate = {
+      ...this.handlerSwitch("touchZoomRotate"),
+      enableRotation: rotation.enable,
+      disableRotation: rotation.disable,
+      isRotationEnabled: rotation.isEnabled,
+    };
 
     if (options.attributionControl !== false) {
       const custom = typeof options.attributionControl === "object" ? options.attributionControl.custom : undefined;
@@ -356,6 +392,30 @@ export class MapletMap extends Emitter<MapEvents> {
 
   text(key: UiText): string {
     return this.strings[key];
+  }
+
+  private handlerSwitch(
+    key:
+      | "dragPan"
+      | "dragRotate"
+      | "scrollZoom"
+      | "doubleClickZoom"
+      | "touchZoomRotate"
+      | "touchPitch"
+      | "touchRotate"
+      | "keyboard",
+  ): HandlerSwitch {
+    return {
+      enable: () => {
+        if (this.handlers) this.handlers.options[key] = true;
+      },
+      disable: () => {
+        if (!this.handlers) return;
+        this.handlers.options[key] = false;
+        if (key !== "touchRotate") this.handlers.stopMomentum();
+      },
+      isEnabled: () => this.handlers?.options[key] === true,
+    };
   }
 
   getContainer(): HTMLElement {
@@ -409,6 +469,32 @@ export class MapletMap extends Emitter<MapEvents> {
 
   setMaxPitch(pitch: number): this {
     this.transform.setPitchRange(this.transform.minPitch, checkNumber(pitch, "maxPitch", 60));
+    this.cameraChanged();
+    return this;
+  }
+
+  setMinPitch(pitch: number): this {
+    this.transform.setPitchRange(checkNumber(pitch, "minPitch", 0), this.transform.maxPitch);
+    this.cameraChanged();
+    return this;
+  }
+
+  getMinPitch(): number {
+    return this.transform.minPitch;
+  }
+
+  getMaxPitch(): number {
+    return this.transform.maxPitch;
+  }
+
+  getRenderWorldCopies(): boolean {
+    return this.transform.renderWorldCopies;
+  }
+
+  setRenderWorldCopies(render: boolean): this {
+    this.transform.renderWorldCopies = render !== false;
+    const [x, y] = this.transform.centerWorld;
+    this.transform.setCenterWorld(x, y);
     this.cameraChanged();
     return this;
   }
@@ -552,6 +638,16 @@ export class MapletMap extends Emitter<MapEvents> {
     return this.easeTo({ ...options, bearing: 0 });
   }
 
+  resetNorthPitch(options: AnimationOptions = {}): this {
+    return this.easeTo({ ...options, bearing: 0, pitch: 0 });
+  }
+
+  snapToNorth(options: AnimationOptions = {}): this {
+    const snap = checkNumber(this.options.bearingSnap, "bearingSnap", 7);
+    if (this.transform.bearing !== 0 && Math.abs(this.transform.bearing) < snap) return this.resetNorth(options);
+    return this;
+  }
+
   fitBounds(bounds: BoundsLike, options: FitBoundsOptions = {}): this {
     const camera = this.cameraForBounds(bounds, options);
     if (!camera) return this;
@@ -604,6 +700,14 @@ export class MapletMap extends Emitter<MapEvents> {
 
   isMoving(): boolean {
     return this.moving || this.motion !== null || this.gestureDepth > 0;
+  }
+
+  isZooming(): boolean {
+    return this.movingFlags.zoom;
+  }
+
+  isRotating(): boolean {
+    return this.movingFlags.rotate;
   }
 
   project(lngLat: LngLatLike): { x: number; y: number } {
@@ -913,6 +1017,34 @@ export class MapletMap extends Emitter<MapEvents> {
     this.layer(layerId).setLayout(name, value);
     this.triggerRepaint();
     return this;
+  }
+
+  getFilter(layerId: string): unknown {
+    const filter = (this.layer(layerId).spec as { filter?: unknown }).filter;
+    return filter === undefined ? undefined : structuredClone(filter);
+  }
+
+  getPaintProperty(layerId: string, name: string): unknown {
+    const value = (this.layer(layerId).spec as { paint?: Record<string, unknown> }).paint?.[name];
+    return value === undefined ? undefined : structuredClone(value);
+  }
+
+  getLayoutProperty(layerId: string, name: string): unknown {
+    const value = (this.layer(layerId).spec as { layout?: Record<string, unknown> }).layout?.[name];
+    return value === undefined ? undefined : structuredClone(value);
+  }
+
+  isSourceLoaded(id: string): boolean {
+    const source = this.style?.sources.get(id);
+    if (!source) throw new MapletError("invalid-option", `There is no source with id "${id}"`);
+    return source.loaded && source.isIdle();
+  }
+
+  areTilesLoaded(): boolean {
+    for (const source of this.style?.sources.values() ?? []) {
+      if (source.loaded && !source.isIdle()) return false;
+    }
+    return true;
   }
 
   setFilter(layerId: string, filter: unknown): this {
@@ -1460,6 +1592,9 @@ export class MapletMap extends Emitter<MapEvents> {
       gesture: (active: boolean) => {
         this.gestureDepth = Math.max(0, this.gestureDepth + (active ? 1 : -1));
         this.triggerRepaint();
+      },
+      rotateEnded: () => {
+        this.snapToNorth();
       },
       ease: (
         target: { zoom?: number; bearing?: number; pitch?: number; panBy?: [number, number] },
