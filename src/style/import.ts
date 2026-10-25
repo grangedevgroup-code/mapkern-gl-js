@@ -1,4 +1,5 @@
 import { MapletError } from "../core/errors.ts";
+import { fontFromNames } from "../text/glyphs.ts";
 import { compile, isOperator } from "./expression.ts";
 import type { PropertyDef } from "./layer.ts";
 import { LAYOUT, PAINT, transitionOf } from "./layer.ts";
