@@ -83,6 +83,7 @@ export const PAINT: Record<LayerType, Record<string, PropertyDef>> = {
     opacity: p("number", 1),
     outlineColor: p("color", null),
     translate: fixed([0, 0], numberPair),
+    translateAnchor: fixed("map", oneOf("map", "viewport")),
     antialias: fixed(true, isBoolean),
   },
   line: {
@@ -98,7 +99,12 @@ export const PAINT: Record<LayerType, Record<string, PropertyDef>> = {
     opacity: p("number", 1),
     strokeColor: p("color", "#000000"),
     strokeWidth: p("number", 0),
+    strokeOpacity: p("number", 1),
     blur: p("number", 0),
+    translate: fixed([0, 0], numberPair),
+    translateAnchor: fixed("map", oneOf("map", "viewport")),
+    pitchScale: fixed("viewport", oneOf("map", "viewport")),
+    pitchAlignment: fixed("viewport", oneOf("map", "viewport")),
   },
   symbol: {
     color: p("color", "#000000"),
