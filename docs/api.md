@@ -135,6 +135,18 @@ input.addEventListener("change", () => {
 
 The source also has `getData()`, `bounds` (`[west, south, east, north]`, or `null` when empty) and `featureCount`.
 
+A [clustered](style.md#geojson) source can tell you about its clusters. Give it the `cluster_id` from a cluster's properties:
+
+```js
+map.on("click", "clusters", async (event) => {
+  const cluster = event.features[0];
+  const zoom = await map.getSource("stations").getClusterExpansionZoom(cluster.properties.cluster_id);
+  map.easeTo({ center: cluster.geometry.coordinates, zoom });
+});
+```
+
+`getClusterExpansionZoom(id)` is the zoom at which the cluster comes apart. `getClusterChildren(id)` returns the clusters and points one level down, and `getClusterLeaves(id, limit, offset)` the original points inside it, 10 at a time unless you pass another `limit` (`Infinity` for all).
+
 ## Events
 
 ```js
