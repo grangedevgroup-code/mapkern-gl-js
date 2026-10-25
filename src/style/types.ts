@@ -104,6 +104,8 @@ export interface FillLayerSpec extends SourceLayerBase {
 export interface LineLayerSpec extends SourceLayerBase {
   type: "line";
   paint?: {
+    offset?: Value<number>;
+    gapWidth?: Value<number>;
     color?: Value<Color>;
     width?: Value<number>;
     opacity?: Value<number>;
