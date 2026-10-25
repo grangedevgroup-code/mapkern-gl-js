@@ -1966,6 +1966,108 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "fullscreen and geolocate controls, and who moved the map",
+    async run({ page, base, shot }) {
+      await page.evaluate(`(() => {
+        window.watchers = [];
+        Object.defineProperty(navigator, "geolocation", {
+          configurable: true,
+          value: {
+            getCurrentPosition(ok) { setTimeout(() => ok({ coords: { latitude: 47.6, longitude: -122.33, accuracy: 60 }, timestamp: Date.now() }), 10); },
+            watchPosition(ok) { window.watchers.push(ok); setTimeout(() => ok({ coords: { latitude: 47.6, longitude: -122.33, accuracy: 60 }, timestamp: Date.now() }), 10); return 7; },
+            clearWatch(id) { window.cleared = id; },
+          },
+        });
+      })()`);
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { zoom: 3, center: [0, 0] });
+      const sources = await page.evaluate<(string | null)[]>(`(async () => {
+        const seen = [];
+        const map = window.map;
+        const record = (e) => seen.push(e.originalEvent ? e.originalEvent.type : null);
+        map.on("movestart", record);
+        map.getCanvasContainer().dispatchEvent(new PointerEvent("pointermove", { clientX: 100, clientY: 100, bubbles: true, pointerType: "mouse" }));
+        map.easeTo({ center: [10, 0], duration: 0 });
+        await map.once("moveend");
+        map.off("movestart", record);
+        return seen;
+      })()`);
+      if (JSON.stringify(sources) !== JSON.stringify([null]))
+        fail(`a move made in code should have no originalEvent, got ${JSON.stringify(sources)}`);
+      await page.evaluate(`(() => {
+        window.dragStart = new Promise((resolve) => {
+          window.map.once("movestart", (e) => resolve(e.originalEvent ? e.originalEvent.type : null));
+        });
+      })()`);
+      await page.mouse("mouseMoved", 400, 300);
+      await page.mouse("mousePressed", 400, 300, { buttons: 1 });
+      for (let i = 1; i <= 5; i++) await page.mouse("mouseMoved", 400 + i * 10, 300, { buttons: 1 });
+      await page.mouse("mouseReleased", 450, 300, { buttons: 0 });
+      const dragType = await page.evaluate<string | null>("window.dragStart");
+      if (!dragType?.startsWith("pointer")) fail(`a drag should carry its pointer event, got ${dragType}`);
+      await idle(page);
+
+      await page.evaluate(`(() => {
+        window.fullscreen = new maplet.FullscreenControl();
+        window.geolocate = new maplet.GeolocateControl({ trackUserLocation: true });
+        window.geoLog = [];
+        for (const type of ["geolocate", "trackuserlocationstart", "trackuserlocationend"]) window.geolocate.on(type, () => window.geoLog.push(type));
+        window.map.addControl(window.fullscreen).addControl(window.geolocate);
+      })()`);
+      await page.evaluate("document.querySelector('.maplet-fullscreen-button').click()");
+      await page.waitFor("window.fullscreen.isFullscreen()", 3000);
+      const label = await page.evaluate<string | null>(
+        "document.querySelector('.maplet-fullscreen-button').getAttribute('aria-label')",
+      );
+      if (label !== "Exit fullscreen") fail(`the fullscreen button should offer to exit, got ${label}`);
+      await page.evaluate("document.querySelector('.maplet-fullscreen-button').click()");
+      await page.waitFor("!window.fullscreen.isFullscreen()", 3000);
+
+      await page.evaluate("document.querySelector('.maplet-geolocate-button').click()");
+      await page.waitFor("window.geolocate.getState() === 'active'", 3000);
+      await idle(page);
+      await shot("geolocate");
+      const located = await page.evaluate<{
+        center: number[];
+        zoom: number;
+        dot: boolean;
+        ring: number;
+        state: string;
+      }>(`(() => {
+        const ring = document.querySelector(".maplet-user-accuracy");
+        return {
+          center: window.map.getCenter(),
+          zoom: window.map.getZoom(),
+          dot: !!document.querySelector(".maplet-user-location"),
+          ring: ring ? ring.getBoundingClientRect().width : 0,
+          state: window.geolocate.getState(),
+        };
+      })()`);
+      if (Math.abs(located.center[0]! + 122.33) > 0.01 || Math.abs(located.center[1]! - 47.6) > 0.01)
+        fail(`the map should fly to the reported position, got ${located.center}`);
+      if (!located.dot || located.ring < 10)
+        fail(`expected the location dot and its accuracy circle, got ${JSON.stringify(located)}`);
+      await page.mouse("mouseMoved", 400, 300);
+      await page.mouse("mousePressed", 400, 300, { buttons: 1 });
+      for (let i = 1; i <= 5; i++) await page.mouse("mouseMoved", 400 + i * 10, 300, { buttons: 1 });
+      await page.mouse("mouseReleased", 450, 300, { buttons: 0 });
+      await page.waitFor("window.geolocate.getState() === 'background'", 3000);
+      await page.evaluate("document.querySelector('.maplet-geolocate-button').click()");
+      await page.waitFor("window.geolocate.getState() === 'active'", 3000);
+      await page.evaluate("document.querySelector('.maplet-geolocate-button').click()");
+      await page.waitFor("window.geolocate.getState() === 'off'", 3000);
+      const end = await page.evaluate<{ log: string[]; cleared: unknown; dot: boolean }>(
+        "({ log: window.geoLog, cleared: window.cleared, dot: !!document.querySelector('.maplet-user-location') })",
+      );
+      if (
+        end.cleared !== 7 ||
+        end.dot ||
+        end.log[0] !== "trackuserlocationstart" ||
+        end.log.at(-1) !== "trackuserlocationend"
+      )
+        fail(`turning tracking off should stop the watch and remove the dot, got ${JSON.stringify(end)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
