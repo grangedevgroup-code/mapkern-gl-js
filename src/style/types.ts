@@ -315,6 +315,15 @@ export interface StyleSpecV8 {
   [key: string]: unknown;
 }
 
+export interface SkySpec {
+  color?: Value<Color>;
+  horizonColor?: Value<Color>;
+  fogColor?: Value<Color>;
+  fogBlend?: Value<number>;
+  horizonFogBlend?: Value<number>;
+  horizonBlend?: Value<number>;
+}
+
 export interface StyleSpec {
   version: 1;
   name?: string;
@@ -325,6 +334,7 @@ export interface StyleSpec {
   sources: Record<string, SourceSpec>;
   layers: LayerSpec[];
   terrain?: TerrainSpec;
+  sky?: SkySpec;
   fonts?: Record<string, string[]>;
   sprite?: string | { id: string; url: string }[];
   glyphs?: string;
