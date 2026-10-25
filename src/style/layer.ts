@@ -243,7 +243,9 @@ export const LAYOUT: Record<LayerType, Record<string, PropertyDef>> = {
     iconTextFit: checked("string", "none", false, oneOf("none", "width", "height", "both")),
     iconTextFitPadding: checked("any", [0, 0, 0, 0], false, numberQuad),
   },
-  extrusion: {},
+  extrusion: {
+    hideOutlines: fixed(null, isBoolean),
+  },
   hillshade: {},
 };
 
