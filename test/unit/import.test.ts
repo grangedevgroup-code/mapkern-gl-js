@@ -300,3 +300,30 @@ test("what can't be drawn is left out and listed, never the whole style", () => 
   }
   assert.throws(() => importStyle({ version: 1, sources: {}, layers: [] }), /version 8/);
 });
+
+test("dash patterns step between zooms instead of blending", () => {
+  const { layer } = one({
+    id: "border",
+    type: "line",
+    source: "v",
+    "source-layer": "boundary",
+    paint: {
+      "line-dasharray": {
+        stops: [
+          [6, [1, 0]],
+          [7, [2, 2]],
+        ],
+      },
+      "line-width": {
+        stops: [
+          [4, 0.5],
+          [7, 1],
+        ],
+      },
+    },
+  });
+  assert.deepEqual(layer?.paint, {
+    dash: ["step", ["zoom"], ["literal", [1, 0]], 7, ["literal", [2, 2]]],
+    width: ["interpolate", ["linear"], ["zoom"], 4, 0.5, 7, 1],
+  });
+});
