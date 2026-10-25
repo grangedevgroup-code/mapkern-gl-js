@@ -15,7 +15,7 @@ const style = {
 };
 ```
 
-A style can also set `center`, `zoom`, `bearing` and `pitch`. The map uses them when you don't pass those options yourself. With `terrain` it raises the ground in 3D, see [Terrain](#terrain), and `sprite` loads a sheet of icons, see [Icons](#icons).
+A style can also set `center`, `zoom`, `bearing` and `pitch`. The map uses them when you don't pass those options yourself. With `terrain` it raises the ground in 3D, see [Terrain](#terrain), `sprite` loads a sheet of icons, see [Icons](#icons), and `glyphs` draws labels in fonts from a font server, see [Fonts](#fonts).
 
 Maplet checks the whole style before drawing it. If something is wrong you get a single `error` event that lists every problem, like `layers[2].paint.colour: "colour" is not a property of fill layers`. `validateStyle(style)` runs the same check without a map.
 
@@ -282,7 +282,7 @@ Apart from `variableAnchor`, every layout property also takes an expression, so 
 | `text` | empty | per feature. Usually `["get", "name"]` |
 | `size` | 14 | per feature, in pixels |
 | `priority` | 0 | per feature. Higher wins |
-| `font` | `["sans-serif"]` | per feature. Font families to try in order. Labels use fonts installed on the device |
+| `font` | `["sans-serif"]` | per feature. Font families to try in order, or font names on the style's `glyphs` server, see [Fonts](#fonts) |
 | `weight` | `normal` | per feature. Or `bold` |
 | `italic` | `false` | per feature |
 | `placement` | `point` | `line` makes the text follow the line, repeated along it. `line-center` puts one label at the middle of each line |
@@ -330,6 +330,16 @@ Apart from `variableAnchor`, every layout property also takes an expression, so 
 | `iconHaloWidth` | 0 | per feature, in pixels, for SDF icons only |
 
 A symbol with both an icon and text needs room for both, unless you set `optional` or `iconOptional`. On lines, icons sit at each repeat and turn with the line, which is how one-way arrows are drawn.
+
+## Fonts
+
+Labels use fonts installed on the device, so `font` lists CSS font families like `["Noto Sans", "sans-serif"]`. To draw them in the fonts a style was designed with, give the style a `glyphs` address, the same kind MapLibre and Mapbox styles use:
+
+```js
+glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+```
+
+`font` then names fonts on that server, like `["Noto Sans Bold"]`, and Maplet loads them 256 characters at a time as labels need them. The map waits for them before it counts as `idle`. Chinese, Japanese and Korean, and scripts whose letters join or change shape, like Arabic or Hindi, still use the device's fonts. They're shaped properly that way and don't need large downloads. Characters the server doesn't have fall back to the device too, and the weight and slant come from the font name, so `Noto Sans Bold Italic` falls back to a bold italic sans-serif.
 
 ## Icons
 
@@ -461,7 +471,7 @@ Styles written for MapLibre GL JS or Mapbox GL JS, the ones with `"version": 8`,
 const map = new maplet.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/liberty" });
 ```
 
-Property names lose their prefix and move to camel case, so `fill-color` becomes `color` and `text-halo-width` becomes `haloWidth`, `fill-extrusion` layers become `extrusion` layers, and a layer that borrows from another with `ref` gets its type, source, filter and layout. Filters and property functions in the older format, like `["==", "class", "park"]` or `{ "stops": [[5, 1], [10, 4]] }`, become expressions, `{name}` in a label becomes `["get", "name"]`, and relative addresses are read from where the style lives. Where the two formats disagree on a default, such as the text size or the tile size of raster sources, Maplet uses the one the style was written for. `text-font` picks the font family, weight and slant, and the text is drawn with fonts installed on the device.
+Property names lose their prefix and move to camel case, so `fill-color` becomes `color` and `text-halo-width` becomes `haloWidth`, `fill-extrusion` layers become `extrusion` layers, and a layer that borrows from another with `ref` gets its type, source, filter and layout. Filters and property functions in the older format, like `["==", "class", "park"]` or `{ "stops": [[5, 1], [10, 4]] }`, become expressions, `{name}` in a label becomes `["get", "name"]`, and relative addresses are read from where the style lives. Where the two formats disagree on a default, such as the text size or the tile size of raster sources, Maplet uses the one the style was written for. Labels are drawn in the style's own fonts from its `glyphs` server, see [Fonts](#fonts). A style without one uses the device's fonts, with `text-font` picking the family, weight and slant.
 
 A few things can't be drawn yet: patterns on lines and patterns that change per feature, `line-gradient`, `icon-text-fit`, text lying flat on tilted maps (`text-pitch-alignment: "map"`), `fog`, `sky` and the globe projection. When a style uses them, Maplet leaves out that property, or the layer when nothing else would make sense, and draws the rest. The `styleload` event lists what was left out in `event.skipped`. Addresses starting with `mapbox://` need Mapbox's own servers and are left out too.
 
