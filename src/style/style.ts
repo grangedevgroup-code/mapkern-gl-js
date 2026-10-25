@@ -130,7 +130,7 @@ export class Style {
     for (const [id, spec] of Object.entries(sources)) {
       if (!this.sources.has(id)) this.createSource(id, cloneSpec(spec));
     }
-    for (const [layer, spec, update] of updates) layer.restyle(spec, update);
+    for (const [layer, spec, update] of updates) layer.restyle(spec, update, meta.transition);
     this.layers = layers.map((spec) => created.get(spec.id) ?? this.layerById.get(spec.id)!);
     this.layerById.clear();
     for (const layer of this.layers) this.layerById.set(layer.id, layer);
