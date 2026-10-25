@@ -215,6 +215,10 @@ export function importStyle(input: unknown, base?: string): ImportedStyle {
   for (const key of ["name", "center", "zoom", "bearing", "pitch", "metadata", "transition"]) {
     if (input[key] !== undefined) style[key] = structuredClone(input[key]);
   }
+  const glyphs = typeof input.glyphs === "string" && !input.glyphs.startsWith("mapbox://") ? input.glyphs : null;
+  if (glyphs) style.glyphs = absolute(glyphs, base);
+  else if (input.glyphs !== undefined)
+    skipped.add("the glyphs use a mapbox:// address, so labels use the device's fonts");
   if (input.sprite !== undefined) {
     const sprite = spriteOf(input.sprite, base);
     if (sprite === null) skipped.add("the sprite uses a mapbox:// address, which only Mapbox's servers understand");
@@ -251,7 +255,7 @@ export function importStyle(input: unknown, base?: string): ImportedStyle {
       skipped.add("layers whose ref names no other layer", original.id);
       continue;
     }
-    const converted = convertLayer(raw, sources, skipped);
+    const converted = convertLayer(raw, sources, skipped, glyphs !== null);
     if (!converted) continue;
     const checked = settle(converted.layer, converted.origin, original.id, sources, skipped);
     if (!checked) continue;
@@ -391,6 +395,7 @@ function convertLayer(
   raw: Json,
   sources: Record<string, SourceSpec>,
   skipped: Skipped,
+  serverFonts: boolean,
 ): { layer: Json; origin: Map<string, string> } | null {
   const id = raw.id as string;
   const type = TYPES[String(raw.type)];
@@ -437,6 +442,11 @@ function convertLayer(
     switch (key) {
       case "text-font": {
         const source = isFunction(value) ? functionValue(value, undefined, false, false) : value;
+        if (serverFonts) {
+          layoutOut.font = source;
+          origin.set("layout.font", key);
+          continue;
+        }
         const constant = fontOf(source);
         if (constant) {
           layoutOut.font = constant.families;
@@ -513,7 +523,9 @@ function convertLayer(
   }
   if (type === "symbol" && layoutOut.text !== undefined) {
     layoutOut.size ??= 16;
-    layoutOut.font ??= ["Open Sans", "Arial Unicode MS", "sans-serif"];
+    layoutOut.font ??= serverFonts
+      ? ["Open Sans Regular", "Arial Unicode MS Regular"]
+      : ["Open Sans", "Arial Unicode MS", "sans-serif"];
   }
   if (type === "raster") paintOut.fadeDuration ??= 300;
   if (type === "circle") paintOut.pitchScale ??= "map";
@@ -773,9 +785,6 @@ function plainFormat(value: unknown): unknown {
   }
   return value.map((v) => plainFormat(v));
 }
-
-const STYLE_WORDS =
-  /\b(regular|normal|book|roman|medium|semi ?bold|demi ?bold|extra ?bold|ultra ?bold|bold|black|heavy|extra ?light|ultra ?light|light|thin|hairline|italic|oblique|condensed|narrow)\b/gi;
 
 function fontLeaves(value: unknown, leaf: (list: string[]) => unknown): unknown {
   const list = fontList(value);
