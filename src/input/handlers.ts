@@ -34,7 +34,13 @@ export interface InputHost {
     type: "click" | "dblclick" | "contextmenu" | "mousemove" | "mousedown" | "mouseup" | "mouseout",
     event: MouseEvent,
     point: [number, number],
-  ): void;
+  ): Promise<boolean> | null;
+}
+
+interface Hold {
+  waiting: boolean;
+  prevented: boolean;
+  moved: boolean;
 }
 
 interface Pointer {
@@ -49,7 +55,7 @@ interface Pointer {
 
 type Mode =
   | { kind: "idle" }
-  | { kind: "press"; pointer: number; rotate: boolean }
+  | { kind: "press"; pointer: number; rotate: boolean; hold: Hold }
   | { kind: "pan"; pointer: number; anchor: Point3 }
   | { kind: "rotate"; pointer: number; lastX: number; lastY: number; moved: boolean }
   | {
@@ -102,6 +108,7 @@ export class InputHandlers {
   private wheel: WheelZoom | null = null;
   private lastTap: { t: number; x: number; y: number } | null = null;
   private suppressContextMenu = false;
+  private destroyed = false;
   private readonly listeners: [EventTarget, string, EventListener, AddEventListenerOptions | undefined][] = [];
 
   constructor(host: InputHost, options: InputOptions) {
@@ -117,9 +124,11 @@ export class InputHandlers {
     this.listen(el, "dblclick", (e) => this.onDoubleClick(e as MouseEvent));
     this.listen(el, "contextmenu", (e) => this.onContextMenu(e as MouseEvent));
     this.listen(el, "keydown", (e) => this.onKeyDown(e as KeyboardEvent));
-    this.listen(el, "mouseout", (e) =>
-      this.host.pointerEvent("mouseout", e as MouseEvent, this.point(e as MouseEvent)),
-    );
+    this.listen(el, "mouseout", (e) => {
+      const related = (e as MouseEvent).relatedTarget;
+      if (related && el.contains(related as Node)) return;
+      this.host.pointerEvent("mouseout", e as MouseEvent, this.point(e as MouseEvent));
+    });
     this.listen(window, "blur", () => this.cancel());
   }
 
@@ -183,6 +192,7 @@ export class InputHandlers {
   }
 
   destroy(): void {
+    this.destroyed = true;
     this.cancel();
     for (const [target, type, fn, opts] of this.listeners) target.removeEventListener(type, fn, opts);
     this.listeners.length = 0;
@@ -207,7 +217,12 @@ export class InputHandlers {
 
   private onPointerDown(e: PointerEvent): void {
     const [x, y] = this.point(e);
-    this.host.pointerEvent("mousedown", e, [x, y]);
+    const pending = this.host.pointerEvent("mousedown", e, [x, y]);
+    const hold: Hold = { waiting: pending !== null, prevented: e.defaultPrevented, moved: false };
+    pending?.then((prevented) => {
+      hold.waiting = false;
+      if (prevented) hold.prevented = true;
+    });
     if (e.pointerType === "mouse" && e.button !== 0 && e.button !== 2) return;
     this.host.interrupt();
     this.stopMomentum();
@@ -235,7 +250,7 @@ export class InputHandlers {
     }
     if (this.pointers.size > 1) return;
     const rotate = e.pointerType === "mouse" && (e.button === 2 || e.ctrlKey);
-    this.mode = { kind: "press", pointer: e.pointerId, rotate };
+    this.mode = { kind: "press", pointer: e.pointerId, rotate, hold };
     this.samples = [{ t: e.timeStamp, x, y }];
   }
 
@@ -252,6 +267,8 @@ export class InputHandlers {
     const transform = this.host.transform;
     if (mode.kind === "press" && mode.pointer === e.pointerId) {
       if (Math.hypot(x - pointer.startX, y - pointer.startY) < this.options.clickTolerance) return;
+      mode.hold.moved = true;
+      if (mode.hold.waiting || mode.hold.prevented) return;
       if (mode.rotate) {
         if (!this.options.dragRotate) return;
         this.mode = {
@@ -305,7 +322,7 @@ export class InputHandlers {
     const mode = this.mode;
     if (mode.kind === "press" && mode.pointer === e.pointerId) {
       this.mode = { kind: "idle" };
-      if (cancelled) return;
+      if (cancelled || mode.hold.moved) return;
       if (e.pointerType === "mouse" && e.button === 2) return;
       this.host.pointerEvent("click", e, [x, y]);
       if (e.pointerType !== "mouse") this.detectDoubleTap(e, x, y);
@@ -445,8 +462,8 @@ export class InputHandlers {
     const last = this.lastTap;
     if (last && e.timeStamp - last.t < DOUBLE_TAP_MS && Math.hypot(x - last.x, y - last.y) < 30) {
       this.lastTap = null;
-      this.host.pointerEvent("dblclick", e, [x, y]);
-      if (this.options.doubleClickZoom && !e.defaultPrevented) this.zoomBy(1, [x, y]);
+      const pending = this.host.pointerEvent("dblclick", e, [x, y]);
+      if (this.options.doubleClickZoom && !e.defaultPrevented) this.zoomUnlessPrevented(pending, 1, [x, y]);
       return;
     }
     this.lastTap = { t: e.timeStamp, x, y };
@@ -454,10 +471,20 @@ export class InputHandlers {
 
   private onDoubleClick(e: MouseEvent): void {
     const point = this.point(e);
-    this.host.pointerEvent("dblclick", e, point);
+    const pending = this.host.pointerEvent("dblclick", e, point);
     if (!this.options.doubleClickZoom || e.defaultPrevented) return;
     e.preventDefault();
-    this.zoomBy(e.shiftKey ? -1 : 1, point);
+    this.zoomUnlessPrevented(pending, e.shiftKey ? -1 : 1, point);
+  }
+
+  private zoomUnlessPrevented(pending: Promise<boolean> | null, delta: number, around: [number, number]): void {
+    if (!pending) {
+      this.zoomBy(delta, around);
+      return;
+    }
+    pending.then((prevented) => {
+      if (!prevented && !this.destroyed && this.options.doubleClickZoom) this.zoomBy(delta, around);
+    });
   }
 
   private zoomBy(delta: number, around: [number, number]): void {
