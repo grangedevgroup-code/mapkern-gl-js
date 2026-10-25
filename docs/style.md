@@ -403,6 +403,27 @@ A filter is just an expression that comes out true or false:
 }
 ```
 
+## Transitions
+
+Paint changes take effect at once unless the style asks for a transition. Put `transition` at the top of the style and every paint change fades, whether it comes from `setPaintProperty` or from switching to another style:
+
+```js
+const style = {
+  version: 1,
+  transition: { duration: 300, delay: 0 },
+  sources: { ... },
+  layers: [ ... ],
+};
+```
+
+`duration` and `delay` are in milliseconds, and a duration you leave out is 300. One property can have its own timing, which wins over the style's, under its name with `Transition` added:
+
+```js
+paint: { color: "#2f6fdb", colorTransition: { duration: 800 } }
+```
+
+Numbers and colors fade, including those that come from the data, like a color picked with `match` on each feature's class. Colors blend with their transparency taken into account, so fading in from `transparent` doesn't pass through grey. Values that can't be blended, such as `dash` or `resampling`, change straight away, and so does a heatmap's color ramp. If a value changes again while it's still fading, the new fade starts from wherever the old one had got to.
+
 ## Terrain
 
 Add `terrain` to a style and the ground rises in 3D, using an [elevation](#elevation) source:
