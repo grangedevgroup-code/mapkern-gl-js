@@ -1,3 +1,5 @@
+import type { ServerGlyph } from "./glyph-server.ts";
+import { SERVER_BORDER } from "./glyph-server.ts";
 import { signedDistanceField } from "./sdf.ts";
 
 export const GLYPH_SIZE = 24;
@@ -18,6 +20,23 @@ export interface FontSpec {
   family: string;
   weight: string;
   italic: boolean;
+  stack?: string;
+}
+
+const STYLE_WORDS =
+  /\b(regular|normal|book|roman|medium|semi ?bold|demi ?bold|extra ?bold|ultra ?bold|bold|black|heavy|extra ?light|ultra ?light|light|thin|hairline|italic|oblique|condensed|narrow)\b/gi;
+
+export function fontFromNames(names: readonly string[]): { families: string[]; bold: boolean; italic: boolean } {
+  const families = [
+    ...new Set(names.map((name) => name.replace(STYLE_WORDS, " ").replace(/\s+/g, " ").trim()).filter(Boolean)),
+  ];
+  if (!families.includes("sans-serif")) families.push("sans-serif");
+  const first = names[0] ?? "";
+  return {
+    families,
+    bold: /\b(semi ?bold|demi ?bold|extra ?bold|ultra ?bold|bold|black|heavy)\b/i.test(first),
+    italic: /\b(italic|oblique)\b/i.test(first),
+  };
 }
 
 type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -127,6 +146,36 @@ export class GlyphAtlas {
       left: -left - GLYPH_BUFFER,
       top: -ascent - GLYPH_BUFFER,
       advance,
+    };
+    this.glyphs.set(key, metrics);
+    return metrics;
+  }
+
+  server(stack: string, text: string, glyph: ServerGlyph): GlyphMetrics | null {
+    const key = `s|${stack}|${text}`;
+    const existing = this.glyphs.get(key);
+    if (existing !== undefined) return existing;
+    const bitmap = glyph.bitmap;
+    if (!bitmap) {
+      const metrics: GlyphMetrics = { x: 0, y: 0, width: 0, height: 0, left: 0, top: 0, advance: glyph.advance };
+      this.glyphs.set(key, metrics);
+      return metrics;
+    }
+    const bw = glyph.width + SERVER_BORDER * 2;
+    const bh = glyph.height + SERVER_BORDER * 2;
+    const spot = this.allocate(bw, bh);
+    if (!spot) return null;
+    for (let y = 0; y < bh; y++)
+      this.data.set(bitmap.subarray(y * bw, (y + 1) * bw), (spot.y + y) * this.width + spot.x);
+    this.markDirty(spot.y, spot.y + bh);
+    const metrics: GlyphMetrics = {
+      x: spot.x,
+      y: spot.y,
+      width: bw,
+      height: bh,
+      left: glyph.left - SERVER_BORDER,
+      top: -glyph.top - SERVER_BORDER,
+      advance: glyph.advance,
     };
     this.glyphs.set(key, metrics);
     return metrics;
