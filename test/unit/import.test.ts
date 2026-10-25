@@ -327,3 +327,85 @@ test("dash patterns step between zooms instead of blending", () => {
     width: ["interpolate", ["linear"], ["zoom"], 4, 0.5, 7, 1],
   });
 });
+
+test("fonts can change with the zoom or the feature, like other properties", () => {
+  const stepped = one({
+    id: "poi",
+    type: "symbol",
+    source: "v",
+    "source-layer": "poi",
+    layout: {
+      "text-field": "{name}",
+      "text-font": {
+        stops: [
+          [16.5, ["Arial Bold", "Arial Unicode MS Bold"]],
+          [16.6, ["Arial Regular"]],
+        ],
+      },
+    },
+  }).layer?.layout as Record<string, unknown>;
+  assert.deepEqual(stepped.font, [
+    "step",
+    ["zoom"],
+    ["literal", ["Arial", "Arial Unicode MS", "sans-serif"]],
+    16.6,
+    ["literal", ["Arial", "sans-serif"]],
+  ]);
+  assert.deepEqual(stepped.weight, ["step", ["zoom"], "bold", 16.6, "normal"]);
+  assert.deepEqual(stepped.italic, ["step", ["zoom"], false, 16.6, false]);
+  const matched = one({
+    id: "places",
+    type: "symbol",
+    source: "v",
+    "source-layer": "place",
+    layout: {
+      "text-field": ["get", "name"],
+      "text-font": [
+        "match",
+        ["get", "class"],
+        ["city", "town"],
+        ["literal", ["Noto Sans Bold"]],
+        ["literal", ["Noto Sans Italic"]],
+      ],
+    },
+  }).layer?.layout as Record<string, unknown>;
+  assert.deepEqual(matched.weight, ["match", ["get", "class"], ["city", "town"], "bold", "normal"]);
+  assert.deepEqual(matched.italic, ["match", ["get", "class"], ["city", "town"], false, true]);
+  assert.deepEqual(matched.font, [
+    "match",
+    ["get", "class"],
+    ["city", "town"],
+    ["literal", ["Noto Sans", "sans-serif"]],
+    ["literal", ["Noto Sans", "sans-serif"]],
+  ]);
+});
+
+test("layers that borrow from another layer with ref get its type, source, filter and layout", () => {
+  const { style } = importStyle({
+    version: 8,
+    sources: { v: vector },
+    layers: [
+      {
+        id: "railway",
+        type: "line",
+        source: "v",
+        "source-layer": "transportation",
+        filter: ["==", "class", "rail"],
+        layout: { "line-cap": "round" },
+        paint: { "line-color": "#999" },
+      },
+      { id: "railway-dash", ref: "railway", paint: { "line-color": "#fff", "line-dasharray": [3, 3] } },
+      { id: "orphan", ref: "nowhere", paint: {} },
+    ],
+  });
+  assert.deepEqual(style.layers[1], {
+    id: "railway-dash",
+    type: "line",
+    source: "v",
+    sourceLayer: "transportation",
+    filter: ["==", ["get", "class"], "rail"],
+    paint: { color: "#fff", dash: [3, 3] },
+    layout: { cap: "round" },
+  });
+  assert.equal(style.layers.length, 2);
+});
