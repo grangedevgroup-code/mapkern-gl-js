@@ -22,7 +22,7 @@ export interface ProgramSource {
   defines?: readonly string[];
 }
 
-export type BlendMode = "none" | "premultiplied" | "additive";
+export type BlendMode = "none" | "premultiplied" | "additive" | "multiply";
 
 export type DataFormat = "rg16f" | "r32f" | "r8";
 
@@ -116,6 +116,7 @@ export class GL {
     } else {
       gl.enable(gl.BLEND);
       if (mode === "premultiplied") gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      else if (mode === "multiply") gl.blendFunc(gl.DST_COLOR, gl.ZERO);
       else gl.blendFunc(gl.ONE, gl.ONE);
     }
     this.blend = mode;
