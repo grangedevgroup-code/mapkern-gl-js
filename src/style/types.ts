@@ -268,6 +268,7 @@ export interface HeatmapLayerSpec extends SourceLayerBase {
 
 export interface ExtrusionLayerSpec extends SourceLayerBase {
   type: "extrusion";
+  layout?: { hideOutlines?: boolean };
   paint?: {
     color?: Value<Color>;
     height?: Value<number>;
