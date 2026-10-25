@@ -12,6 +12,7 @@ export interface HeatTarget {
 
 const RAMP_SIZE = 256;
 const MAX_TARGETS = 3;
+const MAX_RAMPS = 32;
 
 export class HeatmapResources {
   private readonly gl: GL;
@@ -61,7 +62,13 @@ export class HeatmapResources {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.ramps.delete(layer.uid);
     this.ramps.set(layer.uid, { revision: layer.revision, zoom: key, texture });
+    while (this.ramps.size > MAX_RAMPS) {
+      const [uid, oldest] = this.ramps.entries().next().value!;
+      this.gl.deleteTexture(oldest.texture);
+      this.ramps.delete(uid);
+    }
     return texture;
   }
 
@@ -79,13 +86,6 @@ export class HeatmapResources {
     gl.bindVertexArray(this.quadVao);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindVertexArray(null);
-  }
-
-  forget(uid: number): void {
-    const ramp = this.ramps.get(uid);
-    if (!ramp) return;
-    this.gl.deleteTexture(ramp.texture);
-    this.ramps.delete(uid);
   }
 
   reset(): void {
