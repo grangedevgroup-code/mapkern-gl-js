@@ -68,6 +68,25 @@ A few options control how the tiles are made. `maxZoom` (18) is the last zoom le
 
 Polygon rings can wind either way, and shapes that cross the 180th meridian show up on both sides of it.
 
+With `cluster: true`, points that are close together on screen join into one point that stands for all of them, and come apart again as you zoom in:
+
+```js
+stations: { type: "geojson", data: "stations.geojson", cluster: true, clusterRadius: 50, clusterMaxZoom: 14 }
+```
+
+A cluster has the properties `cluster` (true), `cluster_id`, `point_count` and `point_count_abbreviated`, such as `"1.2k"`, so you style clusters and single points as separate layers by filtering on `["has", "point_count"]`. `clusterRadius` (50) is how close, in pixels, points have to be to join. `clusterMaxZoom` is the last zoom level that has clusters, one below the source's `maxZoom` unless you say otherwise. `clusterMinPoints` (2) is the smallest group that becomes a cluster. Lines and polygons in the same data aren't clustered and draw as usual.
+
+`clusterProperties` adds up values from the points in each cluster. Each entry is an operator and an expression for a single point:
+
+```js
+clusterProperties: {
+  riders: ["+", ["get", "riders"]],
+  busiest: ["max", ["get", "riders"]],
+}
+```
+
+The operator can be any expression that combines two values, written with `["accumulated"]` for the total so far and `["get", name]` for the next value, such as `[["concat", ["accumulated"], ", ", ["get", "names"]], ["get", "name"]]`.
+
 Despite the name, a GeoJSON source reads other formats too: KML and KMZ, GPX, CSV, TopoJSON, Shapefiles (zipped together with their `.dbf`, `.prj` and `.cpg` files), FlatGeobuf and WKT. Maplet works out the format from the file itself, so `data: "trails.gpx"` or `data: "parcels.zip"` just works. If it guesses wrong, set `format` to one of `geojson`, `topojson`, `kml`, `kmz`, `gpx`, `csv`, `shapefile`, `flatgeobuf` or `wkt`.
 
 A few notes on what comes through:
