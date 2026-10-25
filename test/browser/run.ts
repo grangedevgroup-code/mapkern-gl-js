@@ -3070,6 +3070,84 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "labels use the style's own fonts from its glyph server",
+    async run({ page, base, shot }) {
+      const style = {
+        version: 1,
+        glyphs: `${base}/fixture/glyphs/{fontstack}/{range}.pbf`,
+        sources: {
+          g: {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: [
+                { type: "Feature", properties: { name: "WW" }, geometry: { type: "Point", coordinates: [0, 8] } },
+                { type: "Feature", properties: { name: "ZZ" }, geometry: { type: "Point", coordinates: [0, -8] } },
+              ],
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          {
+            id: "t",
+            type: "symbol",
+            source: "g",
+            layout: { text: ["get", "name"], font: ["Block Regular"], size: 24, allowOverlap: true },
+            paint: { color: "#ff0000" },
+          },
+        ],
+      };
+      await fetch(`${base}/fixture/reset`);
+      await createMap(page, JSON.stringify(style), { zoom: 3, center: [0, 0] });
+      await shot("server-glyphs");
+      const red = (x0: number, y0: number, x1: number, y1: number) =>
+        page.evaluate<{ box: number[] | null; count: number }>(`(() => {
+          const gl = window.map.getCanvas().getContext("webgl2");
+          const w = ${x1 - x0}, h = ${y1 - y0};
+          const px = new Uint8Array(w * h * 4);
+          gl.readPixels(${x0}, gl.drawingBufferHeight - ${y1}, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity, count = 0;
+          for (let row = 0; row < h; row++) {
+            for (let col = 0; col < w; col++) {
+              const i = (row * w + col) * 4;
+              if (px[i] > 200 && px[i + 1] < 80 && px[i + 2] < 80) {
+                count++;
+                const x = ${x0} + col, y = ${y1} - 1 - row;
+                a = Math.min(a, x); b = Math.min(b, y); c = Math.max(c, x); d = Math.max(d, y);
+              }
+            }
+          }
+          return { box: Number.isFinite(a) ? [a, b, c, d] : null, count };
+        })()`);
+      const top = await page.evaluate<{ x: number; y: number }>("window.map.project([0, 8])");
+      const bottom = await page.evaluate<{ x: number; y: number }>("window.map.project([0, -8])");
+      const blocks = await red(
+        Math.round(top.x) - 60,
+        Math.round(top.y) - 30,
+        Math.round(top.x) + 60,
+        Math.round(top.y) + 30,
+      );
+      const letters = await red(
+        Math.round(bottom.x) - 60,
+        Math.round(bottom.y) - 30,
+        Math.round(bottom.x) + 60,
+        Math.round(bottom.y) + 30,
+      );
+      const fill = (r: { box: number[] | null; count: number }) =>
+        r.box ? r.count / ((r.box[2]! - r.box[0]! + 1) * (r.box[3]! - r.box[1]! + 1)) : 0;
+      if (!blocks.box || fill(blocks) < 0.8)
+        fail(
+          `"WW" should be drawn with the server's solid square glyphs by the time the map is idle, got ${JSON.stringify(blocks)}`,
+        );
+      if (!letters.box || fill(letters) > 0.7)
+        fail(`"ZZ" isn't on the server, so it should fall back to the device font, got ${JSON.stringify(letters)}`);
+      const hits = (await (await fetch(`${base}/fixture/stats`)).json()) as Record<string, number>;
+      if (hits["glyphs:Block Regular/0"] !== 1)
+        fail(`the glyph range should be asked for once, got ${JSON.stringify(hits)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
