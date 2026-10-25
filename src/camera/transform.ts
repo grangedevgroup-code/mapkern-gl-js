@@ -61,6 +61,7 @@ export class Transform {
   minPitch = 0;
   maxPitch = 60;
   renderWorldCopies = true;
+  keepInWorld = true;
   readonly fov = DEFAULT_FOV;
 
   readonly projMatrix: Mat4 = mat4.create();
@@ -176,6 +177,7 @@ export class Transform {
     t.minPitch = this.minPitch;
     t.maxPitch = this.maxPitch;
     t.renderWorldCopies = this.renderWorldCopies;
+    t.keepInWorld = this.keepInWorld;
     t.cx = this.cx;
     t.cy = this.cy;
     t.z = this.z;
@@ -248,10 +250,15 @@ export class Transform {
     this.constrain();
   }
 
-  private constrain(): void {
+  get lowestZoom(): number {
+    if (!this.keepInWorld) return this.minZoom;
+    return Math.max(this.minZoom, Math.min(this.maxZoom, this.view().fit));
+  }
+
+  private view() {
     const limits = this.limits;
     const wraps = this.renderWorldCopies && !limits;
-    const b = {
+    const bounds = {
       x0: limits ? limits.x0 : 0,
       x1: limits ? limits.x1 : 1,
       y0: Math.max(0, limits ? limits.y0 : 0),
@@ -278,9 +285,15 @@ export class Transform {
       top = Math.min(top, dy);
       bottom = Math.max(bottom, dy);
     }
-    const spanX = wraps ? Infinity : (b.x1 - b.x0) * TILE_SIZE;
-    const spanY = (b.y1 - b.y0) * TILE_SIZE;
+    const spanX = wraps ? Infinity : (bounds.x1 - bounds.x0) * TILE_SIZE;
+    const spanY = (bounds.y1 - bounds.y0) * TILE_SIZE;
     const fit = Math.log2(Math.max((right - left) / spanX, (bottom - top) / spanY));
+    return { bounds, wraps, left, right, top, bottom, fit };
+  }
+
+  private constrain(): void {
+    if (!this.keepInWorld) return;
+    const { bounds: b, wraps, left, right, top, bottom, fit } = this.view();
     let z = this.z;
     if (z < fit) z = Math.min(this.maxZoom, fit);
     const ws = worldSize(z);
@@ -349,8 +362,8 @@ export class Transform {
     }
     if (!(distance > 0) || y < 0 || y > 1) return;
     this.elevationMeters = meters;
-    this.setCenterWorld(x, y);
     this.setZoom(Math.log2(this.cameraDistance / distance / TILE_SIZE));
+    this.setCenterWorld(x, y);
     this.dirty = true;
   }
 
