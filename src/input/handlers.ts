@@ -12,8 +12,11 @@ export interface InputOptions {
   touchRotate: boolean;
   keyboard: boolean;
   boxZoom: boolean;
+  cooperative: boolean;
   clickTolerance: number;
 }
+
+export type TouchType = "touchstart" | "touchmove" | "touchend" | "touchcancel";
 
 export type GestureKind = "pan" | "zoom" | "rotate" | "pitch";
 
@@ -27,6 +30,10 @@ export interface InputHost {
   gesture(active: boolean): void;
   rotateEnded(): void;
   input(event: Event): void;
+  wheel(event: WheelEvent): boolean;
+  drag(stage: "start" | "move" | "end", event: Event): void;
+  touch(type: TouchType, event: TouchEvent): void;
+  notice(kind: "wheel" | "touch"): void;
   ease(
     target: { zoom?: number; bearing?: number; pitch?: number; panBy?: [number, number] },
     around: [number, number] | null,
@@ -120,6 +127,9 @@ export class InputHandlers {
     this.options = options;
     const el = host.element;
     this.listen(el, "pointerdown", (e) => this.onPointerDown(e as PointerEvent));
+    for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"] as const) {
+      this.listen(el, type, (e) => this.host.touch(type, e as TouchEvent), { passive: true });
+    }
     this.listen(el, "pointermove", (e) => this.onPointerMove(e as PointerEvent));
     this.listen(el, "pointerup", (e) => this.onPointerUp(e as PointerEvent));
     this.listen(el, "pointercancel", (e) => this.onPointerUp(e as PointerEvent, true));
@@ -301,6 +311,10 @@ export class InputHandlers {
         this.host.gesture(true);
       } else {
         if (!this.options.dragPan) return;
+        if (this.options.cooperative && pointer.type !== "mouse") {
+          this.host.notice("touch");
+          return;
+        }
         const anchor = this.host.anchor(pointer.startX, pointer.startY);
         if (!anchor) return;
         if (!this.capture(e.pointerId)) {
@@ -309,6 +323,7 @@ export class InputHandlers {
         }
         this.mode = { kind: "pan", pointer: e.pointerId, anchor };
         this.host.gesture(true);
+        this.host.drag("start", e);
       }
     }
     if (mode.kind === "box" && mode.pointer === e.pointerId) {
@@ -321,6 +336,7 @@ export class InputHandlers {
       this.samples.push({ t: e.timeStamp, x, y });
       while (this.samples.length > 2 && e.timeStamp - this.samples[0]!.t > 100) this.samples.shift();
       this.host.changed();
+      this.host.drag("move", e);
     } else if (current.kind === "rotate" && current.pointer === e.pointerId) {
       const dx = x - current.lastX;
       const dy = y - current.lastY;
@@ -372,6 +388,7 @@ export class InputHandlers {
       this.mode = { kind: "idle" };
       if (!cancelled) this.startInertia(mode.anchor, x, y, e.timeStamp);
       this.host.gesture(false);
+      this.host.drag("end", e);
       return;
     }
     if (mode.kind === "rotate" && mode.pointer === e.pointerId) {
@@ -383,7 +400,7 @@ export class InputHandlers {
     if (mode.kind === "touch2" && mode.ids.includes(e.pointerId)) {
       this.host.gesture(false);
       const rest = [...this.pointers.values()].find((p) => p.type !== "mouse");
-      if (rest && this.options.dragPan) {
+      if (rest && this.options.dragPan && !this.options.cooperative) {
         const anchor = this.host.anchor(rest.x, rest.y);
         if (anchor) {
           this.mode = { kind: "pan", pointer: rest.id, anchor };
@@ -555,7 +572,12 @@ export class InputHandlers {
   }
 
   private onWheel(e: WheelEvent): void {
+    if (this.host.wheel(e)) return;
     if (!this.options.scrollZoom) return;
+    if (this.options.cooperative && !e.ctrlKey && !e.metaKey) {
+      this.host.notice("wheel");
+      return;
+    }
     e.preventDefault();
     this.host.input(e);
     this.host.interrupt();
