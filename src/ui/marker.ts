@@ -1,3 +1,4 @@
+import { MapletError } from "../core/errors.ts";
 import { Emitter } from "../core/events.ts";
 import type { MapletMap } from "../core/map.ts";
 import type { LngLat, LngLatLike } from "../geo/mercator.ts";
@@ -76,7 +77,7 @@ export class Marker extends Emitter<MarkerEvents> {
   constructor(options: MarkerOptions = {}) {
     super();
     if (options.anchor !== undefined && !isAnchor(options.anchor)) {
-      throw new TypeError(`Unknown marker anchor "${String(options.anchor)}"`);
+      throw new MapletError("invalid-option", `Unknown marker anchor "${String(options.anchor)}"`);
     }
     this.scale = positive(options.scale, "scale", 1);
     this.clickTolerance = positive(options.clickTolerance, "clickTolerance", 3);
@@ -445,12 +446,14 @@ function pinElement(doc: Document, color: string, scale: number): HTMLElement {
 
 function finite(value: unknown, name: string, fallback: number): number {
   if (value === undefined) return fallback;
-  if (typeof value !== "number" || !Number.isFinite(value)) throw new TypeError(`${name} must be a finite number`);
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new MapletError("invalid-option", `${name} must be a finite number`);
+  }
   return value;
 }
 
 function positive(value: unknown, name: string, fallback: number): number {
   const n = finite(value, name, fallback);
-  if (n <= 0) throw new TypeError(`${name} must be greater than 0`);
+  if (n <= 0) throw new MapletError("invalid-option", `${name} must be greater than 0`);
   return n;
 }
