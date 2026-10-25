@@ -111,6 +111,21 @@ export const fixtureRoute: Route = async (req, res, url) => {
     res.end(demTile(z, x, y));
     return true;
   }
+  if (path === "/fixture/sprite.json") {
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    res.end(
+      JSON.stringify({
+        green: { x: 0, y: 0, width: 16, height: 16, pixelRatio: 1 },
+        magenta: { x: 16, y: 0, width: 16, height: 16, pixelRatio: 1 },
+      }),
+    );
+    return true;
+  }
+  if (path === "/fixture/sprite.png") {
+    res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" });
+    res.end(spriteSheet());
+    return true;
+  }
   if (path === "/fixture/formats/places.kml") {
     res.writeHead(200, { "content-type": "application/vnd.google-earth.kml+xml", "cache-control": "no-store" });
     res.end(
@@ -170,4 +185,19 @@ export function writeMbtilesFixture(path: string, maxZoom = 5): void {
   }
   db.exec("COMMIT");
   db.close();
+}
+
+function spriteSheet(): Buffer {
+  const rgba = new Uint8Array(32 * 16 * 4);
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 32; x++) {
+      const i = (y * 32 + x) * 4;
+      const green = x < 16;
+      rgba[i] = green ? 0 : 255;
+      rgba[i + 1] = green ? 255 : 0;
+      rgba[i + 2] = green ? 0 : 255;
+      rgba[i + 3] = 255;
+    }
+  }
+  return encodePng(32, 16, rgba);
 }
