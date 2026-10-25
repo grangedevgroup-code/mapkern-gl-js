@@ -278,17 +278,20 @@ export class Transform {
       top = Math.min(top, dy);
       bottom = Math.max(bottom, dy);
     }
-    const spanX = (b.x1 - b.x0) * TILE_SIZE;
+    const spanX = wraps ? Infinity : (b.x1 - b.x0) * TILE_SIZE;
     const spanY = (b.y1 - b.y0) * TILE_SIZE;
     const fit = Math.log2(Math.max((right - left) / spanX, (bottom - top) / spanY));
     let z = this.z;
     if (z < fit) z = Math.min(this.maxZoom, fit);
     const ws = worldSize(z);
-    const mid = (b.x0 + b.x1) / 2;
-    let x = this.cx + Math.round(mid - this.cx);
-    const minX = b.x0 - left / ws;
-    const maxX = b.x1 - right / ws;
-    x = minX > maxX ? mid : Math.min(maxX, Math.max(minX, x));
+    let x = this.cx;
+    if (!wraps) {
+      const mid = (b.x0 + b.x1) / 2;
+      x = this.cx + Math.round(mid - this.cx);
+      const minX = b.x0 - left / ws;
+      const maxX = b.x1 - right / ws;
+      x = minX > maxX ? mid : Math.min(maxX, Math.max(minX, x));
+    }
     const minY = b.y0 - top / ws;
     const maxY = b.y1 - bottom / ws;
     const y = minY > maxY ? (b.y0 + b.y1) / 2 : Math.min(maxY, Math.max(minY, this.cy));
