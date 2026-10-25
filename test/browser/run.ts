@@ -1251,6 +1251,120 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "GeoJSON points cluster and come apart as you zoom in",
+    async run({ page, shot }) {
+      const features = [];
+      for (let i = 0; i < 200; i++) {
+        features.push({
+          type: "Feature",
+          properties: { value: i % 10, name: `p${i}` },
+          geometry: { type: "Point", coordinates: [-1 + (i % 20) * 0.1, -0.5 + Math.floor(i / 20) * 0.1] },
+        });
+      }
+      features.push({
+        type: "Feature",
+        properties: { value: 5, name: "far" },
+        geometry: { type: "Point", coordinates: [20, 10] },
+      });
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          g: {
+            type: "geojson",
+            data: { type: "FeatureCollection", features },
+            cluster: true,
+            clusterMaxZoom: 12,
+            clusterRadius: 50,
+            clusterProperties: { total: ["+", ["get", "value"]] },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          {
+            id: "clusters",
+            type: "circle",
+            source: "g",
+            filter: ["has", "point_count"],
+            paint: { radius: 20, color: "#ff0000" },
+          },
+          {
+            id: "count",
+            type: "symbol",
+            source: "g",
+            filter: ["has", "point_count"],
+            layout: { text: ["get", "point_count_abbreviated"], allowOverlap: true },
+            paint: { color: "#ffffff" },
+          },
+          {
+            id: "points",
+            type: "circle",
+            source: "g",
+            filter: ["!", ["has", "point_count"]],
+            paint: { radius: 5, color: "#0000ff" },
+          },
+        ],
+      });
+      await createMap(page, style, { zoom: 3, center: [0, 0] });
+      await shot("clusters-z3");
+      const centerPixel = await pixel(page, 412, 300);
+      if (!near(centerPixel, RED, 10)) fail(`expected one cluster circle over the points, got ${centerPixel}`);
+      const far = await page.evaluate<{ x: number; y: number }>("window.map.project([20, 10])");
+      const farPixel = await pixel(page, Math.round(far.x), Math.round(far.y));
+      if (!near(farPixel, BLUE, 10)) fail(`the lone far point should stay a point, got ${farPixel}`);
+      const found = await page.evaluate<Record<string, unknown>[]>(
+        `window.map.queryRenderedFeatures([412, 300], { layers: ["clusters"] }).then((fs) => fs.map((f) => ({ id: f.id, ...f.properties })))`,
+      );
+      const cluster = found[0];
+      if (cluster?.cluster !== true || cluster.point_count !== 200 || cluster.total !== 900)
+        fail(`expected a cluster of 200 points with total 900, got ${JSON.stringify(found)}`);
+      const id = cluster.cluster_id as number;
+      if (cluster.id !== id) fail(`the cluster feature id should be its cluster_id, got ${cluster.id} and ${id}`);
+      const answers = await page.evaluate<{
+        zoom: number;
+        children: number;
+        leaves: string[];
+        all: number;
+      }>(`(async () => {
+        const source = window.map.getSource("g");
+        const zoom = await source.getClusterExpansionZoom(${id});
+        const children = await source.getClusterChildren(${id});
+        const leaves = await source.getClusterLeaves(${id}, 3, 2);
+        const all = await source.getClusterLeaves(${id}, Infinity);
+        return {
+          zoom,
+          children: children.reduce((sum, f) => sum + (f.properties.point_count ?? 1), 0),
+          leaves: leaves.map((f) => f.properties.name),
+          all: all.length,
+        };
+      })()`);
+      if (!(answers.zoom > 3 && answers.zoom <= 13)) fail(`unexpected expansion zoom ${answers.zoom}`);
+      if (answers.children !== 200) fail(`the children should hold all 200 points, got ${answers.children}`);
+      if (answers.leaves.length !== 3 || answers.all !== 200)
+        fail(`getClusterLeaves gave ${JSON.stringify(answers.leaves)} and ${answers.all} in all`);
+      const bad = await page.evaluate<string>(
+        `window.map.getSource("g").getClusterExpansionZoom(999999).then(() => "no error", (e) => e.code)`,
+      );
+      if (bad !== "invalid-option") fail(`an unknown cluster id should fail, got ${bad}`);
+      await page.evaluate(`void window.map.jumpTo({ center: [-0.05, -0.05], zoom: ${answers.zoom} })`);
+      await idle(page);
+      const split = await page.evaluate<number[]>(
+        `window.map.queryRenderedFeatures(undefined, { layers: ["clusters", "points"] }).then((fs) => fs.map((f) => f.properties.point_count ?? 1))`,
+      );
+      if (split.length < 2 || split.some((count) => count >= 200))
+        fail(`at the expansion zoom the cluster should come apart, got ${JSON.stringify(split)}`);
+      await page.evaluate("void window.map.jumpTo({ center: [-1, -0.5], zoom: 13 })");
+      await idle(page);
+      await shot("clusters-z13");
+      const single = await pixel(page, 400, 300);
+      if (!near(single, BLUE, 10)) fail(`past clusterMaxZoom the points should be drawn one by one, got ${single}`);
+      const leaf = await page.evaluate<unknown[]>(
+        `window.map.queryRenderedFeatures([400, 300]).then((fs) => fs.map((f) => f.properties.name))`,
+      );
+      if (JSON.stringify(leaf) !== JSON.stringify(["p0"]))
+        fail(`expected the original point p0, got ${JSON.stringify(leaf)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
