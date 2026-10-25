@@ -1,13 +1,15 @@
 import type { LayerUpdate } from "./diff.ts";
 import type { Compiled, EvalContext, OutputKind } from "./expression.ts";
 import { compile } from "./expression.ts";
-import type { LayerSpec, LayerType } from "./types.ts";
+import { checkTransition, settled, Transition, timing } from "./transition.ts";
+import type { LayerSpec, LayerType, TransitionSpec } from "./types.ts";
 
 export interface PropertyDef {
   kind: OutputKind;
   default: unknown;
   expression: boolean;
   feature: boolean;
+  transition?: false;
   check?: (value: unknown) => string | null;
 }
 
@@ -151,7 +153,7 @@ export const PAINT: Record<LayerType, Record<string, PropertyDef>> = {
     radius: p("number", 30),
     weight: p("number", 1),
     intensity: p("number", 1, false),
-    color: p("color", DEFAULT_HEAT, false),
+    color: { ...p("color", DEFAULT_HEAT, false), transition: false },
     opacity: p("number", 1, false),
   },
   hillshade: {
@@ -234,6 +236,9 @@ export class StyleLayer {
   private stateRevision = -1;
   private stateUse = false;
   revision = 0;
+  motion = 0;
+  private clock = 0;
+  private readonly moving = new Set<string>();
 
   constructor(spec: LayerSpec) {
     this.id = spec.id;
@@ -292,16 +297,65 @@ export class StyleLayer {
     return this.fixedValues.get(name) as T;
   }
 
-  setPaint(name: string, value: unknown): void {
+  setPaint(name: string, value: unknown, fallback?: TransitionSpec): void {
+    const holder = this.spec as { paint?: Record<string, unknown> };
+    const timed = transitionOf(this.type, name);
+    if (timed !== null) {
+      const problem = value === undefined ? null : checkTransition(value);
+      if (problem) throw new Error(`${name} ${problem}`);
+      holder.paint ??= {};
+      if (value === undefined) delete holder.paint[name];
+      else holder.paint[name] = structuredClone(value);
+      return;
+    }
     const def = PAINT[this.type][name];
     if (!def) throw new Error(`"${name}" is not a paint property of ${this.type} layers`);
+    const before = this.paint.get(name);
     this.setProperty(this.paint, "paint", name, def, value);
-    const holder = this.spec as { paint?: Record<string, unknown> };
     holder.paint ??= {};
     const paint = holder.paint;
     if (value === undefined) delete paint[name];
     else paint[name] = structuredClone(value);
+    this.startTransition(name, def, before, fallback);
     this.revision++;
+  }
+
+  get animating(): boolean {
+    return this.moving.size > 0;
+  }
+
+  settle(now: number): boolean {
+    this.clock = now;
+    if (this.moving.size === 0) return false;
+    for (const name of this.moving) {
+      const current = this.paint.get(name)!;
+      const next = settled(current, now);
+      if (next !== current) this.paint.set(name, next);
+      if (!(next instanceof Transition)) this.moving.delete(name);
+    }
+    this.motion++;
+    return this.moving.size > 0;
+  }
+
+  private startTransition(
+    name: string,
+    def: PropertyDef,
+    before: Compiled<unknown> | undefined,
+    fallback: TransitionSpec | undefined,
+  ): void {
+    const after = this.paint.get(name);
+    if (!before || !after || !isTransitionable(def)) return;
+    if (isNull(before) || isNull(after)) return;
+    const own = (this.spec as { paint?: Record<string, unknown> }).paint?.[`${name}Transition`];
+    const time = timing((own as TransitionSpec | undefined) ?? fallback);
+    if (!time) return;
+    const begin = performance.now() + time.delay;
+    const clock = () => this.clock;
+    this.paint.set(
+      name,
+      new Transition(def.kind as "number" | "color", before, after, begin, begin + time.duration, clock),
+    );
+    this.moving.add(name);
   }
 
   setLayout(name: string, value: unknown): void {
@@ -327,8 +381,10 @@ export class StyleLayer {
     this.revision++;
   }
 
-  restyle(spec: LayerSpec, update: LayerUpdate): void {
-    for (const [name, value] of update.paint) this.setPaint(name, value);
+  restyle(spec: LayerSpec, update: LayerUpdate, fallback?: TransitionSpec): void {
+    const timings = update.paint.filter(([name]) => transitionOf(this.type, name) !== null);
+    const values = update.paint.filter(([name]) => transitionOf(this.type, name) === null);
+    for (const [name, value] of [...timings, ...values]) this.setPaint(name, value, fallback);
     for (const [name, value] of update.layout) this.setLayout(name, value);
     if (update.filter) this.setFilter((spec as { filter?: unknown }).filter);
     if (update.zoom) this.setZoomRange(spec.minZoom ?? 0, spec.maxZoom ?? 24);
@@ -379,4 +435,18 @@ export class StyleLayer {
       ),
     );
   }
+}
+
+export function isTransitionable(def: PropertyDef): boolean {
+  return def.expression && (def.kind === "number" || def.kind === "color") && def.transition !== false;
+}
+
+export function transitionOf(type: LayerType, name: string): PropertyDef | null {
+  if (!name.endsWith("Transition")) return null;
+  const def = PAINT[type][name.slice(0, -"Transition".length)];
+  return def && isTransitionable(def) ? def : null;
+}
+
+function isNull(value: Compiled<unknown>): boolean {
+  return value.constant && value.evaluate({ zoom: 0 }) === null;
 }
