@@ -38,6 +38,13 @@ export class PaintTable {
   private textureSize = [0, 0];
   private data: Float32Array | null = null;
   private byId: Map<number, number[]> | null = null;
+  private readonly scratch: Record<string, unknown> = {};
+  private readonly feature: {
+    properties: Record<string, unknown>;
+    id: number | undefined;
+    geometryType: GeometryType;
+  } = { properties: this.scratch, id: undefined, geometryType: "Unknown" };
+  private readonly ctx: EvalContext = { zoom: 0, feature: this.feature };
 
   get base(): number {
     return this.evaluatedZoom;
