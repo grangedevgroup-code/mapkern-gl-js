@@ -274,7 +274,7 @@ Put extrusion layers after your roads and point layers, so buildings hide what's
 
 Draws text, icons, or both. When symbols would overlap, the one with the lower `priority` is hidden.
 
-Apart from `font`, `weight`, `italic` and `variableAnchor`, every layout property also takes an expression, so it can change with the zoom, like `["step", ["zoom"], "point", 11, "line"]`. The ones marked per feature can also differ from one feature to the next. A line break, `"
+Apart from `variableAnchor`, every layout property also takes an expression, so it can change with the zoom, like `["step", ["zoom"], "point", 11, "line"]`. The ones marked per feature can also differ from one feature to the next. A line break, `"
 "`, in the text starts a new line.
 
 | Layout | Default | |
@@ -282,9 +282,9 @@ Apart from `font`, `weight`, `italic` and `variableAnchor`, every layout propert
 | `text` | empty | per feature. Usually `["get", "name"]` |
 | `size` | 14 | per feature, in pixels |
 | `priority` | 0 | per feature. Higher wins |
-| `font` | `["sans-serif"]` | Font families to try in order. Labels use fonts installed on the device |
-| `weight` | `normal` | Or `bold` |
-| `italic` | `false` | |
+| `font` | `["sans-serif"]` | per feature. Font families to try in order. Labels use fonts installed on the device |
+| `weight` | `normal` | per feature. Or `bold` |
+| `italic` | `false` | per feature |
 | `placement` | `point` | `line` makes the text follow the line, repeated along it. `line-center` puts one label at the middle of each line |
 | `anchor` | `center` | per feature. Which part of the text sits on the point: `top`, `bottom`, `left`, `right` or a corner like `top-left` |
 | `variableAnchor` | none | A list of anchors to try in order, such as `["top", "bottom", "left", "right"]`. Each label takes the first one that fits |
@@ -461,7 +461,7 @@ Styles written for MapLibre GL JS or Mapbox GL JS, the ones with `"version": 8`,
 const map = new maplet.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/liberty" });
 ```
 
-Property names lose their prefix and move to camel case, so `fill-color` becomes `color` and `text-halo-width` becomes `haloWidth`, and `fill-extrusion` layers become `extrusion` layers. Filters and property functions in the older format, like `["==", "class", "park"]` or `{ "stops": [[5, 1], [10, 4]] }`, become expressions, `{name}` in a label becomes `["get", "name"]`, and relative addresses are read from where the style lives. Where the two formats disagree on a default, such as the text size or the tile size of raster sources, Maplet uses the one the style was written for. `text-font` picks the font family, weight and slant, and the text is drawn with fonts installed on the device.
+Property names lose their prefix and move to camel case, so `fill-color` becomes `color` and `text-halo-width` becomes `haloWidth`, `fill-extrusion` layers become `extrusion` layers, and a layer that borrows from another with `ref` gets its type, source, filter and layout. Filters and property functions in the older format, like `["==", "class", "park"]` or `{ "stops": [[5, 1], [10, 4]] }`, become expressions, `{name}` in a label becomes `["get", "name"]`, and relative addresses are read from where the style lives. Where the two formats disagree on a default, such as the text size or the tile size of raster sources, Maplet uses the one the style was written for. `text-font` picks the font family, weight and slant, and the text is drawn with fonts installed on the device.
 
 A few things can't be drawn yet: patterns on lines and patterns that change per feature, `line-gradient`, `icon-text-fit`, text lying flat on tilted maps (`text-pitch-alignment: "map"`), `fog`, `sky` and the globe projection. When a style uses them, Maplet leaves out that property, or the layer when nothing else would make sense, and draws the rest. The `styleload` event lists what was left out in `event.skipped`. Addresses starting with `mapbox://` need Mapbox's own servers and are left out too.
 
