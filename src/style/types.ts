@@ -46,6 +46,11 @@ export interface GeoJSONSourceSpec {
   attribution?: string;
   promoteId?: string;
   generateId?: boolean;
+  cluster?: boolean;
+  clusterRadius?: number;
+  clusterMaxZoom?: number;
+  clusterMinPoints?: number;
+  clusterProperties?: Record<string, unknown>;
 }
 
 export type SourceSpec = RasterSourceSpec | VectorSourceSpec | DemSourceSpec | GeoJSONSourceSpec;
