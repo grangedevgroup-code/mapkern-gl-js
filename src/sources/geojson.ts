@@ -6,8 +6,14 @@ import type { GeoJSONData, GeoJSONSourceSpec } from "../style/types.ts";
 import { FetchFailure, fetchBytes, resolveRequest, retryDelay } from "../tiles/fetch.ts";
 import type { TileStats, Tiling } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
-import type { GeoJSONOptions, GeoJSONSummary, QueriedSourceFeature } from "../worker/geojson.ts";
-import type { GeoJSONLoadRequest, GeoJSONTileReply, GeoJSONTileRequest } from "../worker/geojson-task.ts";
+import type { GeoJSONOptions, GeoJSONSummary, QueriedSourceFeature, SourceGeoJSONFeature } from "../worker/geojson.ts";
+import type {
+  GeoJSONClusterReply,
+  GeoJSONClusterRequest,
+  GeoJSONLoadRequest,
+  GeoJSONTileReply,
+  GeoJSONTileRequest,
+} from "../worker/geojson-task.ts";
 import type { MapSource, SourceContext } from "./source.ts";
 import { tileEvents } from "./source.ts";
 import type { VectorTile, VectorTileSource } from "./vector.ts";
@@ -104,6 +110,51 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
 
   getData(): GeoJSONData {
     return this.spec.data;
+  }
+
+  async getClusterExpansionZoom(clusterId: number): Promise<number> {
+    const reply = await this.cluster({ source: this.key, op: "expansion", id: clusterNumber(clusterId) });
+    return reply.zoom ?? 0;
+  }
+
+  async getClusterChildren(clusterId: number): Promise<SourceGeoJSONFeature[]> {
+    const reply = await this.cluster({ source: this.key, op: "children", id: clusterNumber(clusterId) });
+    return reply.features ?? [];
+  }
+
+  async getClusterLeaves(clusterId: number, limit = 10, offset = 0): Promise<SourceGeoJSONFeature[]> {
+    const count = limit === Number.POSITIVE_INFINITY ? Number.MAX_SAFE_INTEGER : Math.max(0, Math.floor(limit));
+    const skip = Math.max(0, Math.floor(offset));
+    const reply = await this.cluster({
+      source: this.key,
+      op: "leaves",
+      id: clusterNumber(clusterId),
+      limit: count,
+      offset: skip,
+    });
+    return reply.features ?? [];
+  }
+
+  private async cluster(request: GeoJSONClusterRequest): Promise<Extract<GeoJSONClusterReply, { found: true }>> {
+    if (this.spec.cluster !== true) {
+      throw new MapletError("invalid-option", `GeoJSON source "${this.id}" doesn't cluster; set cluster: true`, {
+        sourceId: this.id,
+      });
+    }
+    if (this.syncing) await this.syncing;
+    const pool = this.ctx.workers();
+    let reply = await pool.send<GeoJSONClusterReply>("geojson-cluster", request, [], undefined, this.affinity);
+    if (reply.missing) {
+      await this.restore();
+      reply = await pool.send<GeoJSONClusterReply>("geojson-cluster", request, [], undefined, this.affinity);
+    }
+    if (reply.missing || !reply.found) {
+      throw new MapletError("invalid-option", `There is no cluster with id ${request.id} in "${this.id}"`, {
+        sourceId: this.id,
+        clusterId: request.id,
+      });
+    }
+    return reply;
   }
 
   async features(indices: readonly number[]): Promise<QueriedSourceFeature[]> {
@@ -290,6 +341,18 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
       extent: EXTENT,
       promoteId: s.promoteId,
       generateId: s.generateId === true,
+      cluster: s.cluster === true ? this.clusterSettings() : undefined,
+    };
+  }
+
+  private clusterSettings(): NonNullable<GeoJSONOptions["cluster"]> {
+    const s = this.spec;
+    const maxZoom = Math.min(24, Math.max(0, Math.round(s.maxZoom ?? 18)));
+    return {
+      radius: Math.max(0, s.clusterRadius ?? 50),
+      maxZoom: Math.min(maxZoom, Math.max(0, Math.floor(s.clusterMaxZoom ?? maxZoom - 1))),
+      minPoints: Math.max(2, Math.floor(s.clusterMinPoints ?? 2)),
+      properties: s.clusterProperties ?? {},
     };
   }
 
@@ -321,6 +384,13 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
       error,
     );
   }
+}
+
+function clusterNumber(id: unknown): number {
+  if (typeof id !== "number" || !Number.isInteger(id) || id < 0) {
+    throw new MapletError("invalid-option", "Cluster ids are the whole numbers found in cluster_id");
+  }
+  return id;
 }
 
 function hash(text: string): number {
