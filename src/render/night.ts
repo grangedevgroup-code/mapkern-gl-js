@@ -21,9 +21,9 @@ uniform float u_twilight;
 uniform vec3 u_sky;
 out vec4 fragColor;
 vec3 light(float altitude) {
-  float golden = smoothstep(0.105, -0.0145, altitude);
-  float night = smoothstep(-0.0145, -u_twilight, altitude);
-  vec3 day = mix(vec3(1.0), vec3(1.0, 0.86, 0.7), golden * 0.55);
+  float golden = (1.0 - smoothstep(-0.0145, 0.0873, altitude)) * smoothstep(-0.0698, -0.0145, altitude);
+  float night = 1.0 - smoothstep(-u_twilight, -0.0145, altitude);
+  vec3 day = mix(vec3(1.0), vec3(1.0, 0.85, 0.68), golden * 0.35);
   return mix(day, u_night, night);
 }
 void main() {
@@ -41,26 +41,27 @@ void main() {
 `,
 };
 
-export interface NightLook {
+export interface SunLook {
   sun: SunPosition;
   night: readonly [number, number, number];
   twilight: number;
+  light: readonly [number, number, number] | null;
 }
 
-const GOLDEN = 6;
+const GOLDEN = 5;
 
-export function lightAt(look: NightLook, altitude: number): [number, number, number] {
+export function lightAt(look: SunLook, altitude: number): [number, number, number] {
   const smooth = (a: number, b: number, x: number) => {
     const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
     return t * t * (3 - 2 * t);
   };
-  const golden = smooth(GOLDEN, -0.83, altitude) * 0.55;
-  const night = smooth(-0.83, -look.twilight, altitude);
-  const day = [1, 1 + (0.86 - 1) * golden, 1 + (0.7 - 1) * golden];
+  const golden = (1 - smooth(-0.83, GOLDEN, altitude)) * smooth(-4, -0.83, altitude) * 0.35;
+  const night = 1 - smooth(-look.twilight, -0.83, altitude);
+  const day = [1, 1 + (0.85 - 1) * golden, 1 + (0.68 - 1) * golden];
   return [0, 1, 2].map((i) => day[i]! + (look.night[i]! - day[i]!) * night) as [number, number, number];
 }
 
-export function nightInView(transform: Transform, look: NightLook): boolean {
+export function nightInView(transform: Transform, look: SunLook): boolean {
   const points: [number, number][] = [
     [0, 0],
     [transform.width, 0],
@@ -86,7 +87,7 @@ export class NightPainter {
     this.gl = gl;
   }
 
-  draw(transform: Transform, look: NightLook, quad: WebGLVertexArrayObject | null): void {
+  draw(transform: Transform, look: SunLook, quad: WebGLVertexArrayObject | null): void {
     const g = this.gl;
     const gl = g.gl;
     const program = g.program(nightShader);
