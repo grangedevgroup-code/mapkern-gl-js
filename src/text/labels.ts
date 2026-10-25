@@ -10,8 +10,18 @@ import type { RenderPiece, TileManager } from "../tiles/manager.ts";
 import type { Tile } from "../tiles/tile.ts";
 import type { Anchor } from "../ui/anchor.ts";
 import { anchorOffsets, anchorShift, isAnchor } from "../ui/anchor.ts";
+import type { GlyphLoader } from "./glyph-server.ts";
+import { fromServer, GlyphServer } from "./glyph-server.ts";
 import type { FontSpec, GlyphMetrics } from "./glyphs.ts";
-import { cssFamily, GLYPH_SIZE, GlyphAtlas, needsWholeShaping, SDF_RADIUS, splitGraphemes } from "./glyphs.ts";
+import {
+  cssFamily,
+  fontFromNames,
+  GLYPH_SIZE,
+  GlyphAtlas,
+  needsWholeShaping,
+  SDF_RADIUS,
+  splitGraphemes,
+} from "./glyphs.ts";
 import { ICON_SDF_RADIUS, iconShader } from "./icon-shader.ts";
 import { textShader } from "./shader.ts";
 
@@ -184,6 +194,8 @@ export class LabelRenderer {
   private glyphCount = 0;
   private atlasGeneration = -1;
   private pendingGlyphs = false;
+  private reflow = false;
+  private server: GlyphServer | null = null;
   private iconTexture: WebGLTexture | null = null;
   private iconVao: WebGLVertexArrayObject | null = null;
   private iconBuffer: WebGLBuffer | null = null;
@@ -213,6 +225,8 @@ export class LabelRenderer {
   }
 
   destroy(): void {
+    this.server?.destroy();
+    this.server = null;
     this.gl.deleteTexture(this.texture);
     this.gl.deleteBuffer(this.vertexBuffer);
     this.gl.deleteBuffer(this.indexBuffer);
@@ -256,7 +270,13 @@ export class LabelRenderer {
     const structure = parts.join(",");
     const structureChanged = structure !== this.placedStructure;
     const cameraChanged = cameraVersion !== this.placedCamera;
-    if (structureChanged || this.pendingGlyphs || (cameraChanged && now - this.lastPlacement >= PLACE_INTERVAL)) {
+    if (
+      structureChanged ||
+      this.pendingGlyphs ||
+      this.reflow ||
+      (cameraChanged && now - this.lastPlacement >= PLACE_INTERVAL)
+    ) {
+      this.reflow = false;
       this.place(transform, inputs, now, terrain);
       this.placedStructure = structure;
       this.placedCamera = cameraVersion;
@@ -467,15 +487,39 @@ export class LabelRenderer {
     }
   }
 
+  get glyphsLoading(): boolean {
+    return this.server?.loading ?? false;
+  }
+
+  setGlyphs(template: string | null, load: GlyphLoader, arrived: () => void): void {
+    if (this.server?.template === template) return;
+    this.server?.destroy();
+    this.server = template
+      ? new GlyphServer(template, load, () => {
+          this.reflow = true;
+          arrived();
+        })
+      : null;
+    this.layoutCache.clear();
+    this.reflow = true;
+  }
+
   private font(layer: StyleLayer, ctx: EvalContext): FontSpec {
-    const families = layer.layoutValue<unknown>("font", ctx);
-    return {
-      family: cssFamily(
-        Array.isArray(families) && families.every((f) => typeof f === "string") ? families : ["sans-serif"],
-      ),
-      weight: layer.layoutValue<unknown>("weight", ctx) === "bold" ? "700" : "400",
-      italic: layer.layoutValue<unknown>("italic", ctx) === true,
-    };
+    const value = layer.layoutValue<unknown>("font", ctx);
+    const names =
+      Array.isArray(value) && value.every((f) => typeof f === "string") ? (value as string[]) : ["sans-serif"];
+    const layout = (layer.spec as { layout?: Record<string, unknown> }).layout ?? {};
+    if (!this.server) {
+      return {
+        family: cssFamily(names),
+        weight: layer.layoutValue<unknown>("weight", ctx) === "bold" ? "700" : "400",
+        italic: layer.layoutValue<unknown>("italic", ctx) === true,
+      };
+    }
+    const derived = fontFromNames(names);
+    const bold = layout.weight !== undefined ? layer.layoutValue<unknown>("weight", ctx) === "bold" : derived.bold;
+    const italic = layout.italic !== undefined ? layer.layoutValue<unknown>("italic", ctx) === true : derived.italic;
+    return { family: cssFamily(derived.families), weight: bold ? "700" : "400", italic, stack: names.join(",") };
   }
 
   private layoutCache = new Map<string, Laid>();
@@ -493,7 +537,7 @@ export class LabelRenderer {
       this.layoutGeneration = this.atlas.generation;
     }
     const { font } = shape;
-    const cacheKey = `${layer.id}#${layer.revision}#${line ? 1 : 0}#${shape.letterSpacing}#${shape.lineHeight}#${shape.maxWidth}#${font.family}#${font.weight}#${font.italic}#${text}`;
+    const cacheKey = `${layer.id}#${layer.revision}#${line ? 1 : 0}#${shape.letterSpacing}#${shape.lineHeight}#${shape.maxWidth}#${font.family}#${font.weight}#${font.italic}#${font.stack ?? ""}#${text}`;
     const cached = this.layoutCache.get(cacheKey);
     if (cached) return cached;
     const laid = this.computeLayout(line ? text.replace(/\n/g, " ") : text, line, budget, shape);
@@ -515,6 +559,14 @@ export class LabelRenderer {
       if (u === "\n") {
         metrics.push(null);
         continue;
+      }
+      if (font.stack && this.server && !whole && fromServer(u)) {
+        const glyph = this.server.glyph(font.stack, u.codePointAt(0)!);
+        if (glyph === undefined) return null;
+        if (glyph !== null) {
+          metrics.push(this.atlas.server(font.stack, u, glyph));
+          continue;
+        }
       }
       let m = this.atlas.get(font, u);
       if (m === undefined) {
