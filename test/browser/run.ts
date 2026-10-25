@@ -741,6 +741,128 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "layer events report the features under the pointer",
+    async run({ page }) {
+      const box = (west: number, east: number) => ({
+        type: "Feature",
+        properties: {},
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [west, -10],
+              [east, -10],
+              [east, 10],
+              [west, 10],
+              [west, -10],
+            ],
+          ],
+        },
+      });
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          g: {
+            type: "geojson",
+            generateId: true,
+            data: { type: "FeatureCollection", features: [box(-20, -5), box(5, 20)] },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "boxes", type: "fill", source: "g", paint: { color: "#3366cc" } },
+        ],
+      });
+      await createMap(page, style);
+      await page.evaluate(`(() => {
+        window.log = [];
+        const map = window.map;
+        map.on("click", "boxes", (e) => window.log.push("click " + e.features.map((f) => f.id).join(",")));
+        map.on("mouseenter", "boxes", (e) => window.log.push("enter " + e.features[0].id));
+        map.on("mouseleave", "boxes", (e) => window.log.push("leave " + e.features.length));
+        map.on("click", "nothing-yet", () => window.log.push("missing layer"));
+      })()`);
+      const settle = () => page.evaluate("new Promise((r) => setTimeout(r, 150))");
+      const click = async (x: number, y: number) => {
+        await page.mouse("mouseMoved", x, y);
+        await page.mouse("mousePressed", x, y, { buttons: 1 });
+        await page.mouse("mouseReleased", x, y, { buttons: 0 });
+      };
+      await page.mouse("mouseMoved", 400, 100);
+      await settle();
+      await page.mouse("mouseMoved", 263, 300);
+      await settle();
+      await page.mouse("mouseMoved", 537, 300);
+      await settle();
+      await click(537, 300);
+      await settle();
+      await click(400, 100);
+      await settle();
+      await page.mouse("mouseMoved", 537, 300);
+      await settle();
+      const log = await page.evaluate<string[]>("window.log");
+      const expected = ["enter 0", "click 1", "leave 0", "enter 1"];
+      if (JSON.stringify(log) !== JSON.stringify(expected))
+        fail(`expected ${JSON.stringify(expected)}, got ${JSON.stringify(log)}`);
+
+      await page.evaluate(`void window.map.on("mousedown", "boxes", (e) => e.preventDefault())`);
+      const before = await page.evaluate<[number, number]>("window.map.getCenter()");
+      await page.mouse("mouseMoved", 263, 300);
+      await page.mouse("mousePressed", 263, 300, { buttons: 1 });
+      for (let i = 1; i <= 8; i++) {
+        await page.mouse("mouseMoved", 263 + i * 12, 300 + i * 4, { buttons: 1 });
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      await page.mouse("mouseReleased", 359, 332, { buttons: 0 });
+      await idle(page);
+      const held = await page.evaluate<[number, number]>("window.map.getCenter()");
+      if (Math.hypot(held[0] - before[0], held[1] - before[1]) > 1e-9)
+        fail(`preventDefault on a layer mousedown still panned the map to ${held}`);
+      await page.mouse("mouseMoved", 400, 100);
+      await page.mouse("mousePressed", 400, 100, { buttons: 1 });
+      for (let i = 1; i <= 8; i++) {
+        await page.mouse("mouseMoved", 400 + i * 12, 100, { buttons: 1 });
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      await page.mouse("mouseReleased", 496, 100, { buttons: 0 });
+      await idle(page);
+      const panned = await page.evaluate<[number, number]>("window.map.getCenter()");
+      if (Math.abs(panned[0] - before[0]) < 1) fail("dragging the empty map no longer pans");
+
+      await page.evaluate(`void window.map.jumpTo({ center: [0, 0], zoom: 3 })`);
+      await idle(page);
+      await page.evaluate(`void window.map.on("dblclick", "boxes", (e) => e.preventDefault())`);
+      await page.mouse("mouseMoved", 263, 300);
+      await page.mouse("mousePressed", 263, 300, { buttons: 1, clickCount: 1 });
+      await page.mouse("mouseReleased", 263, 300, { buttons: 0, clickCount: 1 });
+      await page.mouse("mousePressed", 263, 300, { buttons: 1, clickCount: 2 });
+      await page.mouse("mouseReleased", 263, 300, { buttons: 0, clickCount: 2 });
+      await settle();
+      await idle(page);
+      const zoomOnBox = await page.evaluate<number>("window.map.getZoom()");
+      if (Math.abs(zoomOnBox - 3) > 1e-9) fail(`a prevented dblclick on a layer still zoomed to ${zoomOnBox}`);
+      await page.mouse("mouseMoved", 400, 100);
+      await page.mouse("mousePressed", 400, 100, { buttons: 1, clickCount: 1 });
+      await page.mouse("mouseReleased", 400, 100, { buttons: 0, clickCount: 1 });
+      await page.mouse("mousePressed", 400, 100, { buttons: 1, clickCount: 2 });
+      await page.mouse("mouseReleased", 400, 100, { buttons: 0, clickCount: 2 });
+      await settle();
+      await idle(page);
+      const zoomed = await page.evaluate<number>("window.map.getZoom()");
+      if (Math.abs(zoomed - 4) > 0.01) fail(`a dblclick on empty map should zoom to 4, got ${zoomed}`);
+
+      const once = await page.evaluate<string>(`(async () => {
+        const wait = window.map.once("click", "boxes");
+        return typeof wait.then;
+      })()`);
+      if (once !== "function") fail("once with a layer should return a promise");
+      const bad = await page.evaluate<string>(
+        `(() => { try { window.map.on("zoom", "boxes", () => {}); return "no error"; } catch (e) { return e.code; } })()`,
+      );
+      if (bad !== "invalid-option") fail(`expected invalid-option for a camera event on a layer, got ${bad}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
