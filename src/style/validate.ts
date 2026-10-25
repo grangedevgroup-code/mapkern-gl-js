@@ -1,7 +1,8 @@
 import type { FeatureFormat } from "../formats/feature-format.ts";
 import { FEATURE_FORMATS } from "../formats/feature-format.ts";
 import { compile, ExpressionError } from "./expression.ts";
-import { LAYOUT, PAINT } from "./layer.ts";
+import { LAYOUT, PAINT, transitionOf } from "./layer.ts";
+import { checkTransition } from "./transition.ts";
 import type { LayerType, SourceSpec, StyleSpec } from "./types.ts";
 
 export interface StyleIssue {
@@ -71,6 +72,7 @@ const STYLE_KEYS = new Set([
   "terrain",
   "fonts",
   "sprite",
+  "transition",
   "metadata",
 ]);
 
@@ -111,6 +113,10 @@ export function validateStyle(style: unknown): StyleIssue[] {
         ids.add(layer.id);
       }
     });
+  }
+  if (style.transition !== undefined) {
+    const problem = checkTransition(style.transition);
+    if (problem) issues.push({ path: "transition", message: problem });
   }
   if (style.terrain !== undefined) {
     const t = style.terrain;
@@ -298,6 +304,11 @@ function checkGroup(
   const issues: StyleIssue[] = [];
   for (const [key, value] of Object.entries(group)) {
     const def = defs[key];
+    if (!def && defs === PAINT[type as LayerType] && transitionOf(type as LayerType, key)) {
+      const problem = checkTransition(value);
+      if (problem) issues.push({ path: `${path}.${key}`, message: problem });
+      continue;
+    }
     if (!def) {
       issues.push({ path: `${path}.${key}`, message: `"${key}" is not a property of ${type} layers` });
       continue;
