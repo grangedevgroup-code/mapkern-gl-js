@@ -11,13 +11,22 @@ export type Corners = [[number, number], [number, number], [number, number], [nu
 
 export type OverlaySpec = ImageSourceSpec | VideoSourceSpec | CanvasSourceSpec;
 
+export type WorldRect = readonly [number, number, number, number];
+
 export interface OverlayMesh {
-  vao: WebGLVertexArrayObject;
-  buffer: WebGLBuffer;
-  count: number;
+  readonly vao: WebGLVertexArrayObject;
+  readonly buffer: WebGLBuffer;
+  readonly z: number;
+  readonly x: number;
+  readonly y: number;
 }
 
-const GRID = 16;
+const UV = [
+  [0, 0],
+  [1, 0],
+  [1, 1],
+  [0, 1],
+] as const;
 
 export class ImageSource implements MapSource {
   readonly id: string;
@@ -27,12 +36,17 @@ export class ImageSource implements MapSource {
   version = 0;
   private readonly ctx: SourceContext;
   private corners: Corners;
+  private world: WorldRect;
   private picture: ImageBitmap | null = null;
   private video: HTMLVideoElement | null = null;
   private canvas: HTMLCanvasElement | null = null;
+  private animate: boolean;
   private texture: WebGLTexture | null = null;
   private mesh: OverlayMesh | null = null;
   private dirty = false;
+  private frameDriven = false;
+  private frameRequest = 0;
+  private oversize = false;
   private request: AbortController | null = null;
 
   constructor(id: string, spec: OverlaySpec, ctx: SourceContext) {
@@ -41,16 +55,16 @@ export class ImageSource implements MapSource {
     this.spec = spec;
     this.ctx = ctx;
     this.corners = corners(spec.coordinates, id);
+    this.world = worldRect(this.corners);
+    this.animate = spec.type === "canvas" && spec.animate !== false;
   }
 
   get attribution(): string | undefined {
     return this.spec.attribution;
   }
 
-  get bounds(): [number, number, number, number] {
-    const lngs = this.corners.map((c) => c[0]);
-    const lats = this.corners.map((c) => c[1]);
-    return [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
+  get bounds(): WorldRect {
+    return this.world;
   }
 
   getCoordinates(): Corners {
@@ -59,6 +73,7 @@ export class ImageSource implements MapSource {
 
   setCoordinates(coordinates: readonly LngLatLike[]): this {
     this.corners = corners(coordinates, this.id);
+    this.world = worldRect(this.corners);
     this.spec = { ...this.spec, coordinates: this.getCoordinates() } as OverlaySpec;
     this.releaseMesh();
     this.version++;
@@ -75,7 +90,7 @@ export class ImageSource implements MapSource {
     if (options.coordinates) this.setCoordinates(options.coordinates);
     if (options.url !== undefined && options.url !== this.spec.url) {
       this.spec = { ...this.spec, url: options.url };
-      this.fetchPicture(this.spec.url).catch((error: unknown) => this.ctx.error(this.failure(error)));
+      this.fetchPicture(this.spec.url, this.begin()).catch((error: unknown) => this.ctx.error(this.failure(error)));
     }
     return this;
   }
@@ -84,30 +99,39 @@ export class ImageSource implements MapSource {
     return this.video;
   }
 
+  getCanvas(): HTMLCanvasElement | null {
+    return this.canvas;
+  }
+
   play(): void {
-    this.video?.play().catch(() => {});
+    if (this.video) this.video.play().catch(() => {});
+    else if (this.canvas) this.animate = true;
     this.ctx.changed();
   }
 
   pause(): void {
-    this.video?.pause();
+    if (this.video) {
+      this.video.pause();
+      return;
+    }
+    if (!this.canvas) return;
+    this.animate = false;
+    this.dirty = true;
+    this.ctx.changed();
   }
 
   async load(signal: AbortSignal): Promise<void> {
-    const spec = this.spec;
-    if (spec.type === "image") {
-      await this.fetchPicture(spec.url, signal);
-    } else if (spec.type === "video") {
-      await this.openVideo(spec, signal);
-    } else {
-      const found = typeof spec.canvas === "string" ? document.getElementById(spec.canvas) : spec.canvas;
-      if (!(found instanceof HTMLCanvasElement)) {
-        throw new MapletError("source-error", `Canvas source "${this.id}" could not find its canvas`, {
-          sourceId: this.id,
-        });
-      }
-      this.canvas = found;
-      this.dirty = true;
+    const own = this.begin();
+    const abort = () => own.abort(signal.reason);
+    if (signal.aborted) abort();
+    signal.addEventListener("abort", abort, { once: true });
+    try {
+      const spec = this.spec;
+      if (spec.type === "image") await this.fetchPicture(spec.url, own);
+      else if (spec.type === "video") await this.openVideo(spec, own.signal);
+      else this.findCanvas(spec);
+    } finally {
+      signal.removeEventListener("abort", abort);
     }
     this.loaded = true;
     this.ctx.changed();
@@ -120,8 +144,23 @@ export class ImageSource implements MapSource {
     if (gl.isLost) return false;
     const live = this.live();
     if (!this.dirty && !live) return false;
-    const pixels = this.picture ?? (this.video && this.video.readyState >= 2 ? this.video : null) ?? this.canvas;
-    if (!pixels) return false;
+    const pixels = this.pixels();
+    if (!pixels) return live;
+    const [width, height] = pixelSize(pixels);
+    if (width > gl.maxTextureSize || height > gl.maxTextureSize) {
+      this.dirty = false;
+      if (!this.oversize) {
+        this.oversize = true;
+        this.ctx.error(
+          new MapletError(
+            "source-error",
+            `Source "${this.id}" is ${width}×${height} pixels, larger than this device can draw (${gl.maxTextureSize})`,
+            { sourceId: this.id },
+          ),
+        );
+      }
+      return false;
+    }
     const g = gl.gl;
     if (!this.texture) {
       this.texture = g.createTexture();
@@ -155,52 +194,29 @@ export class ImageSource implements MapSource {
     if (this.mesh) return this.mesh;
     const gl = this.ctx.gl;
     if (gl.isLost) return null;
-    const g = gl.gl;
-    const world = this.corners.map(([lng, lat]) => [mercatorX(lng), mercatorY(lat)] as const);
-    const [tl, tr, br, bl] = world as [
-      readonly [number, number],
-      readonly [number, number],
-      readonly [number, number],
-      readonly [number, number],
-    ];
-    const data = new Float32Array(GRID * GRID * 6 * 4);
-    let k = 0;
-    const at = (u: number, v: number) => {
-      const top0 = tl[0] + (tr[0] - tl[0]) * u;
-      const top1 = tl[1] + (tr[1] - tl[1]) * u;
-      const bot0 = bl[0] + (br[0] - bl[0]) * u;
-      const bot1 = bl[1] + (br[1] - bl[1]) * u;
-      data[k++] = top0 + (bot0 - top0) * v;
-      data[k++] = top1 + (bot1 - top1) * v;
-      data[k++] = u;
-      data[k++] = v;
-    };
-    for (let j = 0; j < GRID; j++) {
-      for (let i = 0; i < GRID; i++) {
-        const u0 = i / GRID;
-        const u1 = (i + 1) / GRID;
-        const v0 = j / GRID;
-        const v1 = (j + 1) / GRID;
-        at(u0, v0);
-        at(u1, v0);
-        at(u1, v1);
-        at(u0, v0);
-        at(u1, v1);
-        at(u0, v1);
-      }
+    const [x0, y0, x1, y1] = this.world;
+    const span = Math.max(x1 - x0, y1 - y0);
+    if (!(span > 0)) return null;
+    const points = this.corners.map(([lng, lat]) => [mercatorX(lng), mercatorY(lat)] as const);
+    const weights = projectiveWeights(points);
+    const data = new Float32Array(20);
+    for (let i = 0; i < 4; i++) {
+      const [px, py] = points[i]!;
+      const [u, v] = UV[i]!;
+      const q = weights[i]!;
+      data.set([(px - x0) / span, (py - y0) / span, u * q, v * q, q], i * 5);
     }
+    const g = gl.gl;
     const vao = g.createVertexArray();
-    const buffer = g.createBuffer();
-    if (!vao || !buffer) return null;
+    if (!vao) return null;
     g.bindVertexArray(vao);
-    g.bindBuffer(g.ARRAY_BUFFER, buffer);
-    g.bufferData(g.ARRAY_BUFFER, data, g.STATIC_DRAW);
+    const buffer = gl.createBuffer(g.ARRAY_BUFFER, data);
     g.enableVertexAttribArray(0);
-    g.vertexAttribPointer(0, 2, g.FLOAT, false, 16, 0);
+    g.vertexAttribPointer(0, 2, g.FLOAT, false, 20, 0);
     g.enableVertexAttribArray(1);
-    g.vertexAttribPointer(1, 2, g.FLOAT, false, 16, 8);
+    g.vertexAttribPointer(1, 3, g.FLOAT, false, 20, 8);
     g.bindVertexArray(null);
-    this.mesh = { vao, buffer, count: GRID * GRID * 6 };
+    this.mesh = { vao, buffer, z: -Math.log2(span), x: x0 / span, y: y0 / span };
     return this.mesh;
   }
 
@@ -224,26 +240,49 @@ export class ImageSource implements MapSource {
 
   destroy(): void {
     this.request?.abort();
+    this.request = null;
     const gl = this.ctx.gl;
     gl.deleteTexture(this.texture);
     this.texture = null;
     this.releaseMesh();
     this.picture?.close();
     this.picture = null;
-    if (this.video) {
-      this.video.pause();
-      this.video.removeAttribute("src");
-      this.video.load();
+    const video = this.video;
+    if (video) {
+      if (this.frameRequest) video.cancelVideoFrameCallback(this.frameRequest);
+      this.frameRequest = 0;
+      video.pause();
+      video.replaceChildren();
+      video.removeAttribute("src");
+      video.load();
       this.video = null;
     }
     this.canvas = null;
   }
 
   private live(): boolean {
-    if (this.video) return !this.video.paused && !this.video.ended;
-    if (this.canvas) return (this.spec as CanvasSourceSpec).animate !== false;
-    return false;
+    const video = this.video;
+    if (video) return !this.frameDriven && !video.paused && !video.ended;
+    return this.canvas !== null && this.animate;
   }
+
+  private pixels(): TexImageSource | null {
+    if (this.picture) return this.picture;
+    if (this.video) return this.video.readyState >= 2 ? this.video : null;
+    return this.canvas;
+  }
+
+  private begin(): AbortController {
+    this.request?.abort();
+    const controller = new AbortController();
+    this.request = controller;
+    return controller;
+  }
+
+  private readonly refresh = () => {
+    this.dirty = true;
+    this.ctx.changed();
+  };
 
   private releaseMesh(): void {
     const mesh = this.mesh;
@@ -254,33 +293,50 @@ export class ImageSource implements MapSource {
     this.mesh = null;
   }
 
-  private async fetchPicture(url: string, signal?: AbortSignal): Promise<void> {
-    this.request?.abort();
-    const controller = new AbortController();
-    this.request = controller;
-    const abort = () => controller.abort(signal?.reason);
-    signal?.addEventListener("abort", abort, { once: true });
+  private findCanvas(spec: CanvasSourceSpec): void {
+    const found = typeof spec.canvas === "string" ? document.getElementById(spec.canvas) : spec.canvas;
+    if (!(found instanceof HTMLCanvasElement)) {
+      throw new MapletError("source-error", `Canvas source "${this.id}" could not find its canvas`, {
+        sourceId: this.id,
+      });
+    }
+    this.canvas = found;
+    this.dirty = true;
+  }
+
+  private async fetchPicture(url: string, controller: AbortController): Promise<void> {
+    const signal = controller.signal;
     try {
       const params = resolveRequest(url, "image", this.ctx.transformRequest);
-      const result = await fetchBytes(params, controller.signal, this.ctx.requestTimeoutMs, "image");
+      const result = await fetchBytes(params, signal, this.ctx.requestTimeoutMs, "image");
       if (result.kind === "empty")
         throw new MapletError("source-error", `There is no image at ${url}`, { sourceId: this.id });
-      const bitmap = await createImageBitmap(new Blob([result.data], { type: result.contentType || "image/png" }), {
+      const type = result.contentType.split(";")[0]?.trim() || "image/png";
+      let bitmap = await createImageBitmap(new Blob([result.data], { type }), {
         premultiplyAlpha: "premultiply",
+        colorSpaceConversion: "none",
       });
-      if (controller.signal.aborted) {
+      const limit = this.ctx.gl.maxTextureSize;
+      if (bitmap.width > limit || bitmap.height > limit) {
+        const scale = limit / Math.max(bitmap.width, bitmap.height);
+        const fitted = await createImageBitmap(bitmap, {
+          resizeWidth: Math.max(1, Math.floor(bitmap.width * scale)),
+          resizeHeight: Math.max(1, Math.floor(bitmap.height * scale)),
+          resizeQuality: "high",
+        });
         bitmap.close();
-        return;
+        bitmap = fitted;
+      }
+      if (signal.aborted) {
+        bitmap.close();
+        throw signal.reason;
       }
       this.picture?.close();
       this.picture = bitmap;
-      this.dirty = true;
-      this.ctx.changed();
+      this.refresh();
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (signal.aborted) throw signal.reason;
       throw this.failure(error);
-    } finally {
-      signal?.removeEventListener("abort", abort);
     }
   }
 
@@ -291,36 +347,51 @@ export class ImageSource implements MapSource {
     video.loop = true;
     video.playsInline = true;
     video.preload = "auto";
-    for (const url of spec.urls) {
-      const source = document.createElement("source");
-      source.src = resolveRequest(url, "image", this.ctx.transformRequest).url;
-      video.appendChild(source);
-    }
+    const files = spec.urls.map((url) => {
+      const file = document.createElement("source");
+      file.src = resolveRequest(url, "image", this.ctx.transformRequest).url;
+      video.appendChild(file);
+      return file;
+    });
     this.video = video;
     await new Promise<void>((resolve, reject) => {
-      const done = () => {
-        cleanup();
-        resolve();
+      let failures = 0;
+      const settle = (error?: unknown) => {
+        video.removeEventListener("loadeddata", ready);
+        video.removeEventListener("error", broken);
+        for (const file of files) file.removeEventListener("error", missing);
+        signal.removeEventListener("abort", aborted);
+        if (error === undefined) resolve();
+        else reject(error);
       };
-      const failed = () => {
-        cleanup();
-        reject(
-          new MapletError("source-error", `Video source "${this.id}" could not play any of its files`, {
-            sourceId: this.id,
-          }),
-        );
+      const fail = (message: string) => settle(new MapletError("source-error", message, { sourceId: this.id }));
+      const ready = () => settle();
+      const missing = () => {
+        failures++;
+        if (failures === files.length) fail(`Video source "${this.id}" could not play any of its files`);
       };
-      const cleanup = () => {
-        video.removeEventListener("loadeddata", done);
-        video.removeEventListener("error", failed, true);
-        signal.removeEventListener("abort", failed);
-      };
-      video.addEventListener("loadeddata", done);
-      video.addEventListener("error", failed, true);
-      signal.addEventListener("abort", failed, { once: true });
+      const broken = () =>
+        fail(`Video source "${this.id}" could not play: ${video.error?.message || "the video could not be decoded"}`);
+      const aborted = () => settle(signal.reason);
+      video.addEventListener("loadeddata", ready);
+      video.addEventListener("error", broken);
+      for (const file of files) file.addEventListener("error", missing);
+      if (signal.aborted) aborted();
+      else signal.addEventListener("abort", aborted, { once: true });
       video.load();
     });
-    video.addEventListener("play", () => this.ctx.changed());
+    video.addEventListener("play", this.refresh);
+    video.addEventListener("seeked", this.refresh);
+    if (typeof video.requestVideoFrameCallback === "function") {
+      this.frameDriven = true;
+      const next = () => {
+        this.frameRequest = video.requestVideoFrameCallback(() => {
+          this.refresh();
+          next();
+        });
+      };
+      next();
+    }
     this.dirty = true;
     video.play().catch(() => {});
   }
@@ -336,14 +407,56 @@ export class ImageSource implements MapSource {
   }
 }
 
+export function overlayWraps(bounds: WorldRect, region: WorldRect, copies: boolean): number[] {
+  const [x0, y0, x1, y1] = bounds;
+  const [rx0, ry0, rx1, ry1] = region;
+  if (y0 >= ry1 || y1 <= ry0) return [];
+  if (!copies) return x0 < rx1 && x1 > rx0 ? [0] : [];
+  const out: number[] = [];
+  for (let wrap = Math.floor(rx0 - x1); wrap <= Math.ceil(rx1 - x0); wrap++) {
+    if (wrap + x0 < rx1 && wrap + x1 > rx0) out.push(wrap);
+  }
+  return out;
+}
+
+export function projectiveWeights(points: readonly (readonly [number, number])[]): number[] {
+  const [p0, p1, p2, p3] = points as [
+    readonly [number, number],
+    readonly [number, number],
+    readonly [number, number],
+    readonly [number, number],
+  ];
+  const ax = p2[0] - p0[0];
+  const ay = p2[1] - p0[1];
+  const bx = p3[0] - p1[0];
+  const by = p3[1] - p1[1];
+  const cross = ax * by - ay * bx;
+  if (Math.abs(cross) < 1e-30) return [1, 1, 1, 1];
+  const dx = p1[0] - p0[0];
+  const dy = p1[1] - p0[1];
+  const t = (dx * by - dy * bx) / cross;
+  const s = (dx * ay - dy * ax) / cross;
+  if (!(t > 0 && t < 1 && s > 0 && s < 1)) return [1, 1, 1, 1];
+  return [1 / (1 - t), 1 / (1 - s), 1 / t, 1 / s];
+}
+
+function pixelSize(pixels: TexImageSource): [number, number] {
+  if (pixels instanceof HTMLVideoElement) return [pixels.videoWidth, pixels.videoHeight];
+  return [(pixels as { width: number }).width, (pixels as { height: number }).height];
+}
+
+function worldRect(corners: Corners): WorldRect {
+  const xs = corners.map((c) => mercatorX(c[0]));
+  const ys = corners.map((c) => mercatorY(c[1]));
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
 function corners(value: readonly LngLatLike[] | undefined, id: string): Corners {
   if (!Array.isArray(value) || value.length !== 4) {
     throw new MapletError(
       "invalid-option",
       `Source "${id}" needs four corner coordinates: top left, top right, bottom right, bottom left`,
-      {
-        sourceId: id,
-      },
+      { sourceId: id },
     );
   }
   return value.map((c) => toLngLat(c)) as Corners;
