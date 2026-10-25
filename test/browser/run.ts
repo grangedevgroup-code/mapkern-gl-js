@@ -1729,6 +1729,183 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "label anchors, justification, rotation and spacing options",
+    async run({ page, shot }) {
+      const point = (lng: number, lat: number, properties: Record<string, unknown>) => ({
+        type: "Feature",
+        properties,
+        geometry: { type: "Point", coordinates: [lng, lat] },
+      });
+      const base = (layers: unknown[], features: unknown[]) =>
+        JSON.stringify({
+          version: 1,
+          sources: { g: { type: "geojson", data: { type: "FeatureCollection", features } } },
+          layers: [{ id: "bg", type: "background", paint: { color: "#ffffff" } }, ...layers],
+        });
+      const scan = (x0: number, y0: number, x1: number, y1: number, test: string) =>
+        page.evaluate<{ box: number[] | null; count: number }>(`(() => {
+          const gl = window.map.getCanvas().getContext("webgl2");
+          const w = ${x1} - ${x0};
+          const h = ${y1} - ${y0};
+          const px = new Uint8Array(w * h * 4);
+          gl.readPixels(${x0}, gl.drawingBufferHeight - ${y1}, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity, count = 0;
+          for (let row = 0; row < h; row++) {
+            for (let col = 0; col < w; col++) {
+              const i = (row * w + col) * 4;
+              const r = px[i], g = px[i + 1], bl = px[i + 2];
+              if (!(${test})) continue;
+              const x = ${x0} + col;
+              const y = ${y1} - 1 - row;
+              a = Math.min(a, x); b = Math.min(b, y); c = Math.max(c, x); d = Math.max(d, y); count++;
+            }
+          }
+          return { box: a === Infinity ? null : [a, b, c, d], count };
+        })()`);
+      const DARK = "r < 110 && g < 110 && bl < 110";
+      const RED_TEXT = "r > 200 && g < 90 && bl < 90";
+      const darkBox = async (x0: number, y0: number, x1: number, y1: number) => (await scan(x0, y0, x1, y1, DARK)).box;
+      await createMap(
+        page,
+        base(
+          [
+            {
+              id: "main",
+              type: "symbol",
+              source: "g",
+              filter: ["==", ["get", "role"], "main"],
+              layout: { text: ["get", "name"], size: 16, variableAnchor: ["top", "bottom"] },
+            },
+            {
+              id: "blocker",
+              type: "symbol",
+              source: "g",
+              filter: ["==", ["get", "role"], "blocker"],
+              layout: { text: ["get", "name"], size: 24 },
+              paint: { color: "#ff0000" },
+            },
+          ],
+          [point(0, 0, { role: "main", name: "Hello" }), point(0, -0.8, { role: "blocker", name: "BLOCKING" })],
+        ),
+        { zoom: 5, center: [0, 0] },
+      );
+      await shot("variable-anchor");
+      const above = await darkBox(340, 250, 460, 300);
+      const below = await darkBox(340, 301, 460, 330);
+      if (!above || below)
+        fail(`with the space below taken the label should move above its point, got ${above} and ${below}`);
+      await page.evaluate("window.map.remove()");
+
+      const lines = (justify: string, extra: Record<string, unknown> = {}) =>
+        base(
+          [
+            {
+              id: "t",
+              type: "symbol",
+              source: "g",
+              layout: { text: ["get", "name"], size: 16, maxWidth: 6, justify, ...extra },
+            },
+          ],
+          [point(0, 0, { name: "Wide first line here x" })],
+        );
+      const measure = async (justify: string, extra: Record<string, unknown> = {}) => {
+        await createMap(page, lines(justify, extra), { zoom: 5, center: [0, 0] });
+        const box = await darkBox(250, 230, 550, 370);
+        const lastRow = box ? await darkBox(250, box[3]! - 8, 550, box[3]! + 1) : null;
+        await page.evaluate("window.map.remove()");
+        return { box, lastRow };
+      };
+      const left = await measure("left");
+      const right = await measure("right");
+      if (!left.box || !left.lastRow || !right.box || !right.lastRow) fail("multi-line labels did not draw");
+      if (Math.abs(left.lastRow[0]! - left.box[0]!) > 2)
+        fail(`left justify should line the rows up on the left, got ${left.lastRow} in ${left.box}`);
+      if (Math.abs(right.lastRow[2]! - right.box[2]!) > 2)
+        fail(`right justify should line the rows up on the right, got ${right.lastRow} in ${right.box}`);
+      const tall = await measure("center", { lineHeight: 2.4 });
+      const normal = await measure("center");
+      if (!tall.box || !normal.box || !(tall.box[3]! - tall.box[1]! > normal.box[3]! - normal.box[1]! + 10))
+        fail(`lineHeight 2.4 should spread the rows, got ${tall.box} against ${normal.box}`);
+      const rotated = await measure("center", { rotate: 90, maxWidth: 30 });
+      if (!rotated.box || !(rotated.box[3]! - rotated.box[1]! > (rotated.box[2]! - rotated.box[0]!) * 2))
+        fail(`rotate 90 should stand the label on end, got ${rotated.box}`);
+
+      await createMap(
+        page,
+        base(
+          [
+            {
+              id: "low",
+              type: "symbol",
+              source: "g",
+              filter: ["==", ["get", "role"], "low"],
+              layout: { text: "Under", size: 18 },
+            },
+            {
+              id: "high",
+              type: "symbol",
+              source: "g",
+              filter: ["==", ["get", "role"], "high"],
+              layout: { text: "Over", size: 18, ignorePlacement: true },
+              paint: { color: "#ff0000", translate: [0, 0] },
+            },
+          ],
+          [point(0, 0, { role: "low" }), point(0.1, 0, { role: "high" })],
+        ),
+        { zoom: 5, center: [0, 0] },
+      );
+      const underneath = (await scan(340, 285, 470, 315, DARK)).count;
+      if (underneath === 0) fail("a label with ignorePlacement should not push away the label under it");
+      await page.evaluate(`void window.map.setPaintProperty("high", "translate", [0, 60])`);
+      await idle(page);
+      const shifted = (await scan(340, 345, 480, 375, RED_TEXT)).count;
+      if (shifted === 0) fail("translate [0, 60] should move the red label 60 px down");
+      await page.evaluate("window.map.remove()");
+
+      const road = JSON.stringify({
+        version: 1,
+        sources: {
+          g: {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: [
+                {
+                  type: "Feature",
+                  properties: { name: "Long Road" },
+                  geometry: {
+                    type: "LineString",
+                    coordinates: [
+                      [-10, 1],
+                      [10, 1],
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          {
+            id: "name",
+            type: "symbol",
+            source: "g",
+            layout: { text: ["get", "name"], placement: "line-center", size: 14, spacing: 60 },
+          },
+        ],
+      });
+      await createMap(page, road, { zoom: 5, center: [0, 1] });
+      const count = await page.evaluate<number>(
+        "window.map.queryRenderedFeatures(undefined, { layers: ['name'] }).then((fs) => fs.length)",
+      );
+      const onLine = await darkBox(0, 285, 800, 315);
+      const elsewhere = await darkBox(0, 0, 800, 270);
+      if (count !== 1 || !onLine || elsewhere)
+        fail(`line-center should draw a single label on the line, got ${count}, ${onLine} and ${elsewhere}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
