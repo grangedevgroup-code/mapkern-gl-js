@@ -225,6 +225,8 @@ export interface SymbolLayerSpec extends SourceLayerBase {
     iconAllowOverlap?: Value<boolean>;
     iconOptional?: Value<boolean>;
     iconRotationAlignment?: Value<"auto" | "map" | "viewport">;
+    iconTextFit?: Value<"none" | "width" | "height" | "both">;
+    iconTextFitPadding?: Value<[number, number, number, number]>;
   };
   paint?: {
     color?: Value<Color>;
