@@ -130,14 +130,13 @@ export class PaintTable {
     states: StateLookup | null,
     data: Float32Array,
   ): void {
-    const props: Record<string, unknown> = {};
-    features.fill(f, props);
+    const ctx = this.ctx;
+    const feature = this.feature;
+    features.fill(f, this.scratch);
     const id = features.id(f);
-    const ctx: EvalContext = {
-      zoom: base,
-      feature: { properties: props, id, geometryType: GEOMETRY[features.type(f)] ?? "Unknown" },
-      state: id !== undefined ? states?.get(id) : undefined,
-    };
+    feature.id = id;
+    feature.geometryType = GEOMETRY[features.type(f)] ?? "Unknown";
+    ctx.state = id !== undefined ? states?.get(id) : undefined;
     for (const { slot, property } of slots) {
       const at = (f * this.stride + slot.slot) * 4;
       ctx.zoom = base;
