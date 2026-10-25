@@ -224,7 +224,7 @@ export function validateLayer(layer: unknown, path: string, sources: Record<stri
   }
   if (layer.visible !== undefined && typeof layer.visible !== "boolean")
     issues.push({ path: `${path}.visible`, message: "visible must be true or false" });
-  if (layer.filter !== undefined) issues.push(...checkExpression(layer.filter, `${path}.filter`, false));
+  if (layer.filter !== undefined) issues.push(...checkExpression(layer.filter, `${path}.filter`, false, true));
   issues.push(...checkGroup(layer.paint, PAINT[type], `${path}.paint`, type, true));
   issues.push(...checkGroup(layer.layout, LAYOUT[type], `${path}.layout`, type, false));
   return issues;
@@ -278,9 +278,9 @@ function checkGroup(
   return issues;
 }
 
-function checkExpression(value: unknown, path: string, allowState: boolean): StyleIssue[] {
+function checkExpression(value: unknown, path: string, allowState: boolean, allowGeometry = false): StyleIssue[] {
   try {
-    compile(value, "any", null, path, allowState);
+    compile(value, "any", null, path, { state: allowState, geometry: allowGeometry });
     return [];
   } catch (error) {
     const message = error instanceof ExpressionError ? error.message.replace(`${path}: `, "") : String(error);
