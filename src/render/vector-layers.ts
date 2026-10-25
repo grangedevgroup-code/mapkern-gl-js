@@ -309,6 +309,9 @@ export class VectorPainter {
     }
   }
 
+  private readonly ground = new Float32Array(9);
+  private groundKey = "";
+
   private tileUniforms(
     program: Program,
     frame: FrameInput,
@@ -332,6 +335,27 @@ export class VectorPainter {
       clip.y0 * extent,
       clip.x1 * extent,
       clip.y1 * extent,
+    );
+    const onScreen = !pick && !frame.framebuffer && frame.view === frame.transform;
+    gl.uniform1i(program.uniforms.get("u_clip_mode") ?? null, onScreen ? 1 : 0);
+    if (!onScreen) return;
+    const t = frame.transform;
+    const [refX, refY] = t.centerWorld;
+    const width = gl.drawingBufferWidth;
+    const height = gl.drawingBufferHeight;
+    const key = `${frame.cameraVersion}|${width}|${height}|${refX}|${refY}`;
+    if (key !== this.groundKey) {
+      t.groundMatrix(refX, refY, width, height, this.ground);
+      this.groundKey = key;
+    }
+    gl.uniformMatrix3fv(program.uniforms.get("u_ground") ?? null, false, this.ground);
+    const n = 2 ** tile.z;
+    gl.uniform4f(
+      program.uniforms.get("u_clip_ground") ?? null,
+      piece.wrap + (tile.x + clip.x0) / n - refX,
+      (tile.y + clip.y0) / n - refY,
+      piece.wrap + (tile.x + clip.x1) / n - refX,
+      (tile.y + clip.y1) / n - refY,
     );
   }
 
