@@ -144,4 +144,16 @@ test("bad expressions are reported with their path", () => {
   );
   assert.throws(() => compile(["interpolate", ["linear"], ["zoom"], 5, 1, 2, 0], "any", null), /stops must increase/);
   assert.throws(() => compile(["number-format", 1, 5], "any", null), /options object/);
+  assert.throws(() => compile(["nonsense", 1], "boolean", false), /unknown expression "nonsense"/);
+  assert.throws(() => compile(["all", ["==", ["get", "a"], 1], ["hsa", "b"]], "boolean", false), /"hsa"/);
+  assert.equal(
+    compile(["match", ["get", "k"], ["a", "b"], 1, 0], "number", 0).evaluate({
+      zoom: 0,
+      feature: { properties: { k: "b" } },
+    }),
+    1,
+  );
+  assert.equal(compile(["in", "b", ["a", "b"]], "boolean", false).evaluate({ zoom: 0 }), true);
+  assert.deepEqual(compile(["literal", ["a", "b"]], "any", null).evaluate({ zoom: 0 }), ["a", "b"]);
+  assert.deepEqual(compile([0, 1], "any", null).evaluate({ zoom: 0 }), [0, 1]);
 });
