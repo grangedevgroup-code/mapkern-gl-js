@@ -1602,7 +1602,7 @@ export class MapletMap extends Emitter<MapEvents> {
   }
 
   setPaintProperty(layerId: string, name: string, value: unknown): this {
-    this.layer(layerId).setPaint(name, value);
+    this.layer(layerId).setPaint(name, value, this.style?.meta.transition);
     this.styleChanged();
     this.triggerRepaint();
     return this;
@@ -2214,6 +2214,7 @@ export class MapletMap extends Emitter<MapEvents> {
       }
       this.updateTerrain(style, progress);
       if (moreUploads) animating = true;
+      for (const layer of style.layers) if (layer.settle(now)) animating = true;
       const labelsBusy = this.painter.render({
         transform: this.transform,
         view: this.transform,
