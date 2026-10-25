@@ -135,10 +135,9 @@ export const lineShader = {
   vertex: `
 layout(location = 0) in vec2 a_pos;
 layout(location = 1) in vec2 a_extrude;
-layout(location = 2) in vec4 a_side;
+layout(location = 2) in ivec4 a_side;
 layout(location = 3) in float a_dist;
 layout(location = 4) in uint a_feature;
-layout(location = 5) in vec2 a_normal;
 uniform mat4 u_matrix;
 uniform vec2 u_translate;
 uniform float u_units_per_px;
@@ -197,10 +196,13 @@ void main() {
   v_half = half_width;
   v_gap = gap;
   v_edge = edge;
-  v_side = a_side.xy * 2.0 * outset;
-  v_square = a_side.z;
+  int steps = a_side.z < 0 ? -a_side.z - 1 : a_side.z;
+  float turn = float(a_side.w) * (3.14159265 / 128.0);
+  vec2 shift = vec2(cos(turn), sin(turn)) * (float(steps) / 126.0 * 4.0);
+  v_side = vec2(a_side.xy) * (1.0 / 127.0) * 2.0 * outset;
+  v_square = a_side.z < 0 ? 1.0 : 0.0;
   v_dist = a_dist / u_units_per_px;
-  vec2 pos = a_pos + u_translate + (a_extrude * outset + a_normal * offset) * (1.0 / 2048.0) * u_units_per_px;
+  vec2 pos = a_pos + u_translate + (a_extrude * (1.0 / 2048.0) * outset + shift * offset) * u_units_per_px;
   v_pos = pos;
   gl_Position = u_matrix * vec4(pos, 0.0, 1.0);
 }
