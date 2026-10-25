@@ -1,6 +1,6 @@
 import type { VectorFeature } from "../formats/mvt.ts";
 import { classifyRings, decodeTile, featureKey } from "../formats/mvt.ts";
-import type { Compiled, FeatureContext, GeometryType } from "../style/expression.ts";
+import type { Compiled, FeatureContext, GeometryType, WorldGeometry } from "../style/expression.ts";
 import { compile } from "../style/expression.ts";
 import { CircleBuilder, ExtrusionBuilder, FillBuilder, LineBuilder } from "./buckets.ts";
 import type { PackedFeatures, PackedLabels } from "./packed.ts";
@@ -60,11 +60,16 @@ const GEOMETRY_NAMES: Record<number, GeometryType> = { 0: "Unknown", 1: "Point",
 
 const compiled = new Map<string, Compiled<unknown>>();
 
-function cachedCompile(key: string, value: unknown, kind: "boolean" | "number" | "string"): Compiled<unknown> {
-  const cacheKey = `${kind}:${key}:${JSON.stringify(value)}`;
+function cachedCompile(
+  key: string,
+  value: unknown,
+  kind: "boolean" | "number" | "string",
+  geometry = false,
+): Compiled<unknown> {
+  const cacheKey = `${kind}:${geometry ? 1 : 0}:${key}:${JSON.stringify(value)}`;
   let c = compiled.get(cacheKey);
   if (!c) {
-    c = compile(value, kind, kind === "boolean" ? false : kind === "string" ? "" : 0, key);
+    c = compile(value, kind, kind === "boolean" ? false : kind === "string" ? "" : 0, key, { geometry });
     if (compiled.size > 4096) compiled.clear();
     compiled.set(cacheKey, c);
   }
@@ -80,14 +85,34 @@ async function inflate(bytes: ArrayBuffer): Promise<Uint8Array> {
   return view;
 }
 
+export interface TilePlace {
+  x: number;
+  y: number;
+}
+
 class FeatureView implements FeatureContext {
   readonly feature: VectorFeature;
   readonly geometryType: GeometryType;
   readonly index: number;
-  constructor(feature: VectorFeature, index: number) {
+  readonly geometry: () => WorldGeometry | null;
+  constructor(feature: VectorFeature, index: number, z: number, place: TilePlace | undefined) {
     this.feature = feature;
     this.index = feature.source ?? index;
     this.geometryType = GEOMETRY_NAMES[feature.type] ?? "Unknown";
+    this.geometry = () => {
+      if (!place || feature.type < 1 || feature.type > 3) return null;
+      const n = 2 ** z;
+      const extent = feature.extent;
+      const parts = feature.geometry().map((part) => {
+        const out = new Float64Array(part.length);
+        for (let i = 0; i < part.length; i += 2) {
+          out[i] = (place.x + part[i]! / extent) / n;
+          out[i + 1] = (place.y + part[i + 1]! / extent) / n;
+        }
+        return out;
+      });
+      return { type: feature.type as 1 | 2 | 3, parts };
+    };
   }
   get properties(): Readonly<Record<string, unknown>> {
     return this.feature.properties();
@@ -113,7 +138,7 @@ export async function buildVectorTile(
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const layers = decodeTile(data);
   const source = request.promoteId === null ? layers : promoteIds(layers, request.promoteId);
-  return buildBuckets(source, request.z, request.layers, request.overzoom, started);
+  return buildBuckets(source, request.z, request.layers, request.overzoom, started, { x: request.x, y: request.y });
 }
 
 function promoteIds(
@@ -157,6 +182,7 @@ export function buildBuckets(
   programs: readonly LayerProgram[],
   overzoom: boolean,
   started = performance.now(),
+  place?: TilePlace,
 ): { result: VectorTileResult; transfer: Transferable[] } {
   const buckets: BucketData[] = [];
   const transfer: Transferable[] = [];
@@ -170,13 +196,13 @@ export function buildBuckets(
     let list = views.get(source.name);
     if (!list) {
       list = [];
-      for (let i = 0; i < source.length; i++) list.push(new FeatureView(source.feature(i), i));
+      for (let i = 0; i < source.length; i++) list.push(new FeatureView(source.feature(i), i, zoom, place));
       views.set(source.name, list);
     }
     const filter =
       program.filter === null || program.filter === undefined
         ? null
-        : cachedCompile(`${program.id}.filter`, program.filter, "boolean");
+        : cachedCompile(`${program.id}.filter`, program.filter, "boolean", true);
     let selected = filter ? list.filter((f) => filter.evaluate({ zoom, feature: f }) === true) : list.slice();
     if (program.type === "fill" || program.type === "extrusion")
       selected = selected.filter((f) => f.feature.type === 3);
