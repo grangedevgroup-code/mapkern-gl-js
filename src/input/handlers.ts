@@ -26,6 +26,7 @@ export interface InputHost {
   changed(): void;
   gesture(active: boolean): void;
   rotateEnded(): void;
+  input(event: Event): void;
   ease(
     target: { zoom?: number; bearing?: number; pitch?: number; panBy?: [number, number] },
     around: [number, number] | null,
@@ -556,6 +557,7 @@ export class InputHandlers {
   private onWheel(e: WheelEvent): void {
     if (!this.options.scrollZoom) return;
     e.preventDefault();
+    this.host.input(e);
     this.host.interrupt();
     this.inertia = null;
     let delta = e.deltaY;
@@ -615,6 +617,7 @@ export class InputHandlers {
   }
 
   private onKeyDown(e: KeyboardEvent): void {
+    this.host.input(e);
     if (e.key === "Escape" && this.mode.kind === "box") {
       e.preventDefault();
       this.cancel();
