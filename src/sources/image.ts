@@ -46,7 +46,7 @@ export class ImageSource implements MapSource {
   private dirty = false;
   private frameDriven = false;
   private frameRequest = 0;
-  private oversize = false;
+  private blocked = false;
   private request: AbortController | null = null;
 
   constructor(id: string, spec: OverlaySpec, ctx: SourceContext) {
@@ -63,7 +63,7 @@ export class ImageSource implements MapSource {
     return this.spec.attribution;
   }
 
-  get bounds(): WorldRect {
+  get worldBounds(): WorldRect {
     return this.world;
   }
 
@@ -90,7 +90,10 @@ export class ImageSource implements MapSource {
     if (options.coordinates) this.setCoordinates(options.coordinates);
     if (options.url !== undefined && options.url !== this.spec.url) {
       this.spec = { ...this.spec, url: options.url };
-      this.fetchPicture(this.spec.url, this.begin()).catch((error: unknown) => this.ctx.error(this.failure(error)));
+      const controller = this.begin();
+      this.fetchPicture(this.spec.url, controller).catch((error: unknown) => {
+        if (!controller.signal.aborted) this.ctx.error(this.failure(error));
+      });
     }
     return this;
   }
@@ -104,6 +107,7 @@ export class ImageSource implements MapSource {
   }
 
   play(): void {
+    this.blocked = false;
     if (this.video) this.video.play().catch(() => {});
     else if (this.canvas) this.animate = true;
     this.ctx.changed();
@@ -116,6 +120,7 @@ export class ImageSource implements MapSource {
     }
     if (!this.canvas) return;
     this.animate = false;
+    this.blocked = false;
     this.dirty = true;
     this.ctx.changed();
   }
@@ -143,22 +148,12 @@ export class ImageSource implements MapSource {
     const gl = this.ctx.gl;
     if (gl.isLost) return false;
     const live = this.live();
-    if (!this.dirty && !live) return false;
+    if (this.blocked || (!this.dirty && !live)) return false;
     const pixels = this.pixels();
     if (!pixels) return live;
     const [width, height] = pixelSize(pixels);
     if (width > gl.maxTextureSize || height > gl.maxTextureSize) {
-      this.dirty = false;
-      if (!this.oversize) {
-        this.oversize = true;
-        this.ctx.error(
-          new MapletError(
-            "source-error",
-            `Source "${this.id}" is ${width}×${height} pixels, larger than this device can draw (${gl.maxTextureSize})`,
-            { sourceId: this.id },
-          ),
-        );
-      }
+      this.block(`is ${width}×${height} pixels, larger than this device can draw (${gl.maxTextureSize})`);
       return false;
     }
     const g = gl.gl;
@@ -172,8 +167,14 @@ export class ImageSource implements MapSource {
     g.bindTexture(g.TEXTURE_2D, this.texture);
     g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL, false);
-    g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, pixels);
-    g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    try {
+      g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, pixels);
+    } catch (error) {
+      this.block(`can't be drawn: ${errorMessage(error)}. Pictures from another site need CORS headers`, error);
+      return false;
+    } finally {
+      g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    }
     if (this.picture) {
       g.generateMipmap(g.TEXTURE_2D);
       g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, g.LINEAR_MIPMAP_LINEAR);
@@ -272,6 +273,12 @@ export class ImageSource implements MapSource {
     return this.canvas;
   }
 
+  private block(reason: string, cause?: unknown): void {
+    this.blocked = true;
+    this.dirty = false;
+    this.ctx.error(new MapletError("source-error", `Source "${this.id}" ${reason}`, { sourceId: this.id }, cause));
+  }
+
   private begin(): AbortController {
     this.request?.abort();
     const controller = new AbortController();
@@ -323,6 +330,7 @@ export class ImageSource implements MapSource {
           resizeWidth: Math.max(1, Math.floor(bitmap.width * scale)),
           resizeHeight: Math.max(1, Math.floor(bitmap.height * scale)),
           resizeQuality: "high",
+          premultiplyAlpha: "premultiply",
         });
         bitmap.close();
         bitmap = fitted;
