@@ -3,6 +3,7 @@ import { classifyRings, decodeTile, featureKey } from "../formats/mvt.ts";
 import type { Compiled, FeatureContext, GeometryType, WorldGeometry } from "../style/expression.ts";
 import { compile } from "../style/expression.ts";
 import { CircleBuilder, ExtrusionBuilder, FillBuilder, LineBuilder } from "./buckets.ts";
+import { hiddenOutlines, type Shape } from "./outlines.ts";
 import type { PackedFeatures, PackedLabels } from "./packed.ts";
 import { FeatureTableBuilder, featureTransfers, LabelBuilder, labelTransfers } from "./packed.ts";
 import type { LabelInfo, SymbolLayout } from "./symbols.ts";
@@ -231,6 +232,34 @@ export function buildBuckets(
   };
 }
 
+interface OutlineHeights {
+  height: unknown;
+  base: unknown;
+}
+
+function outlineShapes(
+  id: string,
+  heights: OutlineHeights,
+  selected: readonly FeatureView[],
+  polygons: readonly Int32Array[][][],
+  zoom: number,
+): Shape[] {
+  const height = cachedCompile(`${id}.height`, heights.height, "number");
+  const base = cachedCompile(`${id}.base`, heights.base, "number");
+  const shapes: Shape[] = [];
+  for (let i = 0; i < selected.length; i++) {
+    const context = { zoom, feature: selected[i]! };
+    const top = height.evaluate(context);
+    const bottom = base.evaluate(context);
+    const shape = {
+      base: typeof bottom === "number" && Number.isFinite(bottom) ? bottom : 0,
+      height: typeof top === "number" && Number.isFinite(top) ? top : 0,
+    };
+    for (const rings of polygons[i]!) shapes.push({ rings, ...shape });
+  }
+  return shapes;
+}
+
 function sourceLayer(layers: ReadonlyMap<string, FeatureLayer>, name: string | null): FeatureLayer | undefined {
   if (name !== null) return layers.get(name);
   return layers.values().next().value;
@@ -269,12 +298,29 @@ function buildBucket(
   }
   if (program.type === "extrusion") {
     const extrusion = new ExtrusionBuilder(source.extent);
-    for (const f of selected) {
-      const index = features.count;
-      const polygons = classifyRings(f.feature.geometry());
-      if (polygons.length === 0) continue;
-      for (const rings of polygons) extrusion.addPolygon(rings, index);
-      features.add(f.feature, f.index);
+    const outlines = layout.outlines as OutlineHeights | undefined;
+    if (outlines) {
+      const polygons = selected.map((f) => classifyRings(f.feature.geometry()));
+      const hidden = hiddenOutlines(outlineShapes(program.id, outlines, selected, polygons, zoom), source.extent);
+      let k = 0;
+      for (let i = 0; i < selected.length; i++) {
+        const index = features.count;
+        let drawn = false;
+        for (const rings of polygons[i]!) {
+          if (hidden[k++] === 1) continue;
+          extrusion.addPolygon(rings, index);
+          drawn = true;
+        }
+        if (drawn) features.add(selected[i]!.feature, selected[i]!.index);
+      }
+    } else {
+      for (const f of selected) {
+        const index = features.count;
+        const polygons = classifyRings(f.feature.geometry());
+        if (polygons.length === 0) continue;
+        for (const rings of polygons) extrusion.addPolygon(rings, index);
+        features.add(f.feature, f.index);
+      }
     }
     if (extrusion.vertexCount === 0) return null;
     return {
