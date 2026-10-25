@@ -8,7 +8,7 @@ import { FeatureTableBuilder, featureTransfers, LabelBuilder, labelTransfers } f
 import type { LabelInfo, SymbolLayout } from "./symbols.ts";
 import { labelCandidates, labelInfo, lineLabels, mergeParts } from "./symbols.ts";
 
-export type BucketType = "fill" | "line" | "circle" | "symbol" | "extrusion";
+export type BucketType = "fill" | "line" | "circle" | "heatmap" | "symbol" | "extrusion";
 
 export interface LayerProgram {
   id: string;
@@ -333,7 +333,7 @@ function buildBucket(
       labels: labels.finish(),
     };
   }
-  if (program.type === "circle") {
+  if (program.type === "circle" || program.type === "heatmap") {
     const circles = new CircleBuilder();
     for (const f of selected) {
       const index = features.count;
@@ -352,7 +352,7 @@ function buildBucket(
     if (circles.vertexCount === 0) return null;
     return {
       layerId: program.id,
-      type: "circle",
+      type: program.type,
       extent: source.extent,
       features: features.finish(),
       main: geometry(circles.vertices.finish(), circles.indices.finish(), circles.vertexCount),
