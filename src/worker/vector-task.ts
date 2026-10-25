@@ -315,9 +315,9 @@ function buildBucket(
       icon: cachedCompile(`${program.id}.icon`, layout.icon ?? "", "string"),
       size: cachedCompile(`${program.id}.size`, layout.size ?? 14, "number"),
       priority: cachedCompile(`${program.id}.priority`, layout.priority ?? 0, "number"),
-      placement: layout.placement === "line" || layout.placement === "line-center" ? layout.placement : "point",
-      spacing: typeof layout.spacing === "number" ? layout.spacing : 250,
-      transform: layout.transform === "uppercase" || layout.transform === "lowercase" ? layout.transform : "none",
+      placement: placementAt(cachedCompile(`${program.id}.placement`, layout.placement ?? "point", "string"), zoom),
+      spacing: numberAt(cachedCompile(`${program.id}.spacing`, layout.spacing ?? 250, "number"), zoom, 250),
+      transform: cachedCompile(`${program.id}.transform`, layout.transform ?? "none", "string"),
     };
     const labels = new LabelBuilder();
     const streets = new Map<string, { info: LabelInfo; index: number; parts: Int32Array[] }>();
@@ -390,3 +390,13 @@ function buildBucket(
 
 type LineBuilderCap = "butt" | "round" | "square";
 type LineBuilderJoin = "miter" | "round" | "bevel";
+
+function placementAt(value: Compiled<unknown>, zoom: number): "point" | "line" | "line-center" {
+  const placement = value.evaluate({ zoom });
+  return placement === "line" || placement === "line-center" ? placement : "point";
+}
+
+function numberAt(value: Compiled<unknown>, zoom: number, fallback: number): number {
+  const n = value.evaluate({ zoom });
+  return typeof n === "number" && Number.isFinite(n) ? n : fallback;
+}
