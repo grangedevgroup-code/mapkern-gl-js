@@ -271,7 +271,7 @@ test("what can't be drawn is left out and listed, never the whole style", () => 
         type: "symbol",
         source: "v",
         "source-layer": "x",
-        layout: { "icon-text-fit": "both", "icon-image": "a" },
+        layout: { "text-writing-mode": ["vertical"], "icon-image": "a" },
       },
     ],
   });
@@ -291,7 +291,7 @@ test("what can't be drawn is left out and listed, never the whole style", () => 
     "fill-color",
     "frobnicate",
     "sky layers",
-    "icon-text-fit",
+    "text-writing-mode",
   ]) {
     assert.ok(
       skipped.some((s) => s.includes(words)),
