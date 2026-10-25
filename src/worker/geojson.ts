@@ -5,6 +5,8 @@ import type { Geometry, Position } from "../geo/geojson.ts";
 import { latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY } from "../geo/mercator.ts";
 import type { Rect } from "../geo/tile.ts";
 import { tileKey } from "../geo/tile.ts";
+import type { ClusterLeaf, ClusterSettings, Entity } from "./cluster.ts";
+import { ClusterTree } from "./cluster.ts";
 import type { FeatureLayer } from "./vector-task.ts";
 
 export interface GeoJSONOptions {
@@ -14,6 +16,14 @@ export interface GeoJSONOptions {
   extent: number;
   promoteId?: string | undefined;
   generateId?: boolean | undefined;
+  cluster?: ClusterSettings | undefined;
+}
+
+export interface SourceGeoJSONFeature {
+  type: "Feature";
+  id?: number | string;
+  properties: Record<string, unknown>;
+  geometry: Geometry | null;
 }
 
 export interface QueriedSourceFeature {
@@ -70,6 +80,11 @@ export class GeoJSONIndex {
   private readonly cache = new Map<number, Node>();
   private readonly budget: number;
   private cachedCost = 0;
+  private readonly clusters: ClusterTree | null = null;
+  private readonly shapes: Node | null = null;
+  private readonly shapeCache = new Map<number, Node>();
+  private readonly leafItems: Item[] = [];
+  private readonly clusterItems = new Map<number, Item>();
 
   constructor(data: unknown, options: GeoJSONOptions) {
     this.options = options;
@@ -83,6 +98,23 @@ export class GeoJSONIndex {
     }
     this.root = { items, vertices, cost: vertices };
     this.budget = Math.max(MIN_CACHE_COST, vertices);
+    if (options.cluster) {
+      const leaves: ClusterLeaf[] = [];
+      const rest: Item[] = [];
+      let restVertices = 0;
+      for (const item of items) {
+        const part = item.parts[0];
+        if (item.type === 1 && item.parts.length === 1 && part && part.points.length === 3) {
+          this.leafItems.push(item);
+          leaves.push({ x: part.points[0]!, y: part.points[1]!, properties: item.feature.properties });
+        } else {
+          rest.push(item);
+          restVertices += item.vertices;
+        }
+      }
+      this.clusters = new ClusterTree(leaves, options.cluster);
+      this.shapes = { items: rest, vertices: restVertices, cost: restVertices };
+    }
     this.summary = {
       features,
       vertices,
@@ -112,6 +144,8 @@ export class GeoJSONIndex {
       this.byFeature = map;
     }
     return indices.map((index) => {
+      const cluster = this.clusterFeature(index);
+      if (cluster) return cluster;
       const items = this.byFeature!.get(index) ?? [];
       const feature = items[0]?.feature;
       const geometries = items.map(itemGeometry);
@@ -129,8 +163,65 @@ export class GeoJSONIndex {
     });
   }
 
+  clusterExpansionZoom(id: number): number | null {
+    const tree = this.clusters;
+    return tree?.clusters[id] ? tree.expansionZoom(id) : null;
+  }
+
+  clusterChildren(id: number): SourceGeoJSONFeature[] | null {
+    const tree = this.clusters;
+    if (!tree?.clusters[id]) return null;
+    return tree.children(id).map((e) => this.entityFeature(e));
+  }
+
+  clusterLeaves(id: number, limit: number, offset: number): SourceGeoJSONFeature[] | null {
+    const tree = this.clusters;
+    if (!tree?.clusters[id]) return null;
+    return tree.leaves(id, limit, offset).map((leaf) => this.entityFeature({ leaf, cluster: -1 }));
+  }
+
+  private entityFeature(e: Pick<Entity, "leaf" | "cluster">): SourceGeoJSONFeature {
+    const item = e.cluster >= 0 ? this.clusterItem(e.cluster) : this.leafItems[e.leaf]!;
+    const id = item.feature.textId ?? item.feature.id;
+    const out: SourceGeoJSONFeature = {
+      type: "Feature",
+      properties: { ...item.feature.properties },
+      geometry: itemGeometry(item),
+    };
+    if (id !== undefined) out.id = id;
+    return out;
+  }
+
+  private clusterFeature(index: number): QueriedSourceFeature | null {
+    const tree = this.clusters;
+    const id = index - this.summary.features;
+    if (!tree || id < 0 || !tree.clusters[id]) return null;
+    const item = this.clusterItem(id);
+    return { index, id, properties: { ...item.feature.properties }, geometry: itemGeometry(item) };
+  }
+
+  private clusterItem(id: number): Item {
+    let item = this.clusterItems.get(id);
+    if (!item) {
+      const tree = this.clusters!;
+      const c = tree.clusters[id]!;
+      const properties: Record<string, PropertyValue> = {};
+      for (const [key, value] of Object.entries(tree.properties(id))) {
+        if (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
+          properties[key] = value;
+        else if (value !== null && value !== undefined) properties[key] = JSON.stringify(value);
+      }
+      const points = Float64Array.of(c.x, c.y, ALWAYS_KEEP);
+      item = makeItem({ id, index: this.summary.features + id, properties }, 1, [{ points, outer: true, size: 0 }]);
+      this.clusterItems.set(id, item);
+    }
+    return item;
+  }
+
   tile(z: number, x: number, y: number): FeatureLayer {
-    const node = this.node(z, x, y);
+    const tree = this.clusters;
+    const clustered = tree !== null && z <= tree.settings.maxZoom;
+    const node = this.node(z, x, y, clustered);
     const extent = this.options.extent;
     const n = 2 ** z;
     const tolerance = z >= this.options.maxZoom ? 0 : this.options.tolerance / (512 * n);
@@ -145,16 +236,24 @@ export class GeoJSONIndex {
             : writePolygons(item, grid, tolerance);
       if (geometry.length > 0) features.push(new TileFeature(item, geometry, extent));
     }
+    if (clustered) {
+      const pad = this.options.buffer / 512 / n;
+      for (const e of tree.entitiesIn(z, x / n - pad, y / n - pad, (x + 1) / n + pad, (y + 1) / n + pad)) {
+        const item = e.cluster >= 0 ? this.clusterItem(e.cluster) : this.leafItems[e.leaf]!;
+        features.push(new TileFeature(item, writePoints(item, grid), extent));
+      }
+    }
     return { name: "geojson", extent, length: features.length, feature: (index) => features[index]! };
   }
 
-  private node(z: number, x: number, y: number): Node {
-    const hit = this.touch(tileKey(z, x, y));
+  private node(z: number, x: number, y: number, shapes: boolean): Node {
+    const cache = shapes ? this.shapeCache : this.cache;
+    const hit = this.touch(cache, tileKey(z, x, y));
     if (hit) return hit;
-    let parent = this.root;
+    let parent = shapes && this.shapes ? this.shapes : this.root;
     let level = -1;
     for (let k = z - 1; k >= 0; k--) {
-      const ancestor = this.touch(tileKey(k, x >> (z - k), y >> (z - k)));
+      const ancestor = this.touch(cache, tileKey(k, x >> (z - k), y >> (z - k)));
       if (ancestor) {
         parent = ancestor;
         level = k;
@@ -163,23 +262,23 @@ export class GeoJSONIndex {
     }
     for (;;) {
       const next = parent.vertices > DIRECT_LIMIT ? level + 1 : z;
-      const node = this.derive(parent, next, x >> (z - next), y >> (z - next));
+      const node = this.derive(cache, parent, next, x >> (z - next), y >> (z - next));
       if (next === z) return node;
       parent = node;
       level = next;
     }
   }
 
-  private touch(key: number): Node | undefined {
-    const node = this.cache.get(key);
+  private touch(cache: Map<number, Node>, key: number): Node | undefined {
+    const node = cache.get(key);
     if (node) {
-      this.cache.delete(key);
-      this.cache.set(key, node);
+      cache.delete(key);
+      cache.set(key, node);
     }
     return node;
   }
 
-  private derive(parent: Node, z: number, x: number, y: number): Node {
+  private derive(cache: Map<number, Node>, parent: Node, z: number, x: number, y: number): Node {
     const n = 2 ** z;
     const pad = this.options.buffer / 512 / n;
     const rect: Rect = { x0: x / n - pad, y0: y / n - pad, x1: (x + 1) / n + pad, y1: (y + 1) / n + pad };
@@ -194,18 +293,21 @@ export class GeoJSONIndex {
       cost += clipped === item ? 1 : clipped.vertices;
     }
     const node: Node = { items, vertices, cost };
-    this.cache.set(tileKey(z, x, y), node);
+    cache.set(tileKey(z, x, y), node);
     this.cachedCost += cost;
     this.trim();
     return node;
   }
 
   private trim(): void {
-    if (this.cachedCost <= this.budget && this.cache.size <= MAX_CACHED_NODES) return;
-    for (const [key, node] of this.cache) {
-      if (this.cachedCost <= this.budget * 0.75 && this.cache.size <= MAX_CACHED_NODES * 0.75) break;
-      this.cache.delete(key);
-      this.cachedCost -= node.cost;
+    const size = () => this.cache.size + this.shapeCache.size;
+    if (this.cachedCost <= this.budget && size() <= MAX_CACHED_NODES) return;
+    for (const cache of [this.shapeCache, this.cache]) {
+      for (const [key, node] of cache) {
+        if (this.cachedCost <= this.budget * 0.75 && size() <= MAX_CACHED_NODES * 0.75) return;
+        cache.delete(key);
+        this.cachedCost -= node.cost;
+      }
     }
   }
 }
