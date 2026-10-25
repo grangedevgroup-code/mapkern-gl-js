@@ -3223,6 +3223,116 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "icons stretch to fit their text and keep their corners",
+    async run({ page, shot }) {
+      const style = {
+        version: 1,
+        sources: {
+          g: {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: [
+                { type: "Feature", properties: { name: "MM" }, geometry: { type: "Point", coordinates: [0, 10] } },
+                {
+                  type: "Feature",
+                  properties: { name: "MMMMMMMM" },
+                  geometry: { type: "Point", coordinates: [0, -10] },
+                },
+              ],
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          {
+            id: "t",
+            type: "symbol",
+            source: "g",
+            layout: {
+              text: ["get", "name"],
+              size: 20,
+              icon: "shield",
+              iconTextFit: "both",
+              iconTextFitPadding: [2, 4, 2, 4],
+              allowOverlap: true,
+              iconAllowOverlap: true,
+            },
+            paint: { color: "#ff0000" },
+          },
+        ],
+      };
+      await page.evaluate(`(async () => {
+        const data = new Uint8Array(12 * 12 * 4);
+        for (let y = 0; y < 12; y++) {
+          for (let x = 0; x < 12; x++) {
+            const edge = x < 3 || y < 3 || x >= 9 || y >= 9;
+            data.set(edge ? [0, 0, 255, 255] : [0, 255, 0, 255], (y * 12 + x) * 4);
+          }
+        }
+        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: ${JSON.stringify(style)} });
+        window.map.addImage("shield", { width: 12, height: 12, data }, { stretchX: [[3, 9]], stretchY: [[3, 9]], content: [3, 3, 9, 9] });
+        await new Promise((resolve) => window.map.once("idle", resolve));
+      })()`);
+      await shot("fitted-icons");
+      const scan = (cx: number, cy: number) =>
+        page.evaluate<{ green: number[] | null; red: number[] | null; blueLeft: number }>(`(() => {
+          const gl = window.map.getCanvas().getContext("webgl2");
+          const x0 = ${cx} - 150, y0 = ${cy} - 40, w = 300, h = 80;
+          const px = new Uint8Array(w * h * 4);
+          gl.readPixels(x0, gl.drawingBufferHeight - (y0 + h), w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          const box = () => [Infinity, Infinity, -Infinity, -Infinity];
+          const green = box(), red = box();
+          const add = (b, x, y) => { b[0] = Math.min(b[0], x); b[1] = Math.min(b[1], y); b[2] = Math.max(b[2], x); b[3] = Math.max(b[3], y); };
+          for (let row = 0; row < h; row++) {
+            for (let col = 0; col < w; col++) {
+              const i = (row * w + col) * 4;
+              const r = px[i], g = px[i + 1], b = px[i + 2];
+              const x = x0 + col, y = y0 + h - 1 - row;
+              if (g > 200 && r < 60 && b < 60) add(green, x, y);
+              if (r > 200 && g < 80 && b < 80) add(red, x, y);
+            }
+          }
+          let blueLeft = 0;
+          if (Number.isFinite(green[0])) {
+            const y = Math.round((green[1] + green[3]) / 2);
+            const row = y0 + h - 1 - y;
+            for (let col = 0; col < w; col++) {
+              const i = (row * w + col) * 4;
+              if (px[i + 2] > 200 && px[i] < 60 && px[i + 1] < 60) blueLeft++;
+              else if (blueLeft > 0) break;
+            }
+          }
+          const ok = (b) => (Number.isFinite(b[0]) ? b : null);
+          return { green: ok(green), red: ok(red), blueLeft };
+        })()`);
+      const short = await page.evaluate<{ x: number; y: number }>("window.map.project([0, 10])");
+      const long = await page.evaluate<{ x: number; y: number }>("window.map.project([0, -10])");
+      const a = await scan(Math.round(short.x), Math.round(short.y));
+      const b = await scan(Math.round(long.x), Math.round(long.y));
+      for (const [name, r] of [
+        ["MM", a],
+        ["MMMMMMMM", b],
+      ] as const) {
+        if (!r.green || !r.red) fail(`the ${name} label should have its icon and text, got ${JSON.stringify(r)}`);
+        const inside =
+          r.green![0]! <= r.red![0]! &&
+          r.green![2]! >= r.red![2]! &&
+          r.green![1]! <= r.red![1]! &&
+          r.green![3]! >= r.red![3]!;
+        if (!inside) fail(`the icon's content area should wrap the ${name} text, got ${JSON.stringify(r)}`);
+        if (r.blueLeft < 2 || r.blueLeft > 4)
+          fail(`the icon's border should stay 3 pixels wide, got ${r.blueLeft} for ${name}`);
+      }
+      const widthA = a.green![2]! - a.green![0]!;
+      const widthB = b.green![2]! - b.green![0]!;
+      const textA = a.red![2]! - a.red![0]!;
+      const textB = b.red![2]! - b.red![0]!;
+      if (Math.abs(widthB - widthA - (textB - textA)) > 6)
+        fail(`the icon should grow with its text, got icons ${widthA} and ${widthB} for text ${textA} and ${textB}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
