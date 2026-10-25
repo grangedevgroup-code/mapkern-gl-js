@@ -3,10 +3,21 @@ import { isColor, mixColor, parseColor } from "./color.ts";
 
 export type GeometryType = "Point" | "LineString" | "Polygon" | "Unknown";
 
+export interface WorldGeometry {
+  readonly type: 1 | 2 | 3;
+  readonly parts: readonly (readonly number[] | Float64Array)[];
+}
+
 export interface FeatureContext {
   readonly properties: Readonly<Record<string, unknown>>;
   readonly id?: string | number | undefined;
   readonly geometryType?: GeometryType;
+  readonly geometry?: () => WorldGeometry | null;
+}
+
+export interface CompileFlags {
+  state?: boolean;
+  geometry?: boolean;
 }
 
 export interface EvalContext {
@@ -49,6 +60,7 @@ interface Scope {
   properties: Set<string>;
   path: string;
   allowState: boolean;
+  allowGeometry: boolean;
   vars: Map<string, Node>;
 }
 
@@ -63,9 +75,16 @@ export function compile<T>(
   kind: OutputKind,
   fallback: T,
   path = "value",
-  allowState = false,
+  flags: boolean | CompileFlags = false,
 ): Compiled<T> {
-  const scope: Scope = { properties: new Set(), path, allowState, vars: new Map() };
+  const options = typeof flags === "boolean" ? { state: flags } : flags;
+  const scope: Scope = {
+    properties: new Set(),
+    path,
+    allowState: options.state === true,
+    allowGeometry: options.geometry === true,
+    vars: new Map(),
+  };
   const node = build(value, scope);
   const coerce = coercer(kind);
   const evaluate = (ctx: EvalContext): T => {
@@ -206,6 +225,7 @@ const OPS = new Set([
   "image",
   "accumulated",
   "heatmap-density",
+  "within",
 ]);
 
 function constant(v: unknown): Node {
@@ -591,6 +611,21 @@ function build(value: unknown, scope: Scope): Node {
       const a = sub(args[0]);
       return combine([a], () => true);
     }
+    case "within": {
+      need(1, 1);
+      if (!scope.allowGeometry) {
+        throw new ExpressionError(`${scope.path}: "within" only works in layer filters`);
+      }
+      const area = withinArea(args[0], scope.path);
+      return {
+        fn: (ctx) => {
+          const geometry = ctx.feature?.geometry?.();
+          return geometry ? insideArea(geometry, area) : false;
+        },
+        zoom: false,
+        feature: true,
+      };
+    }
     case "heatmap-density":
       need(0, 0);
       return { fn: (ctx) => ctx.density ?? 0, zoom: false, feature: true };
@@ -871,6 +906,108 @@ function buildInterpolate(
     const t = curve((x - lo) / (hi - lo), lo, hi, x);
     return mix(outs[i]!.fn(ctx), outs[i + 1]!.fn(ctx), t, space);
   });
+}
+
+interface Area {
+  rings: Float64Array[][];
+  bounds: [number, number, number, number];
+}
+
+function withinArea(value: unknown, path: string): Area {
+  const polygons: unknown[][] = [];
+  const visit = (node: unknown): void => {
+    if (typeof node !== "object" || node === null) return;
+    const g = node as { type?: unknown; coordinates?: unknown; geometry?: unknown; features?: unknown };
+    if (g.type === "FeatureCollection" && Array.isArray(g.features)) for (const f of g.features) visit(f);
+    else if (g.type === "Feature") visit(g.geometry);
+    else if (g.type === "Polygon" && Array.isArray(g.coordinates)) polygons.push(g.coordinates);
+    else if (g.type === "MultiPolygon" && Array.isArray(g.coordinates)) for (const p of g.coordinates) polygons.push(p);
+  };
+  visit(value);
+  if (polygons.length === 0) {
+    throw new ExpressionError(`${path}: "within" needs a GeoJSON Polygon or MultiPolygon`);
+  }
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  const rings = polygons.map((polygon) =>
+    polygon.map((ring) => {
+      if (!Array.isArray(ring))
+        throw new ExpressionError(`${path}: "within" has a ring that is not a list of positions`);
+      const out = new Float64Array(ring.length * 2);
+      ring.forEach((position, i) => {
+        const [lng, lat] = Array.isArray(position) ? (position as number[]) : [Number.NaN, Number.NaN];
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+          throw new ExpressionError(`${path}: "within" has a position that is not [lng, lat]`);
+        }
+        const x = (lng! + 180) / 360;
+        const s = Math.sin((Math.max(-85.0511, Math.min(85.0511, lat!)) * Math.PI) / 180);
+        const y = 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
+        out[i * 2] = x;
+        out[i * 2 + 1] = y;
+        x0 = Math.min(x0, x);
+        y0 = Math.min(y0, y);
+        x1 = Math.max(x1, x);
+        y1 = Math.max(y1, y);
+      });
+      return out;
+    }),
+  );
+  return { rings, bounds: [x0, y0, x1, y1] };
+}
+
+function insidePolygon(x: number, y: number, rings: readonly Float64Array[]): boolean {
+  let inside = false;
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
+      const xi = ring[i]!;
+      const yi = ring[i + 1]!;
+      const xj = ring[j]!;
+      const yj = ring[j + 1]!;
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function crosses(ax: number, ay: number, bx: number, by: number, rings: readonly Float64Array[]): boolean {
+  const side = (px: number, py: number, qx: number, qy: number, rx: number, ry: number) =>
+    (qx - px) * (ry - py) - (qy - py) * (rx - px);
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
+      const cx = ring[j]!;
+      const cy = ring[j + 1]!;
+      const dx = ring[i]!;
+      const dy = ring[i + 1]!;
+      const d1 = side(ax, ay, bx, by, cx, cy);
+      const d2 = side(ax, ay, bx, by, dx, dy);
+      const d3 = side(cx, cy, dx, dy, ax, ay);
+      const d4 = side(cx, cy, dx, dy, bx, by);
+      if (d1 * d2 < 0 && d3 * d4 < 0) return true;
+    }
+  }
+  return false;
+}
+
+function insideArea(geometry: WorldGeometry, area: Area): boolean {
+  const [bx0, by0, bx1, by1] = area.bounds;
+  let any = false;
+  for (const part of geometry.parts) {
+    for (let i = 0; i + 1 < part.length; i += 2) {
+      const x = part[i]!;
+      const y = part[i + 1]!;
+      if (x < bx0 || x > bx1 || y < by0 || y > by1) return false;
+      if (!area.rings.some((rings) => insidePolygon(x, y, rings))) return false;
+      any = true;
+      if (geometry.type !== 1 && i + 3 < part.length) {
+        const nx = part[i + 2]!;
+        const ny = part[i + 3]!;
+        if (area.rings.some((rings) => crosses(x, y, nx, ny, rings))) return false;
+      }
+    }
+  }
+  return any;
 }
 
 function hslToRgba(h: number, s: number, l: number, a: number): RGBA {
