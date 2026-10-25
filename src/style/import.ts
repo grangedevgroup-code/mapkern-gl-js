@@ -113,6 +113,8 @@ const PROPERTIES: Record<LayerType, Record<string, Target>> = {
     "icon-padding": layout("iconPadding"),
     "icon-offset": layout("iconOffset"),
     "icon-anchor": layout("iconAnchor"),
+    "icon-text-fit": layout("iconTextFit"),
+    "icon-text-fit-padding": layout("iconTextFitPadding"),
     "text-rotation-alignment": layout("rotationAlignment"),
     "text-pitch-alignment": layout("pitchAlignment"),
     "text-field": layout("text"),
