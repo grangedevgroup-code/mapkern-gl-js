@@ -119,7 +119,8 @@ function writeTiff(o: WriteOptions): Uint8Array {
     offsets.push(cursor);
     cursor += b.length;
   }
-  const tags: [number, number, number[]][] = [
+  type Tag = [number, number, number[]];
+  const list: Tag[] = [
     [256, 4, [o.width]],
     [257, 4, [o.height]],
     [258, 3, [bps * 8]],
