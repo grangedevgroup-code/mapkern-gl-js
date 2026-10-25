@@ -260,6 +260,8 @@ test("what can't be drawn is left out and listed, never the whole style", () => 
     layers: [
       { id: "bg", type: "background", paint: { "background-color": "#fff", "background-pattern": "dots" } },
       { id: "wet", type: "fill", source: "v", "source-layer": "x", paint: { "fill-pattern": "marsh" } },
+      { id: "mixed", type: "fill", source: "v", "source-layer": "x", paint: { "fill-pattern": ["get", "kind"] } },
+      { id: "rails", type: "line", source: "v", "source-layer": "x", paint: { "line-pattern": "rail" } },
       { id: "odd", type: "fill", source: "v", "source-layer": "x", paint: { "fill-color": ["frobnicate", 1] } },
       { id: "bad", type: "fill", source: "v", "source-layer": "x", filter: ["frobnicate"], paint: {} },
       { id: "sky", type: "sky" },
@@ -275,14 +277,17 @@ test("what can't be drawn is left out and listed, never the whole style", () => 
   });
   assert.deepEqual(
     style.layers.map((l) => l.id),
-    ["bg", "odd", "fit"],
+    ["bg", "wet", "odd", "fit"],
   );
   assert.deepEqual(style.layers[0]!.paint, { color: "#fff" });
-  assert.equal((style.layers[1]!.paint as Record<string, unknown> | undefined)?.color, undefined);
+  assert.deepEqual(style.layers[1]!.paint, { pattern: "marsh" });
+  assert.equal((style.layers[2]!.paint as Record<string, unknown> | undefined)?.color, undefined);
   for (const words of [
     "fog",
     "background-pattern",
-    "pattern fills",
+    "line patterns and patterns that change per feature",
+    "mixed",
+    "rails",
     "fill-color",
     "frobnicate",
     "sky layers",
