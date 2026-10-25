@@ -113,6 +113,8 @@ To read a layer back, use `getFilter(id)`, `getPaintProperty(id, name)` and `get
 
 `styleload` fires after every `setStyle`, so a handler that adds your own layers on top of a style keeps working when you switch.
 
+If the style has a [`transition`](style.md#transitions), `setPaintProperty` and `setStyle` fade from the old colors and sizes to the new ones instead of jumping. `setPaintProperty("roads", "colorTransition", { duration: 500 })` sets the timing for one property.
+
 When an edit changes which features a layer draws, Maplet rebuilds the tiles in the background and keeps the old ones on screen until the new ones are ready.
 
 ## GeoJSON
