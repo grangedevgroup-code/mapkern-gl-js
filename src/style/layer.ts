@@ -267,7 +267,13 @@ export class StyleLayer {
     }
     target.set(
       name,
-      compile(value === undefined ? def.default : value, def.kind, def.default, `${this.id}.${group}.${name}`),
+      compile(
+        value === undefined ? def.default : value,
+        def.kind,
+        def.default,
+        `${this.id}.${group}.${name}`,
+        group === "paint",
+      ),
     );
   }
 }
