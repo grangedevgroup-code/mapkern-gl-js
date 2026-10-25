@@ -324,6 +324,13 @@ export interface SkySpec {
   horizonBlend?: Value<number>;
 }
 
+export interface SunSpec {
+  time?: "now" | string | number;
+  night?: Color;
+  twilight?: number;
+  shade?: boolean;
+}
+
 export interface StyleSpec {
   version: 1;
   name?: string;
@@ -335,6 +342,7 @@ export interface StyleSpec {
   layers: LayerSpec[];
   terrain?: TerrainSpec;
   sky?: SkySpec;
+  sun?: SunSpec;
   fonts?: Record<string, string[]>;
   sprite?: string | { id: string; url: string }[];
   glyphs?: string;
