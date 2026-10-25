@@ -1,7 +1,8 @@
 import { ringArea } from "../formats/mvt.ts";
 import { triangulate } from "../render/tessellate.ts";
 
-export const LINE_STRIDE = 20;
+export const LINE_STRIDE = 24;
+const MAX_JOINT_SCALE = 4;
 export const FILL_STRIDE = 8;
 export const CIRCLE_STRIDE = 12;
 export const EXTRUDE_SCALE = 2048;
@@ -134,9 +135,35 @@ export class LineBuilder {
   private lens = new Float64Array(256);
   private pairLeft = -1;
   private pairRight = -1;
+  private shiftX = 0;
+  private shiftY = 0;
 
   constructor(options: LineOptions) {
     this.options = options;
+  }
+
+  private shift(x: number, y: number): void {
+    this.shiftX = x;
+    this.shiftY = y;
+  }
+
+  private jointShift(s0: number, s1: number): void {
+    const dirs = this.dirs;
+    const n0x = -dirs[s0 * 2 + 1]!;
+    const n0y = dirs[s0 * 2]!;
+    const n1x = -dirs[s1 * 2 + 1]!;
+    const n1y = dirs[s1 * 2]!;
+    const mx = n0x + n1x;
+    const my = n0y + n1y;
+    const len2 = mx * mx + my * my;
+    if (len2 < 1e-12) {
+      this.shift(n0x, n0y);
+      return;
+    }
+    let scale = 2 / len2;
+    const length = Math.sqrt(len2) * scale;
+    if (length > MAX_JOINT_SCALE) scale *= MAX_JOINT_SCALE / length;
+    this.shift(mx * scale, my * scale);
   }
 
   private vertex(
@@ -163,6 +190,8 @@ export class LineBuilder {
     v.setInt8(o + 11, 0);
     v.setFloat32(o + 12, dist, true);
     v.setUint32(o + 16, feature, true);
+    v.setInt16(o + 20, clamp16(Math.round(this.shiftX * EXTRUDE_SCALE)), true);
+    v.setInt16(o + 22, clamp16(Math.round(this.shiftY * EXTRUDE_SCALE)), true);
     this.vertices.length = o + LINE_STRIDE;
     return this.vertexCount++;
   }
@@ -208,6 +237,7 @@ export class LineBuilder {
     let firstR = -1;
     let dist = 0;
     if (closed && this.simple(segments - 1, 0)) {
+      this.jointShift(segments - 1, 0);
       this.miterPair(pts[0]!, pts[1]!, segments - 1, 0, 0, feature);
       pairL = this.pairLeft;
       pairR = this.pairRight;
@@ -230,6 +260,8 @@ export class LineBuilder {
       let startL = pairL;
       let startR = pairR;
       if (startL < 0) {
+        if (s === 0 && !closed) this.shift(nx, ny);
+        else this.jointShift(s === 0 ? segments - 1 : s - 1, s);
         startL = this.vertex(ax, ay, nx, ny, 0, 1, false, d0, feature);
         startR = this.vertex(ax, ay, -nx, -ny, 0, -1, false, d0, feature);
         if (s === 0 && !closed) this.cap(ax, ay, -dx, -dy, d0, feature);
@@ -245,12 +277,15 @@ export class LineBuilder {
         pairL = -1;
         pairR = -1;
       } else if (hasJoin && this.simple(s, next)) {
+        this.jointShift(s, next);
         this.miterPair(bx, by, s, next, d1, feature);
         endL = this.pairLeft;
         endR = this.pairRight;
         pairL = endL;
         pairR = endR;
       } else {
+        if (hasJoin) this.jointShift(s, next);
+        else this.shift(nx, ny);
         endL = this.vertex(bx, by, nx, ny, 0, 1, false, d1, feature);
         endR = this.vertex(bx, by, -nx, -ny, 0, -1, false, d1, feature);
         pairL = -1;
