@@ -19,6 +19,7 @@ import type { Tile } from "../tiles/tile.ts";
 import type { DrapeEntry, RenderView } from "./drape.ts";
 import { DrapeCache, Hash, SlotView } from "./drape.ts";
 import type { GL, Program } from "./gl.ts";
+import type { ImageAtlas } from "./images.ts";
 import type { PendingRead } from "./pick.ts";
 import { PickBuffer } from "./pick.ts";
 import { hillshadeShader } from "./shaders/hillshade.ts";
@@ -127,6 +128,10 @@ export class Painter {
   private readonly hue = new Float32Array(9);
   private readonly vector: VectorPainter;
   readonly labels: LabelRenderer;
+
+  get images(): ImageAtlas {
+    return this.labels.images;
+  }
   private readonly pickBuffer: PickBuffer;
 
   constructor(gl: GL) {
