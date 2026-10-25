@@ -381,3 +381,44 @@ test("a transform used for measuring can leave the world", () => {
   close(t.zoom, -1);
   close(t.centerWorld[1], mercatorY(85));
 });
+
+test("a tilted map keeps the near side on the world and lets the far side reach the horizon", () => {
+  for (const [lat, zoom] of [
+    [0, -2],
+    [80, 2],
+    [-80, 2],
+  ] as const) {
+    for (const bearing of [0, 30, 180]) {
+      const t = new Transform();
+      t.setZoomRange(MIN_ZOOM, 22);
+      t.resize(800, 600);
+      t.setPitch(60);
+      t.setBearing(bearing);
+      t.setZoom(zoom);
+      t.setCenter(10, lat);
+      for (const [, y] of corners(t).slice(2)) {
+        assert.ok(y >= -1e-9 && y <= 1 + 1e-9, `lat ${lat} bearing ${bearing}: near corner at y ${y}`);
+      }
+    }
+  }
+});
+
+test("tilting raises the lowest zoom a little, since the near side of a tilted view reaches farther", () => {
+  const t = new Transform();
+  t.setZoomRange(MIN_ZOOM, 22);
+  t.resize(800, 600);
+  const flat = t.lowestZoom;
+  t.setPitch(60);
+  assert.ok(t.lowestZoom > flat && t.lowestZoom < flat + 0.5, `flat ${flat}, tilted ${t.lowestZoom}`);
+});
+
+test("tilting near a pole keeps the camera where it was", () => {
+  const t = new Transform();
+  t.setZoomRange(MIN_ZOOM, 22);
+  t.resize(800, 600);
+  t.setZoom(2);
+  t.setCenter(10, 70);
+  const before = t.centerWorld[1];
+  t.setPitch(60);
+  close(t.centerWorld[1], before);
+});
