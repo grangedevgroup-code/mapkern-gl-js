@@ -154,6 +154,7 @@ await map.once("idle");
 - `boxzoomstart`, `boxzoomend` and `boxzoomcancel` around a Shift-drag box zoom.
 - `click`, `dblclick`, `contextmenu`, `mousemove`, `mousedown`, `mouseup` and `mouseout` (the pointer left the map) carry `point` (`{ x, y }`) and `lngLat`. Call `event.preventDefault()` in `dblclick` to stop the zoom, or in `mousedown` to keep that press from moving the map.
 - `sourcedata` when a source loads (`kind: "metadata"`), gets new data (`"content"`) or fails (`"error"`).
+- `styleimagemissing` when a layer needs an [image](#images) that hasn't been added.
 - `error` with a `MapletError` in `event.error`.
 - `contextlost` and `contextrestored` if the browser drops the GPU context. Maplet reloads what it needs on its own.
 
@@ -287,6 +288,26 @@ map.on("click", "parks", (event) => {
 Popups close when someone clicks the map, presses the × button or presses Escape inside them, and when you call `remove()`. `closeOnClick: false` and `closeButton: false` switch the first two off, and `closeOnMove: true` also closes the popup when the map starts moving. A popup opens on the side with the most room unless you set `anchor`, and `offset` moves it away from the point: a number, `[x, y]`, or one value per anchor. `maxWidth` is `"240px"` unless you say otherwise. `trackPointer()` makes the popup follow the mouse instead of a place. Popups fire `open` and `close`, and `isOpen()` tells you which state they're in.
 
 For screen readers, a marker with a popup acts as a button and a popup is a labelled dialog. Focus moves into a popup when it opens, unless you pass `focusAfterOpen: false`, and goes back to its marker when it closes. The labels come from the map's `locale` option.
+
+## Images
+
+```js
+const image = await map.loadImage("icons/cafe.png");
+map.addImage("cafe", image);
+map.addLayer({ id: "cafes", type: "symbol", source: "places", layout: { icon: "cafe", text: ["get", "name"], anchor: "top", offset: [0, 1] } });
+```
+
+`addImage(name, image, options)` takes an `<img>` that has finished loading, a canvas, an `ImageBitmap`, an `ImageData`, or `{ width, height, data }` with RGBA bytes. Pass `pixelRatio: 2` for an image drawn at double resolution, and `sdf: true` for a distance field that `iconColor` can paint. `loadImage(url)` fetches an image the same way tiles are fetched, so `transformRequest` applies to it.
+
+`updateImage(name, image)` swaps the pixels, which is how you animate an icon. `hasImage`, `removeImage` and `listImages` do what they say. Images you add stay through `setStyle`; images from a style's sprite are replaced by the new style's.
+
+When a layer asks for an image that doesn't exist, the map fires `styleimagemissing` with the `id`. Add the image in the listener and it appears straight away, which lets you draw icons on demand:
+
+```js
+map.on("styleimagemissing", ({ id }) => {
+  if (id.startsWith("dot-")) map.addImage(id, drawDot(id.slice(4)));
+});
+```
 
 ## Tile files from the user's computer
 
