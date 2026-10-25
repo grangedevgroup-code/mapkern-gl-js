@@ -1,5 +1,7 @@
-import type { MapletMap } from "../core/map.ts";
-import { distanceMeters } from "../geo/mercator.ts";
+import { Emitter } from "../core/events.ts";
+import type { FitBoundsOptions, MapletMap } from "../core/map.ts";
+import { distanceMeters, metersPerPixel } from "../geo/mercator.ts";
+import { Marker } from "./marker.ts";
 import { safeLinkFragment } from "./sanitize.ts";
 
 export type ControlPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -272,4 +274,353 @@ function niceNumber(n: number): number {
   const d = n / pow;
   const nice = d >= 5 ? 5 : d >= 3 ? 3 : d >= 2 ? 2 : 1;
   return nice * pow;
+}
+
+const EXPAND = ["M4 9V4h5", "M20 9V4h-5", "M4 15v5h5", "M20 15v5h-5"];
+const COLLAPSE = ["M9 4v5H4", "M15 4v5h5", "M9 20v-5H4", "M15 20v-5h5"];
+
+export interface FullscreenOptions {
+  container?: HTMLElement;
+}
+
+export interface FullscreenEvent {
+  readonly target: FullscreenControl;
+  readonly type: "fullscreenstart" | "fullscreenend";
+}
+
+export interface FullscreenEvents {
+  fullscreenstart: FullscreenEvent;
+  fullscreenend: FullscreenEvent;
+}
+
+type FullscreenDocument = Document & { webkitFullscreenElement?: Element | null; webkitExitFullscreen?: () => void };
+type FullscreenElement = HTMLElement & { webkitRequestFullscreen?: () => void };
+
+export class FullscreenControl extends Emitter<FullscreenEvents> implements Control {
+  readonly defaultPosition: ControlPosition = "top-right";
+  private readonly options: FullscreenOptions;
+  private map: MapletMap | null = null;
+  private target: FullscreenElement | null = null;
+  private element: HTMLElement | null = null;
+  private button: HTMLButtonElement | null = null;
+  private pseudo = false;
+  private active = false;
+
+  constructor(options: FullscreenOptions = {}) {
+    super();
+    this.options = { ...options };
+  }
+
+  onAdd(map: MapletMap): HTMLElement {
+    const doc = map.getContainer().ownerDocument;
+    this.map = map;
+    this.target = (this.options.container ?? map.getContainer()) as FullscreenElement;
+    const el = doc.createElement("div");
+    el.className = "maplet-control maplet-fullscreen";
+    this.button = button(doc, map.text("fullscreen"), "maplet-fullscreen-button", icon(doc, EXPAND), () =>
+      this.toggle(),
+    );
+    el.appendChild(this.button);
+    this.element = el;
+    doc.addEventListener("fullscreenchange", this.onChange);
+    doc.addEventListener("webkitfullscreenchange", this.onChange);
+    return el;
+  }
+
+  onRemove(map: MapletMap): void {
+    const doc = map.getContainer().ownerDocument as FullscreenDocument;
+    doc.removeEventListener("fullscreenchange", this.onChange);
+    doc.removeEventListener("webkitfullscreenchange", this.onChange);
+    if (this.pseudo) this.setPseudo(false);
+    else if (this.active) this.exit(doc);
+    this.element?.remove();
+    this.element = null;
+    this.map = null;
+  }
+
+  isFullscreen(): boolean {
+    return this.active;
+  }
+
+  toggle(): void {
+    const target = this.target;
+    const map = this.map;
+    if (!target || !map) return;
+    const doc = map.getContainer().ownerDocument as FullscreenDocument;
+    if (this.active) {
+      if (this.pseudo) this.setPseudo(false);
+      else this.exit(doc);
+      return;
+    }
+    const request = target.requestFullscreen?.bind(target) ?? target.webkitRequestFullscreen?.bind(target);
+    if (!request) {
+      this.setPseudo(true);
+      return;
+    }
+    const result = request() as Promise<void> | undefined;
+    result?.catch(() => this.setPseudo(true));
+  }
+
+  private exit(doc: FullscreenDocument): void {
+    if (doc.exitFullscreen) doc.exitFullscreen().catch(() => {});
+    else doc.webkitExitFullscreen?.();
+  }
+
+  private setPseudo(on: boolean): void {
+    this.pseudo = on;
+    this.target?.classList.toggle("maplet-pseudo-fullscreen", on);
+    this.changed(on);
+  }
+
+  private readonly onChange = (): void => {
+    const doc = this.map?.getContainer().ownerDocument as FullscreenDocument | undefined;
+    if (!doc) return;
+    const current = doc.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+    this.changed(current === this.target);
+  };
+
+  private changed(on: boolean): void {
+    if (on === this.active) return;
+    this.active = on;
+    const b = this.button;
+    const map = this.map;
+    if (b && map) {
+      const label = map.text(on ? "exitFullscreen" : "fullscreen");
+      b.title = label;
+      b.setAttribute("aria-label", label);
+      b.setAttribute("aria-pressed", String(on));
+      b.replaceChildren(icon(b.ownerDocument, on ? COLLAPSE : EXPAND));
+    }
+    map?.resize();
+    this.emit(on ? "fullscreenstart" : "fullscreenend", {
+      target: this,
+      type: on ? "fullscreenstart" : "fullscreenend",
+    });
+  }
+}
+
+const TARGET = ["M12 3v3", "M12 18v3", "M3 12h3", "M18 12h3", "M12 7a5 5 0 1 0 0.01 0z"];
+
+export type GeolocateState = "off" | "waiting" | "active" | "background" | "error";
+
+export interface GeolocateOptions {
+  positionOptions?: PositionOptions;
+  fitBoundsOptions?: FitBoundsOptions;
+  trackUserLocation?: boolean;
+  showUserLocation?: boolean;
+  showAccuracyCircle?: boolean;
+}
+
+export interface GeolocateEvent {
+  readonly target: GeolocateControl;
+  readonly type: "geolocate";
+  readonly position: GeolocationPosition;
+}
+
+export interface GeolocateErrorEvent {
+  readonly target: GeolocateControl;
+  readonly type: "error";
+  readonly error: GeolocationPositionError;
+}
+
+export interface GeolocateTrackEvent {
+  readonly target: GeolocateControl;
+  readonly type: "trackuserlocationstart" | "trackuserlocationend";
+}
+
+export interface GeolocateEvents {
+  geolocate: GeolocateEvent;
+  error: GeolocateErrorEvent;
+  trackuserlocationstart: GeolocateTrackEvent;
+  trackuserlocationend: GeolocateTrackEvent;
+}
+
+export class GeolocateControl extends Emitter<GeolocateEvents> implements Control {
+  readonly defaultPosition: ControlPosition = "top-right";
+  private readonly options: Required<Omit<GeolocateOptions, "fitBoundsOptions">> & {
+    fitBoundsOptions: FitBoundsOptions;
+  };
+  private map: MapletMap | null = null;
+  private element: HTMLElement | null = null;
+  private button: HTMLButtonElement | null = null;
+  private watch: number | null = null;
+  private state: GeolocateState = "off";
+  private position: GeolocationPosition | null = null;
+  private dot: Marker | null = null;
+  private ring: Marker | null = null;
+  private ringElement: HTMLElement | null = null;
+
+  constructor(options: GeolocateOptions = {}) {
+    super();
+    this.options = {
+      positionOptions: options.positionOptions ?? { enableHighAccuracy: false, timeout: 6000 },
+      fitBoundsOptions: options.fitBoundsOptions ?? { maxZoom: 15 },
+      trackUserLocation: options.trackUserLocation === true,
+      showUserLocation: options.showUserLocation !== false,
+      showAccuracyCircle: options.showAccuracyCircle !== false,
+    };
+  }
+
+  onAdd(map: MapletMap): HTMLElement {
+    const doc = map.getContainer().ownerDocument;
+    this.map = map;
+    const el = doc.createElement("div");
+    el.className = "maplet-control maplet-geolocate";
+    this.button = button(doc, map.text("geolocate"), "maplet-geolocate-button", icon(doc, TARGET), () =>
+      this.trigger(),
+    );
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      this.button.disabled = true;
+      this.button.title = map.text("locationUnavailable");
+      this.button.setAttribute("aria-label", map.text("locationUnavailable"));
+    }
+    el.appendChild(this.button);
+    this.element = el;
+    map.on("movestart", this.onMoveStart);
+    map.on("zoom", this.onZoom);
+    return el;
+  }
+
+  onRemove(map: MapletMap): void {
+    map.off("movestart", this.onMoveStart);
+    map.off("zoom", this.onZoom);
+    this.stopWatch();
+    this.dot?.remove();
+    this.ring?.remove();
+    this.dot = null;
+    this.ring = null;
+    this.element?.remove();
+    this.element = null;
+    this.map = null;
+  }
+
+  getState(): GeolocateState {
+    return this.state;
+  }
+
+  trigger(): boolean {
+    const map = this.map;
+    if (!map || !this.button || this.button.disabled) return false;
+    const geo = navigator.geolocation;
+    if (!this.options.trackUserLocation) {
+      this.setState("waiting");
+      geo.getCurrentPosition(
+        (p) => {
+          this.found(p, true);
+          this.setState("off");
+        },
+        (e) => this.failed(e),
+        this.options.positionOptions,
+      );
+      return true;
+    }
+    if (this.state === "active" || this.state === "waiting") {
+      this.stopWatch();
+      this.setState("off");
+      this.dot?.remove();
+      this.ring?.remove();
+      this.emit("trackuserlocationend", { target: this, type: "trackuserlocationend" });
+      return true;
+    }
+    if (this.state === "background" && this.position) {
+      this.setState("active");
+      this.found(this.position, true);
+      this.emit("trackuserlocationstart", { target: this, type: "trackuserlocationstart" });
+      return true;
+    }
+    this.setState("waiting");
+    this.emit("trackuserlocationstart", { target: this, type: "trackuserlocationstart" });
+    this.watch = geo.watchPosition(
+      (p) => {
+        const first = this.state === "waiting";
+        if (first) this.setState("active");
+        this.found(p, this.state === "active");
+      },
+      (e) => this.failed(e),
+      this.options.positionOptions,
+    );
+    return true;
+  }
+
+  private found(p: GeolocationPosition, move: boolean): void {
+    const map = this.map;
+    if (!map) return;
+    this.position = p;
+    const lngLat: [number, number] = [p.coords.longitude, p.coords.latitude];
+    if (this.options.showUserLocation) {
+      if (!this.dot) {
+        const el = map.getContainer().ownerDocument.createElement("div");
+        el.className = "maplet-user-location";
+        this.dot = new Marker({ element: el, label: map.text("yourLocation") });
+      }
+      if (this.options.showAccuracyCircle && !this.ring) {
+        const ring = map.getContainer().ownerDocument.createElement("div");
+        ring.className = "maplet-user-accuracy";
+        this.ringElement = ring;
+        this.ring = new Marker({ element: ring, label: map.text("yourLocation") });
+      }
+      this.ring?.setLngLat(lngLat).addTo(map);
+      this.dot.setLngLat(lngLat).addTo(map);
+      this.sizeRing();
+    }
+    if (move) {
+      const lat = p.coords.latitude;
+      const meters = Math.max(10, p.coords.accuracy || 10);
+      const dLat = (meters / 111320) * 1.5;
+      const dLng = dLat / Math.max(0.05, Math.cos((lat * Math.PI) / 180));
+      this.moving = true;
+      map.fitBounds(
+        [
+          [lngLat[0] - dLng, lat - dLat],
+          [lngLat[0] + dLng, lat + dLat],
+        ],
+        { ...this.options.fitBoundsOptions, maxZoom: this.options.fitBoundsOptions.maxZoom ?? 15 },
+      );
+      this.moving = false;
+    }
+    this.emit("geolocate", { target: this, type: "geolocate", position: p });
+  }
+
+  private moving = false;
+
+  private failed(error: GeolocationPositionError): void {
+    if (error.code === error.PERMISSION_DENIED) {
+      this.stopWatch();
+      if (this.button) this.button.disabled = true;
+    }
+    this.setState("error");
+    this.emit("error", { target: this, type: "error", error });
+  }
+
+  private stopWatch(): void {
+    if (this.watch !== null) navigator.geolocation.clearWatch(this.watch);
+    this.watch = null;
+  }
+
+  private setState(state: GeolocateState): void {
+    this.state = state;
+    const b = this.button;
+    if (!b) return;
+    for (const s of ["waiting", "active", "background", "error"]) b.classList.toggle(`maplet-${s}`, s === state);
+    b.setAttribute("aria-pressed", String(state === "active" || state === "background"));
+  }
+
+  private sizeRing(): void {
+    const map = this.map;
+    const ring = this.ringElement;
+    const p = this.position;
+    if (!map || !ring || !p) return;
+    const size = Math.max(0, (2 * (p.coords.accuracy || 0)) / metersPerPixel(p.coords.latitude, map.getZoom()));
+    ring.style.width = `${size}px`;
+    ring.style.height = `${size}px`;
+  }
+
+  private readonly onZoom = (): void => {
+    this.sizeRing();
+  };
+
+  private readonly onMoveStart = (event: { originalEvent?: Event | undefined }): void => {
+    if (this.moving || !event.originalEvent) return;
+    if (this.state === "active") this.setState("background");
+  };
 }
