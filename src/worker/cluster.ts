@@ -89,12 +89,24 @@ export class ClusterTree {
     const cx1 = Math.min(n - 1, Math.floor(x1 * n));
     const cy0 = Math.max(0, Math.floor(y0 * n));
     const cy1 = Math.min(n - 1, Math.floor(y1 * n));
+    const take = (list: readonly number[]) => {
+      for (const i of list) {
+        const e = entities[i]!;
+        if (e.x >= x0 && e.x <= x1 && e.y >= y0 && e.y <= y1) out.push(e);
+      }
+    };
+    if ((cx1 - cx0 + 1) * (cy1 - cy0 + 1) > grid.size) {
+      for (const [key, list] of grid) {
+        const cy = Math.floor(key / n);
+        const cx = key - cy * n;
+        if (cx >= cx0 && cx <= cx1 && cy >= cy0 && cy <= cy1) take(list);
+      }
+      return out;
+    }
     for (let cy = cy0; cy <= cy1; cy++) {
       for (let cx = cx0; cx <= cx1; cx++) {
-        for (const i of grid.get(cy * n + cx) ?? []) {
-          const e = entities[i]!;
-          if (e.x >= x0 && e.x <= x1 && e.y >= y0 && e.y <= y1) out.push(e);
-        }
+        const list = grid.get(cy * n + cx);
+        if (list) take(list);
       }
     }
     return out;
@@ -141,29 +153,32 @@ export class ClusterTree {
 
   private cluster(points: readonly Entity[], z: number): Entity[] {
     const r = this.settings.radius / (512 * 2 ** z);
-    const cols = Math.ceil(1 / r) + 3;
-    const keyOf = (x: number, y: number) => (y + 1) * cols + (x + 1);
-    const hash = new Map<number, number[]>();
-    points.forEach((p, i) => {
-      const key = keyOf(Math.floor(p.x / r), Math.floor(p.y / r));
-      const list = hash.get(key);
-      if (list) list.push(i);
-      else hash.set(key, [i]);
-    });
+    const size = r * 2;
+    const cols = Math.ceil(1 / size) + 3;
+    const cells = new CellHash(points.length);
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i]!;
+      cells.add((Math.floor(p.y / size) + 1) * cols + Math.floor(p.x / size) + 1, i);
+    }
     const visited = new Uint8Array(points.length);
     const out: Entity[] = [];
     const r2 = r * r;
+    const near: number[] = [];
     for (let i = 0; i < points.length; i++) {
       if (visited[i]) continue;
       visited[i] = 1;
       const p = points[i]!;
-      const cx = Math.floor(p.x / r);
-      const cy = Math.floor(p.y / r);
-      const near: number[] = [];
+      const gx = p.x / size;
+      const gy = p.y / size;
+      const cx = Math.floor(gx) + 1;
+      const cy = Math.floor(gy) + 1;
+      const sideX = gx - Math.floor(gx) < 0.5 ? -1 : 1;
+      const sideY = gy - Math.floor(gy) < 0.5 ? -1 : 1;
+      near.length = 0;
       let total = p.count;
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          for (const j of hash.get(keyOf(cx + dx, cy + dy)) ?? []) {
+      for (let dy = 0; dy !== sideY * 2; dy += sideY) {
+        for (let dx = 0; dx !== sideX * 2; dx += sideX) {
+          for (let j = cells.first((cy + dy) * cols + cx + dx); j !== -1; j = cells.next[j]!) {
             if (visited[j]) continue;
             const q = points[j]!;
             const ex = q.x - p.x;
@@ -209,6 +224,47 @@ export class ClusterTree {
       out.push({ x: cluster.x, y: cluster.y, count: total, cluster: id, leaf: -1, values });
     }
     return out;
+  }
+}
+
+class CellHash {
+  readonly next: Int32Array;
+  private readonly keys: Float64Array;
+  private readonly heads: Int32Array;
+  private readonly mask: number;
+
+  constructor(count: number) {
+    let capacity = 16;
+    while (capacity < count * 2) capacity *= 2;
+    this.mask = capacity - 1;
+    this.keys = new Float64Array(capacity).fill(-1);
+    this.heads = new Int32Array(capacity).fill(-1);
+    this.next = new Int32Array(Math.max(1, count)).fill(-1);
+  }
+
+  add(key: number, index: number): void {
+    const slot = this.slot(key);
+    if (this.keys[slot] === -1) this.keys[slot] = key;
+    this.next[index] = this.heads[slot]!;
+    this.heads[slot] = index;
+  }
+
+  first(key: number): number {
+    const slot = this.slot(key);
+    return this.keys[slot] === key ? this.heads[slot]! : -1;
+  }
+
+  private slot(key: number): number {
+    const lo = key % 4294967296;
+    const hi = (key - lo) / 4294967296;
+    let h = Math.imul(lo ^ Math.imul(hi, 0x9e3779b1), 0x85ebca6b);
+    h ^= h >>> 15;
+    let slot = h & this.mask;
+    for (;;) {
+      const k = this.keys[slot]!;
+      if (k === -1 || k === key) return slot;
+      slot = (slot + 1) & this.mask;
+    }
   }
 }
 
