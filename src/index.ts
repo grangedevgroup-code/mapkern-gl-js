@@ -39,6 +39,7 @@ export { distanceMeters, lngLatToWorld, metersPerPixel, worldToLngLat } from "./
 export type { DemSource } from "./sources/dem.ts";
 export { openTileFile } from "./sources/files.ts";
 export type { GeoJSONSource } from "./sources/geojson.ts";
+export type { Corners, ImageSource } from "./sources/image.ts";
 export type { RasterSource } from "./sources/raster.ts";
 export type { VectorSource } from "./sources/vector.ts";
 export type { FeatureTarget } from "./style/feature-state.ts";
