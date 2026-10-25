@@ -38,14 +38,56 @@ test("a shape in a courtyard is not inside the building around it", () => {
   assert.deepEqual(hidden([block, yard]), [0, 0]);
 });
 
-test("of two identical shapes exactly one is drawn", () => {
+test("copies at the same height both stay, since neither hides anything", () => {
   const a = shape([square(0, 0, 100, 100)], 0, 30);
   const b = shape([square(0, 0, 100, 100)], 0, 30);
-  assert.deepEqual(hidden([a, b]), [1, 0]);
+  const inner = shape([square(10, 10, 90, 90)], 0, 30);
+  assert.deepEqual(hidden([a, b, inner]), [0, 0, 0]);
+});
+
+test("an outline whose parts stop far below its top stays", () => {
+  const outline = shape([square(0, 0, 100, 100)], 0, 22);
+  const groundFloor = shape([square(0, 0, 100, 100)], 0, 5);
+  assert.deepEqual(hidden([outline, groundFloor]), [0, 0]);
 });
 
 test("neighbours that share a wall stay", () => {
   const left = shape([square(0, 0, 100, 100)], 0, 30);
   const right = shape([square(100, 0, 200, 100)], 0, 20);
   assert.deepEqual(hidden([left, right]), [0, 0]);
+});
+
+test("outlines are hidden by default only on building tile layers", async () => {
+  const { StyleLayer } = await import("../../src/style/layer.ts");
+  const { layerProgram } = await import("../../src/sources/vector.ts");
+  const outlines = (spec: Record<string, unknown>) =>
+    layerProgram(new StyleLayer({ id: "b", type: "extrusion", source: "s", ...spec } as never))?.layout.outlines;
+  const paint = { height: ["get", "render_height"], base: ["get", "render_min_height"] };
+  assert.deepEqual(outlines({ sourceLayer: "building", paint }), paint);
+  assert.deepEqual(outlines({ sourceLayer: "Buildings" }), { height: 0, base: 0 });
+  assert.equal(outlines({ sourceLayer: "landuse", paint }), undefined);
+  assert.equal(outlines({ paint }), undefined);
+  assert.equal(outlines({ sourceLayer: "building", layout: { hideOutlines: false }, paint }), undefined);
+  assert.deepEqual(outlines({ layout: { hideOutlines: true }, paint }), paint);
+  assert.throws(() => outlines({ layout: { hideOutlines: "yes" } }), /true or false/);
+});
+
+test("changing a building's height paint reaches new tiles without rebuilding the old ones", async () => {
+  const { StyleLayer } = await import("../../src/style/layer.ts");
+  const { LayerPrograms } = await import("../../src/sources/vector.ts");
+  const layer = new StyleLayer({
+    id: "b",
+    type: "extrusion",
+    source: "s",
+    sourceLayer: "building",
+    paint: { height: ["get", "render_height"] },
+  });
+  const programs = new LayerPrograms();
+  programs.update([layer]);
+  layer.setPaint("height", ["*", 2, ["get", "render_height"]]);
+  assert.equal(programs.update([layer]), false);
+  const outlines = programs.programs[0]!.layout.outlines as { height: unknown };
+  assert.deepEqual(outlines.height, ["*", 2, ["get", "render_height"]]);
+  layer.setLayout("hideOutlines", false);
+  assert.equal(programs.update([layer]), true);
 });
