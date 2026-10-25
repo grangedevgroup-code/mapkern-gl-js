@@ -249,6 +249,25 @@ export const CSS = `
 .maplet-popup-anchor-bottom-right .maplet-popup-content {
   border-bottom-right-radius: 0;
 }
+.maplet-cooperative {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(16, 25, 29, 0.5);
+  color: #ffffff;
+  font-size: 18px;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.maplet-cooperative.maplet-visible {
+  opacity: 1;
+}
 .maplet-pseudo-fullscreen {
   position: fixed !important;
   inset: 0 !important;
@@ -334,6 +353,9 @@ export const CSS = `
   }
   .maplet-geolocate-button.maplet-waiting svg {
     animation: none;
+  }
+  .maplet-cooperative {
+    transition: none;
   }
 }
 `;
