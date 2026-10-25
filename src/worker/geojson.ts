@@ -1,5 +1,5 @@
 import type { FeatureType, PropertyValue, VectorFeature } from "../formats/mvt.ts";
-import { numericId, ringArea } from "../formats/mvt.ts";
+import { featureKey, ringArea } from "../formats/mvt.ts";
 import { ALWAYS_KEEP, clipLine, clipRing, rankVertices, reverseRing, ringBounds, signedArea } from "../geo/clip.ts";
 import type { Geometry, Position } from "../geo/geojson.ts";
 import { latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY } from "../geo/mercator.ts";
@@ -13,11 +13,12 @@ export interface GeoJSONOptions {
   buffer: number;
   extent: number;
   promoteId?: string | undefined;
+  generateId?: boolean | undefined;
 }
 
 export interface QueriedSourceFeature {
   index: number;
-  id: number | undefined;
+  id: number | string | undefined;
   properties: Record<string, PropertyValue>;
   geometry: Geometry | null;
 }
@@ -31,6 +32,7 @@ export interface GeoJSONSummary {
 
 interface SourceFeature {
   readonly id: number | undefined;
+  readonly textId?: string | undefined;
   readonly index: number;
   readonly properties: Record<string, PropertyValue>;
 }
@@ -71,7 +73,7 @@ export class GeoJSONIndex {
 
   constructor(data: unknown, options: GeoJSONOptions) {
     this.options = options;
-    const { items, originals, features, bounds } = readGeoJSON(data, options.promoteId);
+    const { items, originals, features, bounds } = readGeoJSON(data, options.promoteId, options.generateId === true);
     this.originals = originals;
     let vertices = 0;
     let coverage: Rect | null = null;
@@ -115,7 +117,7 @@ export class GeoJSONIndex {
       const geometries = items.map(itemGeometry);
       return {
         index,
-        id: feature?.id,
+        id: feature?.textId ?? feature?.id,
         properties: feature?.properties ?? {},
         geometry:
           geometries.length === 0
@@ -216,6 +218,7 @@ interface Grid {
 
 class TileFeature implements VectorFeature {
   readonly id: number | undefined;
+  readonly textId: string | undefined;
   readonly source: number;
   readonly type: FeatureType;
   readonly extent: number;
@@ -224,6 +227,7 @@ class TileFeature implements VectorFeature {
 
   constructor(item: Item, parts: Int32Array[], extent: number) {
     this.id = item.feature.id;
+    this.textId = item.feature.textId;
     this.source = item.feature.index;
     this.type = item.type;
     this.extent = extent;
@@ -418,10 +422,12 @@ function shifted(item: Item, dx: number): Item {
 function readGeoJSON(
   data: unknown,
   promoteId: string | undefined,
+  generateId: boolean,
 ): { items: Item[]; originals: Item[]; features: number; bounds: Rect | null } {
   const items: Item[] = [];
   const originals: Item[] = [];
   let features = 0;
+  let order = 0;
   let bounds: Rect | null = null;
   const add = (geometry: unknown, feature: SourceFeature): boolean => {
     if (typeof geometry !== "object" || geometry === null) return false;
@@ -447,10 +453,18 @@ function readGeoJSON(
       if (Array.isArray(n.features)) for (const f of n.features) visit(f);
     } else if (n.type === "Feature") {
       const properties = readProperties(n.properties);
-      const raw = promoteId !== undefined && properties[promoteId] !== undefined ? properties[promoteId] : n.id;
-      if (add(n.geometry, { id: numericId(raw), index: features, properties })) features++;
-    } else if (add(n, { id: undefined, index: features, properties: {} })) {
-      features++;
+      const position = order++;
+      const raw = generateId
+        ? position
+        : promoteId !== undefined && properties[promoteId] !== undefined
+          ? properties[promoteId]
+          : n.id;
+      const id = featureKey(raw);
+      const textId = typeof raw === "string" && id !== undefined ? raw : undefined;
+      if (add(n.geometry, { id, textId, index: features, properties })) features++;
+    } else {
+      const position = order++;
+      if (add(n, { id: generateId ? position : undefined, index: features, properties: {} })) features++;
     }
   };
   visit(data);
