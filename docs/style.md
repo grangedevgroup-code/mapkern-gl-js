@@ -348,6 +348,7 @@ Here's what else is available:
 - Types: `to-string`, `to-number`, `to-boolean`, `to-color`, `typeof`, and `number`, `string`, `boolean`, `array` and `object`, which return the first of their arguments that has that type, or `null`.
 - Images: `image`, which returns the name of an [icon](#icons) when it exists and `null` when it doesn't.
 - Heatmaps: `heatmap-density`, for a [heatmap](#heatmap) `color`.
+- Areas: `within`, which is true for points and lines that lie entirely inside a GeoJSON polygon, such as `["within", { "type": "Polygon", "coordinates": [...] }]`. It works in filters only, since it needs the shape of each feature.
 - Colors: `rgb`, `rgba`, `hsl`, `hsla`, `to-rgba` and `to-hsla`.
 - Names: `let` and `var`, for working something out once and using it twice.
 
