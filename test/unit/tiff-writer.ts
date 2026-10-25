@@ -94,7 +94,7 @@ export function writeTiff(o: WriteOptions): Uint8Array {
   } else {
     v.setUint32(4, ifdOffset, o.little);
   }
-  blocks.forEach((b, i) => out.set(b, offsets[i]!));
+  for (let i = 0; i < blocks.length; i++) out.set(blocks[i]!, offsets[i]!);
   const put = (at: number, type: number, values: number[]) => {
     values.forEach((value, i) => {
       const p = at + i * size[type]!;
