@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { overlayWraps, projectiveWeights } from "../../src/sources/image.ts";
+import { validateLayer, validateSource } from "../../src/style/validate.ts";
 
 type Point = readonly [number, number];
 
@@ -115,4 +116,29 @@ test("overlays are drawn once for every world copy they show up in", () => {
   assert.deepEqual(overlayWraps(box, [0.9, 0, 1.3, 1], false), []);
   assert.deepEqual(overlayWraps(box, [0, 0.5, 1, 1], true), []);
   assert.deepEqual(overlayWraps([0.97, 0.4, 1.03, 0.5], [0, 0, 0.1, 1], true), [-1]);
+});
+
+test("image, video and canvas sources are checked before they load", () => {
+  const corners = [
+    [-20, 20],
+    [20, 20],
+    [20, -20],
+    [-20, -20],
+  ];
+  assert.deepEqual(validateSource("a", { type: "image", url: "a.png", coordinates: corners }), []);
+  assert.deepEqual(validateSource("a", { type: "video", urls: ["a.webm", "a.mp4"], coordinates: corners }), []);
+  assert.deepEqual(validateSource("a", { type: "canvas", canvas: "paint", coordinates: corners, animate: false }), []);
+  const paths = (source: unknown) => validateSource("a", source).map((issue) => issue.path);
+  assert.deepEqual(paths({ type: "image", coordinates: corners }), ["sources.a.url"]);
+  assert.deepEqual(paths({ type: "image", url: "a.png", coordinates: corners.slice(0, 3) }), ["sources.a.coordinates"]);
+  assert.deepEqual(paths({ type: "video", urls: [], coordinates: corners }), ["sources.a.urls"]);
+  assert.deepEqual(paths({ type: "canvas", canvas: 7, coordinates: corners }), ["sources.a.canvas"]);
+  assert.deepEqual(paths({ type: "image", url: "a.png", coordinates: corners, tiles: [] }), ["sources.a.tiles"]);
+});
+
+test("only raster layers can show an image source", () => {
+  const sources = { pic: { type: "image" as const, url: "a.png", coordinates: [] } };
+  assert.deepEqual(validateLayer({ id: "r", type: "raster", source: "pic" }, "layers[0]", sources), []);
+  const issues = validateLayer({ id: "f", type: "fill", source: "pic" }, "layers[0]", sources);
+  assert.equal(issues[0]?.message, "fill layers need a vector or geojson source");
 });
