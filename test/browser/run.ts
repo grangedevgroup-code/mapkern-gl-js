@@ -1086,6 +1086,171 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "icons from addImage and sprites sit on their points",
+    async run({ page, base, shot }) {
+      const point = (lng: number, lat: number, properties: Record<string, unknown>) => ({
+        type: "Feature",
+        properties,
+        geometry: { type: "Point", coordinates: [lng, lat] },
+      });
+      const style = JSON.stringify({
+        version: 1,
+        sprite: `${base}/fixture/sprite`,
+        sources: {
+          g: {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: [
+                point(-10, 0, { kind: "square" }),
+                point(10, 0, { kind: "green", name: "Green" }),
+                point(0, 8, { kind: "late" }),
+                point(0, -8, { kind: "sdf" }),
+              ],
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          {
+            id: "icons",
+            type: "symbol",
+            source: "g",
+            layout: {
+              icon: ["get", "kind"],
+              text: ["coalesce", ["get", "name"], ""],
+              anchor: "top",
+              offset: [0, 1],
+              allowOverlap: true,
+              iconAllowOverlap: true,
+            },
+            paint: { iconColor: "#0000ff" },
+          },
+        ],
+      });
+      await page.evaluate(`(async () => {
+        const solid = (r, g, b) => {
+          const data = new Uint8Array(16 * 16 * 4);
+          for (let i = 0; i < data.length; i += 4) data.set([r, g, b, 255], i);
+          return { width: 16, height: 16, data };
+        };
+        window.missing = [];
+        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: ${style} });
+        window.map.addImage("square", solid(255, 0, 0));
+        window.map.addImage("sdf", solid(255, 255, 255), { sdf: true });
+        window.map.on("styleimagemissing", (e) => {
+          window.missing.push(e.id);
+          if (e.id === "late") window.map.addImage("late", solid(255, 220, 0));
+        });
+        await window.map.once("idle");
+      })()`);
+      await page.waitFor("window.missing.includes('late')", 5000);
+      await idle(page);
+      await shot("icons");
+      const at = async (lng: number, lat: number, dx = 0) => {
+        const p = await page.evaluate<{ x: number; y: number }>(`window.map.project([${lng}, ${lat}])`);
+        return pixel(page, Math.round(p.x + dx), Math.round(p.y));
+      };
+      const red = await at(-10, 0);
+      const green = await at(10, 0);
+      const late = await at(0, 8);
+      const sdf = await at(0, -8);
+      if (!near(red, RED, 10)) fail(`expected the red square icon at -10,0, got ${red}`);
+      if (!near(green, GREEN, 10)) fail(`expected the green sprite icon at 10,0, got ${green}`);
+      if (!near(late, [255, 220, 0, 255], 10)) fail(`expected the icon added from styleimagemissing, got ${late}`);
+      if (!near(sdf, BLUE, 12)) fail(`expected the SDF icon tinted blue by iconColor, got ${sdf}`);
+      const missing = await page.evaluate<string[]>("window.missing");
+      if (JSON.stringify(missing) !== JSON.stringify(["late"]))
+        fail(`unexpected missing images ${JSON.stringify(missing)}`);
+      const listed = await page.evaluate<string[]>("window.map.listImages().sort()");
+      if (JSON.stringify(listed) !== JSON.stringify(["green", "late", "magenta", "sdf", "square"]))
+        fail(`listImages returned ${JSON.stringify(listed)}`);
+      const outside = await at(-10, 0, 12);
+      if (!near(outside, WHITE, 10)) fail(`a 16 px icon should not reach 12 px from its point, got ${outside}`);
+      await page.evaluate(`void window.map.setLayoutProperty("icons", "iconSize", 2)`);
+      await idle(page);
+      const grown = await at(-10, 0, 12);
+      if (!near(grown, RED, 10)) fail(`iconSize 2 should reach 12 px from the point, got ${grown}`);
+      const found = await page.evaluate<string[]>(`(async () => {
+        const p = window.map.project([-10, 0]);
+        const fs = await window.map.queryRenderedFeatures([p.x + 10, p.y]);
+        return fs.map((f) => f.properties.kind);
+      })()`);
+      if (JSON.stringify(found) !== JSON.stringify(["square"]))
+        fail(`query on the icon returned ${JSON.stringify(found)}`);
+      await page.evaluate(`void window.map.removeImage("square")`);
+      await idle(page);
+      const gone = await at(-10, 0);
+      if (!near(gone, WHITE, 10)) fail(`removeImage should take the icon away, got ${gone}`);
+      const duplicate = await page.evaluate<string>(
+        `(() => { try { window.map.addImage("green", { width: 1, height: 1, data: new Uint8Array(4) }); return "no error"; } catch (e) { return e.code; } })()`,
+      );
+      if (duplicate !== "invalid-option") fail(`adding an existing image name should fail, got ${duplicate}`);
+    },
+  },
+  {
+    name: "icons along a line turn with the line",
+    async run({ page, shot }) {
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          g: {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: [
+                {
+                  type: "Feature",
+                  properties: {},
+                  geometry: {
+                    type: "LineString",
+                    coordinates: [
+                      [5, 2],
+                      [5, 30],
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          {
+            id: "arrows",
+            type: "symbol",
+            source: "g",
+            layout: { placement: "line", spacing: 1000, icon: "arrow", iconAllowOverlap: true },
+          },
+        ],
+      });
+      await page.evaluate(`(async () => {
+        const data = new Uint8Array(24 * 12 * 4);
+        for (let y = 0; y < 12; y++) {
+          for (let x = 0; x < 24; x++) data.set(x < 12 ? [255, 0, 0, 255] : [0, 0, 255, 255], (y * 24 + x) * 4);
+        }
+        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [5, 16], zoom: 3, style: ${style} });
+        window.map.addImage("arrow", { width: 24, height: 12, data });
+        await window.map.once("idle");
+      })()`);
+      await idle(page);
+      await shot("line-icons");
+      const middle = latFromMercatorY((mercatorY(2) + mercatorY(30)) / 2);
+      const at = await page.evaluate<{ x: number; y: number }>(`window.map.project([5, ${middle}])`);
+      const above = await pixel(page, Math.round(at.x), Math.round(at.y - 6));
+      const below = await pixel(page, Math.round(at.x), Math.round(at.y + 6));
+      if (!near(above, BLUE, 12) || !near(below, RED, 12))
+        fail(`an icon on a line heading north should point its right side up, got ${above} above and ${below} below`);
+      await page.evaluate("void window.map.setBearing(90)");
+      await idle(page);
+      const turned = await page.evaluate<{ x: number; y: number }>(`window.map.project([5, ${middle}])`);
+      const left = await pixel(page, Math.round(turned.x - 6), Math.round(turned.y));
+      const right = await pixel(page, Math.round(turned.x + 6), Math.round(turned.y));
+      if (!near(left, BLUE, 12) || !near(right, RED, 12))
+        fail(`with east up the line heads left, so the icon should too: got ${left} left and ${right} right`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
