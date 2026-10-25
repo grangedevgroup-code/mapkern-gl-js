@@ -3517,6 +3517,71 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "tiles meet without cracks or doubled seams on rotated and tilted maps",
+    async run({ page, shot }) {
+      const world = {
+        type: "Feature",
+        properties: {},
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [-180, -85.06],
+              [180, -85.06],
+              [180, 85.06],
+              [-180, 85.06],
+              [-180, -85.06],
+            ],
+          ],
+        },
+      };
+      const style = JSON.stringify({
+        version: 1,
+        sources: { w: { type: "geojson", data: world } },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ff00ff" } },
+          { id: "w", type: "fill", source: "w", paint: { color: "#00aa00", opacity: 0.5 } },
+        ],
+        sky: { color: "#80557f", horizonColor: "#80557f", fogColor: "#80557f" },
+      });
+      await createMap(page, style, { zoom: 4, center: [10, 30] });
+      let worst = 0;
+      for (const [pitch, zoom, bearing] of [
+        [0, 15, 63],
+        [45, 3, 63],
+        [45, 9, 17],
+        [60, 3, 17],
+        [60, 9, 63],
+        [60, 15, 17],
+      ] as const) {
+        await page.evaluate(
+          `void window.map.jumpTo({ center: [10.123, 30.456], zoom: ${zoom}, pitch: ${pitch}, bearing: ${bearing} })`,
+        );
+        await idle(page);
+        const off = await page.evaluate<number>(`(() => {
+          const gl = window.map.getCanvas().getContext("webgl2");
+          const w = gl.drawingBufferWidth;
+          const h = gl.drawingBufferHeight;
+          const px = new Uint8Array(w * h * 4);
+          gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          let n = 0;
+          for (let i = 0; i < px.length; i += 4) {
+            if (Math.abs(px[i] - 128) > 8 || Math.abs(px[i + 1] - 85) > 8 || Math.abs(px[i + 2] - 128) > 8) n++;
+          }
+          return n;
+        })()`);
+        if (off > worst) {
+          worst = off;
+          await shot(`seams-${pitch}-${zoom}-${bearing}`);
+        }
+        if (off > 0)
+          fail(`pitch ${pitch}, zoom ${zoom}, bearing ${bearing}: ${off} pixels showed a crack or a doubled seam`);
+      }
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
