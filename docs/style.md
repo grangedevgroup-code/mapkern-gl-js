@@ -294,6 +294,7 @@ Apart from `variableAnchor`, every layout property also takes an expression, so 
 | `lineHeight` | 1.2 | Distance between wrapped lines, in font sizes |
 | `rotate` | 0 | per feature. Turns point labels, in degrees clockwise |
 | `rotationAlignment` | `auto` | `viewport` keeps text upright even when it's placed along a line, the way road shields usually are. `auto` and `map` let line labels follow the line |
+| `pitchAlignment` | `auto` | On a tilted map, `auto` and `map` lay labels that follow a line flat on the ground, so they shrink into the distance like the road under them. `viewport` keeps them facing the screen |
 | `maxWidth` | 10 | per feature. Wrap point labels after this many font sizes |
 | `letterSpacing` | 0 | per feature. Extra space between letters, in font sizes |
 | `padding` | 2 | Space kept clear around the label, in pixels |
@@ -473,7 +474,7 @@ const map = new maplet.Map({ container: "map", style: "https://tiles.openfreemap
 
 Property names lose their prefix and move to camel case, so `fill-color` becomes `color` and `text-halo-width` becomes `haloWidth`, `fill-extrusion` layers become `extrusion` layers, and a layer that borrows from another with `ref` gets its type, source, filter and layout. Filters and property functions in the older format, like `["==", "class", "park"]` or `{ "stops": [[5, 1], [10, 4]] }`, become expressions, `{name}` in a label becomes `["get", "name"]`, and relative addresses are read from where the style lives. Where the two formats disagree on a default, such as the text size or the tile size of raster sources, Maplet uses the one the style was written for. Labels are drawn in the style's own fonts from its `glyphs` server, see [Fonts](#fonts). A style without one uses the device's fonts, with `text-font` picking the family, weight and slant.
 
-A few things can't be drawn yet: patterns on lines and patterns that change per feature, `line-gradient`, `icon-text-fit`, text lying flat on tilted maps (`text-pitch-alignment: "map"`), `fog`, `sky` and the globe projection. When a style uses them, Maplet leaves out that property, or the layer when nothing else would make sense, and draws the rest. The `styleload` event lists what was left out in `event.skipped`. Addresses starting with `mapbox://` need Mapbox's own servers and are left out too.
+A few things can't be drawn yet: patterns on lines and patterns that change per feature, `line-gradient`, `icon-text-fit`, icons and point labels lying flat on tilted maps (`icon-pitch-alignment: "map"`), `fog`, `sky` and the globe projection. When a style uses them, Maplet leaves out that property, or the layer when nothing else would make sense, and draws the rest. The `styleload` event lists what was left out in `event.skipped`. Addresses starting with `mapbox://` need Mapbox's own servers and are left out too.
 
 `maplet.importStyle(style, url)` does the same conversion without a map and returns `{ style, skipped }`, if you'd like to look at the result or keep it.
 
