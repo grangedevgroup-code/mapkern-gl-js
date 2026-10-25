@@ -130,9 +130,10 @@ export interface FillLayerSpec extends SourceLayerBase {
     color?: Value<Color>;
     opacity?: Value<number>;
     outlineColor?: Value<Color>;
-    translate?: [number, number];
+    pattern?: Value<string>;
+    translate?: Value<[number, number]>;
     translateAnchor?: "map" | "viewport";
-    antialias?: boolean;
+    antialias?: Value<boolean>;
   } & Transitions<"color" | "opacity" | "outlineColor">;
   sortKey?: Value<number>;
 }
@@ -166,7 +167,7 @@ export interface CircleLayerSpec extends SourceLayerBase {
     strokeWidth?: Value<number>;
     strokeOpacity?: Value<number>;
     blur?: Value<number>;
-    translate?: [number, number];
+    translate?: Value<[number, number]>;
     translateAnchor?: "map" | "viewport";
     pitchScale?: "map" | "viewport";
     pitchAlignment?: "map" | "viewport";
@@ -230,9 +231,9 @@ export interface SymbolLayerSpec extends SourceLayerBase {
     haloWidth?: Value<number>;
     haloBlur?: Value<number>;
     opacity?: Value<number>;
-    translate?: [number, number];
+    translate?: Value<[number, number]>;
     translateAnchor?: "map" | "viewport";
-    iconTranslate?: [number, number];
+    iconTranslate?: Value<[number, number]>;
     iconTranslateAnchor?: "map" | "viewport";
     iconColor?: Value<Color>;
     iconHaloColor?: Value<Color>;
