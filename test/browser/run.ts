@@ -3439,16 +3439,28 @@ const specs: Spec[] = [
         el.style.height = "580px";
       })()`);
       await createMap(page, style, { zoom: -2, center: [0, 0] });
-      const blank = () =>
+      const blank = (nearHalf = false) =>
         page.evaluate<number>(`(() => {
           const gl = window.map.getCanvas().getContext("webgl2");
           const w = gl.drawingBufferWidth;
-          const h = gl.drawingBufferHeight;
+          const h = ${nearHalf ? "Math.floor(gl.drawingBufferHeight / 2)" : "gl.drawingBufferHeight"};
           const px = new Uint8Array(w * h * 4);
           gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
-          let n = 0;
-          for (let i = 0; i < px.length; i += 4) if (px[i] > 200 && px[i + 1] < 60 && px[i + 2] > 200) n++;
-          return n;
+          const rows = new Uint32Array(h);
+          const columns = new Uint32Array(w);
+          for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+              const i = (y * w + x) * 4;
+              if (px[i] > 200 && px[i + 1] < 60 && px[i + 2] > 200) {
+                rows[y]++;
+                columns[x]++;
+              }
+            }
+          }
+          let bands = 0;
+          for (const n of rows) if (n > w * 0.01) bands++;
+          for (const n of columns) if (n > h * 0.01) bands++;
+          return bands;
         })()`);
       const move = async (camera: Record<string, unknown>) => {
         await page.evaluate(`void window.map.jumpTo(${JSON.stringify(camera)})`);
@@ -3468,13 +3480,24 @@ const specs: Spec[] = [
       for (const lat of [89, -89]) {
         await move({ center: [0, lat], zoom: 1.5 });
         const left = await blank();
-        if (left > 0) fail(`panned to latitude ${lat}, ${left} pixels showed past the world`);
+        if (left > 0) fail(`panned to latitude ${lat}, ${left} rows or columns showed past the world`);
       }
       await shot("at-the-pole");
       await move({ center: [0, 0], zoom: -2, bearing: 45 });
       await shot("rotated");
       const rotated = await blank();
-      if (rotated > 0) fail(`rotated and zoomed out, ${rotated} pixels showed past the world`);
+      if (rotated > 0) fail(`rotated and zoomed out, ${rotated} rows or columns showed past the world`);
+      for (const [name, camera] of [
+        ["tilted-world", { center: [0, 0], zoom: -2, bearing: 0, pitch: 60 }],
+        ["tilted-north", { center: [10, 80], zoom: 2, bearing: 0, pitch: 60 }],
+        ["tilted-south-turned", { center: [10, -80], zoom: 2, bearing: 150, pitch: 60 }],
+      ] as const) {
+        await move(camera);
+        await shot(name);
+        const tilted = await blank(true);
+        if (tilted > 0) fail(`${name}: ${tilted} rows or columns of the near half showed past the world`);
+      }
+      await move({ pitch: 0 });
       await move({ bearing: 0, zoom: -2 });
       await move({ center: [-122.33, 47.6], zoom: 12 });
       const [lng, lat] = await page.evaluate<[number, number]>("window.map.getCenter()");
