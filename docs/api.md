@@ -137,10 +137,22 @@ await map.once("idle");
 - `idle`: everything on screen has loaded and nothing is moving.
 - `render` after every frame, `resize` when the map changes size, `remove` when it's removed.
 - `movestart`, `move` and `moveend` whenever the camera changes. There are also `zoom`, `rotate` and `pitch` versions of all three. `originalEvent` is set when a person caused the move.
-- `click`, `dblclick`, `contextmenu`, `mousemove`, `mousedown`, `mouseup` and `mouseout` carry `point` (`{ x, y }`) and `lngLat`. Call `event.preventDefault()` in `dblclick` to stop the zoom.
+- `click`, `dblclick`, `contextmenu`, `mousemove`, `mousedown`, `mouseup` and `mouseout` (the pointer left the map) carry `point` (`{ x, y }`) and `lngLat`. Call `event.preventDefault()` in `dblclick` to stop the zoom, or in `mousedown` to keep that press from moving the map.
 - `sourcedata` when a source loads (`kind: "metadata"`), gets new data (`"content"`) or fails (`"error"`).
 - `error` with a `MapletError` in `event.error`.
 - `contextlost` and `contextrestored` if the browser drops the GPU context. Maplet reloads what it needs on its own.
+
+A listener can also watch one layer, or a list of them. It only fires when the pointer is over a feature in those layers, and `event.features` lists what's there, top layer first:
+
+```js
+map.on("click", "parks", (event) => console.log(event.features[0].properties.name));
+map.on("mouseenter", "parks", () => (map.getCanvas().style.cursor = "pointer"));
+map.on("mouseleave", "parks", () => (map.getCanvas().style.cursor = ""));
+```
+
+`mouseenter` fires when the pointer moves onto the layers, and `mouseleave` when it moves off them or out of the map. Moving from one feature to another in the same layer fires neither; listen for `mousemove` on the layer if you need that. `mouseover` and `mouseout` are other names for the same pair. `click`, `dblclick`, `contextmenu`, `mousedown` and `mouseup` work on layers too, and `off` and `once` take the same layer argument.
+
+`event.preventDefault()` in a layer's `mousedown` keeps the map still for that press, which is how you let people drag features around. In `dblclick` it stops the zoom. Finding the features under the pointer happens on the GPU, so layer listeners run a frame or so after the pointer event. That's too late to stop what the browser itself does with the event, but the map waits for them before it pans or zooms.
 
 ## Finding features
 
@@ -171,12 +183,16 @@ map.addLayer({
 });
 
 let hovered;
-map.on("mousemove", async (event) => {
-  const [park] = await map.queryRenderedFeatures(event.point, { layers: ["parks"] });
-  if (park?.id === hovered) return;
+map.on("mousemove", "parks", (event) => {
+  const id = event.features[0].id;
+  if (id === hovered) return;
   if (hovered !== undefined) map.setFeatureState({ source: "parks", id: hovered }, { hover: false });
-  hovered = park?.id;
-  if (hovered !== undefined) map.setFeatureState({ source: "parks", id: hovered }, { hover: true });
+  hovered = id;
+  map.setFeatureState({ source: "parks", id }, { hover: true });
+});
+map.on("mouseleave", "parks", () => {
+  if (hovered !== undefined) map.setFeatureState({ source: "parks", id: hovered }, { hover: false });
+  hovered = undefined;
 });
 ```
 
