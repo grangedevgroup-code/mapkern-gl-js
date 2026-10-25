@@ -157,3 +157,46 @@ test("bad expressions are reported with their path", () => {
   assert.deepEqual(compile(["literal", ["a", "b"]], "any", null).evaluate({ zoom: 0 }), ["a", "b"]);
   assert.deepEqual(compile([0, 1], "any", null).evaluate({ zoom: 0 }), [0, 1]);
 });
+
+test("within keeps features that sit inside a polygon", () => {
+  const square = {
+    type: "Polygon",
+    coordinates: [
+      [
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [0, 10],
+        [0, 0],
+      ],
+      [
+        [4, 4],
+        [6, 4],
+        [6, 6],
+        [4, 6],
+        [4, 4],
+      ],
+    ],
+  };
+  const world = (lng: number, lat: number) => {
+    const s = Math.sin((lat * Math.PI) / 180);
+    return [(lng + 180) / 360, 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)];
+  };
+  const feature = (type: 1 | 2 | 3, ...points: [number, number][]) => ({
+    zoom: 0,
+    feature: { properties: {}, geometry: () => ({ type, parts: [points.flatMap(([lng, lat]) => world(lng, lat))] }) },
+  });
+  const within = compile<boolean>(["within", square], "boolean", false, "filter", { geometry: true });
+  assert.equal(within.evaluate(feature(1, [2, 2])), true);
+  assert.equal(within.evaluate(feature(1, [5, 5])), false);
+  assert.equal(within.evaluate(feature(1, [12, 2])), false);
+  assert.equal(within.evaluate(feature(2, [1, 1], [3, 8])), true);
+  assert.equal(within.evaluate(feature(2, [1, 5], [9, 5])), false);
+  assert.equal(within.evaluate(feature(2, [1, 1], [12, 1])), false);
+  assert.equal(within.evaluate({ zoom: 0, feature: { properties: {} } }), false);
+  assert.throws(() => compile(["within", square], "boolean", false, "paint.color"), /only works in layer filters/);
+  assert.throws(
+    () => compile(["within", { type: "Point", coordinates: [0, 0] }], "boolean", false, "f", { geometry: true }),
+    /Polygon/,
+  );
+});
