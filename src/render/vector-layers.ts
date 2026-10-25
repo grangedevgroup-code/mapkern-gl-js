@@ -8,10 +8,18 @@ import type { Terrain } from "../terrain/terrain.ts";
 import type { RenderPiece, TileManager } from "../tiles/manager.ts";
 import type { GL, Program, ProgramSource } from "./gl.ts";
 import { HeatmapResources } from "./heatmap.ts";
+import type { ImageAtlas } from "./images.ts";
 import type { PaintBudget } from "./paint-table.ts";
 import type { FrameInput, PaintStats } from "./painter.ts";
 import { heatmapColorShader, heatmapShader } from "./shaders/heatmap.ts";
-import { circleShader, extrusionShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
+import {
+  circleShader,
+  extrusionShader,
+  fillOutlineShader,
+  fillPatternShader,
+  fillShader,
+  lineShader,
+} from "./shaders/vector.ts";
 
 type PaintUniform = { name: string; uniform: string; kind: "color" | "number" };
 
@@ -67,8 +75,8 @@ const EXTRUSION_TERRAIN_PICK: ProgramSource = { ...extrusionShader, defines: ["P
 
 export const WARM_VARIANTS: readonly ProgramSource[] = [EXTRUSION_TERRAIN];
 
-function screenOffset(layer: StyleLayer, bearing: number): [number, number] {
-  const [x, y] = layer.fixed<[number, number]>("translate") ?? [0, 0];
+function screenOffset(layer: StyleLayer, bearing: number, zoom: number): [number, number] {
+  const [x, y] = pairOf(layer.paintValue<unknown>("translate", { zoom }));
   if (layer.fixed<string>("translateAnchor") !== "viewport" || bearing === 0) return [x, y];
   const b = (bearing * Math.PI) / 180;
   const cos = Math.cos(b);
@@ -81,16 +89,24 @@ function normalize(x: number, y: number, z: number): [number, number, number] {
   return [x / len, y / len, z / len];
 }
 
+export interface PatternImages {
+  readonly atlas: ImageAtlas;
+  texture(): WebGLTexture | null;
+  missing(id: string): void;
+}
+
 export class VectorPainter {
   readonly budget: PaintBudget = { deadline: Number.POSITIVE_INFINITY, behind: false };
   private readonly gl: GL;
+  private readonly images: PatternImages;
   private readonly matrix = new Float32Array(16);
   private readonly dash = new Float32Array(8);
   private boundStride = -1;
   private readonly heat: HeatmapResources;
 
-  constructor(gl: GL) {
+  constructor(gl: GL, images: PatternImages) {
     this.gl = gl;
+    this.images = images;
     this.heat = new HeatmapResources(gl);
   }
 
@@ -233,6 +249,66 @@ export class VectorPainter {
     }
   }
 
+  private drawPattern(
+    frame: FrameInput,
+    layer: StyleLayer,
+    manager: TileManager<VectorTile>,
+    stats: PaintStats,
+    name: string,
+  ): void {
+    const rect = this.images.atlas.get(name);
+    if (!rect) {
+      this.images.missing(name);
+      return;
+    }
+    const texture = this.images.texture();
+    const zoom = frame.view.zoom;
+    const opacity = layer.paintValue<number>("opacity", { zoom });
+    if (!texture || opacity <= 0) return;
+    const g = this.gl;
+    const gl = g.gl;
+    const program = g.program(fillPatternShader);
+    g.use(program);
+    g.setBlend("premultiplied");
+    g.setDepth(false, false);
+    this.boundStride = -1;
+    g.bindTexture(0, texture);
+    const u = (n: string) => program.uniforms.get(n) ?? null;
+    const image = rect.image;
+    const ratio = image.pixelRatio;
+    const periodX = image.width / ratio;
+    const periodY = image.height / ratio;
+    const base = Math.floor(zoom);
+    gl.uniform1i(u("u_atlas"), 0);
+    gl.uniform4f(u("u_rect"), rect.x, rect.y, image.width, image.height);
+    gl.uniform1f(u("u_ratio"), ratio);
+    gl.uniform1f(u("u_mix"), zoom - base);
+    gl.uniform1f(u("u_opacity"), opacity);
+    const translate = screenOffset(layer, frame.view.bearing, zoom);
+    for (const piece of manager.pieces) {
+      const bucket = piece.tile.data?.buckets.get(layer.id);
+      if (!bucket?.main || (frame.accept && !frame.accept(piece))) continue;
+      const tile = piece.tile;
+      this.tileUniforms(program, frame, piece, bucket, undefined);
+      const size = 512 * 2 ** (base - tile.z);
+      const ox = (piece.wrap * 2 ** tile.z + tile.x) * size;
+      const oy = tile.y * size;
+      gl.uniform1f(u("u_extent"), bucket.extent);
+      gl.uniform1f(u("u_tile_size"), size);
+      gl.uniform4f(
+        u("u_pattern_origin"),
+        positive(ox, periodX),
+        positive(oy, periodY),
+        positive(ox * 2, periodX),
+        positive(oy * 2, periodY),
+      );
+      const units = bucket.extent / (512 * 2 ** (zoom - tile.z));
+      gl.uniform2f(u("u_translate"), translate[0] * units, translate[1] * units);
+      this.drawGeometry(bucket.main, stats);
+      stats.pieces++;
+    }
+  }
+
   private tileUniforms(
     program: Program,
     frame: FrameInput,
@@ -296,10 +372,15 @@ export class VectorPainter {
     const g = this.gl;
     const gl = g.gl;
     const zoom = frame.view.zoom;
+    const pattern = layer.paintValue<unknown>("pattern", { zoom });
+    if (!pick && typeof pattern === "string" && pattern !== "") {
+      this.drawPattern(frame, layer, manager, stats, pattern);
+      return;
+    }
     const program = this.program(fillShader, pick);
     g.setDepth(false, false);
     this.prepare(program, layer, zoom, FILL_PAINT);
-    const translate = screenOffset(layer, frame.view.bearing);
+    const translate = screenOffset(layer, frame.view.bearing, frame.view.zoom);
     let any = false;
     for (const piece of manager.pieces) {
       const bucket = piece.tile.data?.buckets.get(layer.id);
@@ -312,7 +393,7 @@ export class VectorPainter {
       this.drawGeometry(bucket.main, stats);
       stats.pieces++;
     }
-    if (pick || !any || layer.fixed<boolean>("antialias") === false) return;
+    if (pick || !any || layer.paintValue<unknown>("antialias", { zoom }) === false) return;
     const opacity = layer.paintValue<number>("opacity", { zoom });
     if (opacity <= 0) return;
     const outline = layer.paintProperty<unknown>("outlineColor");
@@ -404,7 +485,7 @@ export class VectorPainter {
     gl.uniform1i(u.get("u_pitch_align") ?? null, layer.fixed<string>("pitchAlignment") === "map" ? 1 : 0);
     gl.uniform1i(u.get("u_pitch_scale") ?? null, layer.fixed<string>("pitchScale") === "map" ? 1 : 0);
     gl.uniform1f(u.get("u_camera_distance") ?? null, flatView ? 1 : frame.transform.cameraToCenterDistance);
-    const translate = screenOffset(layer, frame.view.bearing);
+    const translate = screenOffset(layer, frame.view.bearing, frame.view.zoom);
     const near = frame.acceptNear ?? frame.accept;
     for (const piece of manager.pieces) {
       const bucket = piece.tile.data?.buckets.get(layer.id);
@@ -493,4 +574,15 @@ function multiplyInto(m: Float32Array, a: Float64Array): void {
         a[r]! * b[c * 4]! + a[4 + r]! * b[c * 4 + 1]! + a[8 + r]! * b[c * 4 + 2]! + a[12 + r]! * b[c * 4 + 3]!;
     }
   }
+}
+
+function pairOf(value: unknown): [number, number] {
+  return Array.isArray(value) && typeof value[0] === "number" && typeof value[1] === "number"
+    ? [value[0], value[1]]
+    : [0, 0];
+}
+
+function positive(value: number, period: number): number {
+  const r = value % period;
+  return r < 0 ? r + period : r;
 }
