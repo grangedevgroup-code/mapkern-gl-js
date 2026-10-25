@@ -26,7 +26,17 @@ const SOURCE_KEYS: Record<string, Set<string>> = {
     "tileSize",
     "encoding",
   ]),
-  geojson: new Set(["type", "data", "format", "maxZoom", "tolerance", "buffer", "attribution", "promoteId"]),
+  geojson: new Set([
+    "type",
+    "data",
+    "format",
+    "maxZoom",
+    "tolerance",
+    "buffer",
+    "attribution",
+    "promoteId",
+    "generateId",
+  ]),
 };
 const LAYER_KEYS = new Set([
   "id",
@@ -148,8 +158,17 @@ export function validateSource(id: string, source: unknown): StyleIssue[] {
       });
     }
   }
-  if (source.promoteId !== undefined && typeof source.promoteId !== "string") {
-    issues.push({ path: `${path}.promoteId`, message: "promoteId must be a property name" });
+  if (source.promoteId !== undefined && !isPromoteId(source.promoteId, type === "vector")) {
+    issues.push({
+      path: `${path}.promoteId`,
+      message:
+        type === "vector"
+          ? "promoteId must be a property name or { sourceLayer: propertyName }"
+          : "promoteId must be a property name",
+    });
+  }
+  if (source.generateId !== undefined && typeof source.generateId !== "boolean") {
+    issues.push({ path: `${path}.generateId`, message: "generateId must be true or false" });
   }
   for (const key of ["minZoom", "maxZoom", "tileSize", "tolerance", "buffer"] as const) {
     const v = source[key];
@@ -261,6 +280,11 @@ function isObject(v: unknown): v is Record<string, unknown> {
 
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
+}
+
+function isPromoteId(v: unknown, perLayer: boolean): boolean {
+  if (typeof v === "string") return v !== "";
+  return perLayer && isObject(v) && Object.values(v).every((name) => typeof name === "string" && name !== "");
 }
 
 function isEncoding(v: unknown): boolean {
