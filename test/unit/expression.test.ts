@@ -200,3 +200,19 @@ test("within keeps features that sit inside a polygon", () => {
     /Polygon/,
   );
 });
+
+test("CSS colors with a slash before the alpha, and long junk parses quickly", async () => {
+  const { parseColor } = await import("../../src/style/color.ts");
+  assert.deepEqual(parseColor("rgb(255 0 0 / 0.5)"), [1, 0, 0, 0.5]);
+  assert.deepEqual(parseColor("rgba(255, 0, 0, 0.25)"), [1, 0, 0, 0.25]);
+  assert.deepEqual(
+    parseColor("hsl(120deg 100% 50% / 50%)")?.map((v) => Math.round(v * 100) / 100),
+    [0, 1, 0, 0.5],
+  );
+  assert.equal(parseColor("rgb(255 / 0 0)"), null);
+  assert.equal(parseColor("rgb(1 2 3 / 0.5 / 0.5)"), null);
+  const started = performance.now();
+  assert.equal(parseColor(`rgb(${" ".repeat(200000)})`), null);
+  assert.equal(parseColor(`rgb(1${" ".repeat(200000)}x)`), null);
+  assert.ok(performance.now() - started < 200, "parsing stays linear in the length of the text");
+});
