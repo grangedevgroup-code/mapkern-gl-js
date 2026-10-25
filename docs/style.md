@@ -476,6 +476,23 @@ When you drag the map over mountains, the camera keeps its height, so the zoom l
 
 On steep slopes the roofs of 3D buildings follow the slope instead of staying flat.
 
+## Sky
+
+When you tilt the map far enough to look toward the horizon, or tilt it while zoomed out near a pole, the sky shows above the map, with a haze over the distant ground so the map fades into it instead of ending at a hard line. Maplet picks a pale sky for light styles and a night sky for dark ones. To choose your own, add `sky` to the style:
+
+```js
+sky: {
+  color: "#88c6fc",
+  horizonColor: "#ffffff",
+  fogColor: "#ffffff",
+  horizonBlend: 0.8,
+  horizonFogBlend: 0.8,
+  fogBlend: 0.5,
+}
+```
+
+`color` is the sky high up and `horizonColor` the sky just above the horizon. `horizonBlend` says how far up the horizon color reaches, from 0 for none to 1 for halfway up the sky. The haze over the ground is a mix of `horizonColor` and `fogColor`, set by `horizonFogBlend` from 0 for all horizon to 1 for all fog. With [terrain](#terrain) on, the fog also covers the distant hills, starting `fogBlend` of the way from the middle of the map to the horizon. Every one of these can change with the zoom through an expression. [`setSky()`](api.md#sky) changes the sky while the map runs.
+
 ## Styles from MapLibre and Mapbox
 
 Styles written for MapLibre GL JS or Mapbox GL JS, the ones with `"version": 8`, load as they are. Pass the object or its URL to the map, and Maplet turns it into its own style on the way in:
@@ -484,9 +501,9 @@ Styles written for MapLibre GL JS or Mapbox GL JS, the ones with `"version": 8`,
 const map = new maplet.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/liberty" });
 ```
 
-Property names lose their prefix and move to camel case, so `fill-color` becomes `color` and `text-halo-width` becomes `haloWidth`, `fill-extrusion` layers become `extrusion` layers, and a layer that borrows from another with `ref` gets its type, source, filter and layout. Filters and property functions in the older format, like `["==", "class", "park"]` or `{ "stops": [[5, 1], [10, 4]] }`, become expressions, `{name}` in a label becomes `["get", "name"]`, and relative addresses are read from where the style lives. Where the two formats disagree on a default, such as the text size or the tile size of raster sources, Maplet uses the one the style was written for. Labels are drawn in the style's own fonts from its `glyphs` server, see [Fonts](#fonts). A style without one uses the device's fonts, with `text-font` picking the family, weight and slant.
+Property names lose their prefix and move to camel case, so `fill-color` becomes `color` and `text-halo-width` becomes `haloWidth`, `fill-extrusion` layers become `extrusion` layers, and a layer that borrows from another with `ref` gets its type, source, filter and layout. Filters and property functions in the older format, like `["==", "class", "park"]` or `{ "stops": [[5, 1], [10, 4]] }`, become expressions, `{name}` in a label becomes `["get", "name"]`, and relative addresses are read from where the style lives. Where the two formats disagree on a default, such as the text size or the tile size of raster sources, Maplet uses the one the style was written for. A MapLibre `sky` becomes the [sky](#sky) as it is, and a Mapbox `fog` gives the sky its colors. Labels are drawn in the style's own fonts from its `glyphs` server, see [Fonts](#fonts). A style without one uses the device's fonts, with `text-font` picking the family, weight and slant.
 
-A few things can't be drawn yet: patterns on lines and patterns that change per feature, `line-gradient`, icons and point labels lying flat on tilted maps (`icon-pitch-alignment: "map"`), `fog`, `sky` and the globe projection. When a style uses them, Maplet leaves out that property, or the layer when nothing else would make sense, and draws the rest. The `styleload` event lists what was left out in `event.skipped`. Addresses starting with `mapbox://` need Mapbox's own servers and are left out too.
+A few things can't be drawn yet: patterns on lines and patterns that change per feature, `line-gradient`, icons and point labels lying flat on tilted maps (`icon-pitch-alignment: "map"`) and the globe projection. When a style uses them, Maplet leaves out that property, or the layer when nothing else would make sense, and draws the rest. The `styleload` event lists what was left out in `event.skipped`. Addresses starting with `mapbox://` need Mapbox's own servers and are left out too.
 
 `maplet.importStyle(style, url)` does the same conversion without a map and returns `{ style, skipped }`, if you'd like to look at the result or keep it.
 
