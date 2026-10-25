@@ -36,6 +36,11 @@ const SOURCE_KEYS: Record<string, Set<string>> = {
     "attribution",
     "promoteId",
     "generateId",
+    "cluster",
+    "clusterRadius",
+    "clusterMaxZoom",
+    "clusterMinPoints",
+    "clusterProperties",
   ]),
 };
 const LAYER_KEYS = new Set([
@@ -174,6 +179,15 @@ export function validateSource(id: string, source: unknown): StyleIssue[] {
   if (source.generateId !== undefined && typeof source.generateId !== "boolean") {
     issues.push({ path: `${path}.generateId`, message: "generateId must be true or false" });
   }
+  if (source.cluster !== undefined && typeof source.cluster !== "boolean") {
+    issues.push({ path: `${path}.cluster`, message: "cluster must be true or false" });
+  }
+  for (const key of ["clusterRadius", "clusterMaxZoom", "clusterMinPoints"] as const) {
+    const v = source[key];
+    if (v !== undefined && (!isFiniteNumber(v) || v < 0))
+      issues.push({ path: `${path}.${key}`, message: `${key} must be a non-negative number` });
+  }
+  if (source.clusterProperties !== undefined) issues.push(...checkClusterProperties(source.clusterProperties, path));
   for (const key of ["minZoom", "maxZoom", "tileSize", "tolerance", "buffer"] as const) {
     const v = source[key];
     if (v !== undefined && (!isFiniteNumber(v) || v < 0))
@@ -284,6 +298,22 @@ function isObject(v: unknown): v is Record<string, unknown> {
 
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
+}
+
+function checkClusterProperties(value: unknown, path: string): StyleIssue[] {
+  if (!isObject(value)) return [{ path: `${path}.clusterProperties`, message: "clusterProperties must be an object" }];
+  const issues: StyleIssue[] = [];
+  for (const [name, spec] of Object.entries(value)) {
+    const at = `${path}.clusterProperties.${name}`;
+    if (!Array.isArray(spec) || spec.length !== 2) {
+      issues.push({ path: at, message: "each cluster property must be [operator, expression]" });
+      continue;
+    }
+    const [operator, mapped] = spec as [unknown, unknown];
+    const reducer = typeof operator === "string" ? [operator, ["accumulated"], ["get", name]] : operator;
+    issues.push(...checkExpression(mapped, at, false), ...checkExpression(reducer, at, false));
+  }
+  return issues;
 }
 
 function isSprite(v: unknown): boolean {
