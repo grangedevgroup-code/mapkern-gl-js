@@ -19,15 +19,15 @@ const map = new maplet.Map({
 });
 ```
 
-`container` is an element or its id, and it needs a size. `style` is a [style](style.md) object or the URL of one. Everything else is optional:
+`container` is an element or its id, and it needs a size. `style` is a [style](style.md) object or the URL of one, and styles written for MapLibre or Mapbox work too, see [Styles from MapLibre and Mapbox](style.md#styles-from-maplibre-and-mapbox). Leave it out and you get the whole world with OpenFreeMap's Liberty style (`maplet.DEFAULT_STYLE`), or pass `null` for an empty map. Everything else is optional:
 
 | Option | Default | |
 | --- | --- | --- |
-| `center`, `zoom`, `bearing`, `pitch` | from the style, else 0 | Where the map starts. Bearing turns the map clockwise from north; pitch tilts it, 0 looks straight down |
+| `center`, `zoom`, `bearing`, `pitch` | from the style, else the whole world | Where the map starts. Without a center or zoom the map fits the world from 55° south to 75° north. Bearing turns the map clockwise from north; pitch tilts it, 0 looks straight down |
 | `bounds` | | Start with this area in view instead, as `[[west, south], [east, north]]`. `fitBoundsOptions` takes the same options as `fitBounds` |
 | `maxBounds` | | Keep the view inside this area |
 | `padding` | 0 | Space in pixels the map keeps free at its edges, as a number or `{ top, right, bottom, left }` |
-| `minZoom`, `maxZoom` | 0, 22 | |
+| `minZoom`, `maxZoom` | -2, 22 | Below zoom 0 the whole world fits on a phone screen |
 | `minPitch`, `maxPitch` | 0, 60 | |
 | `interactive` | `true` | `false` ignores mouse, touch and keyboard |
 | `hash` | `false` | `true` keeps the position in the page address, like `#12.5/47.6/-122.33`, so links open the same view. A name such as `"map"` stores it as `#map=...` next to your own parameters |
@@ -181,7 +181,7 @@ await map.once("idle");
 
 `once` returns a promise, so you can await it. `off(type, listener)` removes a listener.
 
-- `styleload`: a style has been applied. `load`: the first frame with it has been drawn.
+- `styleload`: a style has been applied. `event.skipped` lists anything in a MapLibre or Mapbox style that Maplet left out because it can't draw it yet. `load`: the first frame with it has been drawn.
 - `idle`: everything on screen has loaded and nothing is moving.
 - `render` after every frame, `resize` when the map changes size, `remove` when it's removed.
 - `movestart`, `move` and `moveend` whenever the camera changes. There are also `zoom`, `rotate` and `pitch` versions of all three. `originalEvent` is the mouse, touch, wheel or keyboard event when a person caused the move, and `undefined` when your code did.
