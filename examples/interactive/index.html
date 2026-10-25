@@ -69,6 +69,7 @@
         bearing: -20,
       });
       map.addControl(new maplet.NavigationControl());
+      window.map = map;
 
       map.on("styleload", () => {
         for (const id of ["building-3d", "building-3d-tall"]) {
