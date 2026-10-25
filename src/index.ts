@@ -7,6 +7,7 @@ export type {
   Diagnostics,
   FitBoundsOptions,
   FlyToOptions,
+  HandlerSwitch,
   MapErrorEvent,
   MapEvent,
   MapEvents,
@@ -18,6 +19,7 @@ export type {
   QueryOptions,
   Source,
   SourceDataEvent,
+  TouchZoomRotateSwitch,
   UiText,
 } from "./core/map.ts";
 export { MapletMap as Map } from "./core/map.ts";
@@ -30,6 +32,7 @@ export { openTileFile } from "./sources/files.ts";
 export type { GeoJSONSource } from "./sources/geojson.ts";
 export type { RasterSource } from "./sources/raster.ts";
 export type { VectorSource } from "./sources/vector.ts";
+export type { FeatureTarget } from "./style/feature-state.ts";
 export type * from "./style/types.ts";
 export type { StyleIssue } from "./style/validate.ts";
 export { validateStyle } from "./style/validate.ts";
