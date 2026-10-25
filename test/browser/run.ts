@@ -2588,6 +2588,144 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "paint changes ease over the transition the style asks for",
+    async run({ page, base, shot }) {
+      const square = {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {},
+            geometry: {
+              type: "Polygon",
+              coordinates: [
+                [
+                  [-10, -10],
+                  [10, -10],
+                  [10, 10],
+                  [-10, 10],
+                  [-10, -10],
+                ],
+              ],
+            },
+          },
+        ],
+      };
+      const style = {
+        version: 1,
+        transition: { duration: 400 },
+        sources: { g: { type: "geojson", data: square } },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "f", type: "fill", source: "g", paint: { color: "#ff0000" } },
+        ],
+      };
+      await createMap(page, JSON.stringify(style), { zoom: 3, center: [0, 0] });
+      const fade = await framesDuring(page, `window.map.setPaintProperty("bg", "color", "#000000")`, 40, 40, 700);
+      const greys = fade.map((p) => p[0]);
+      const between = greys.filter((g) => g > 40 && g < 215).length;
+      if (greys[0]! < 215 || greys[greys.length - 1]! > 2 || between < 3)
+        fail(`the background should fade from white to black, got ${greys.join(" ")}`);
+      if (greys.some((g, i) => i > 0 && g > greys[i - 1]! + 2))
+        fail(`the fade should only go one way, got ${greys.join(" ")}`);
+
+      const driven = await framesDuring(
+        page,
+        `window.map.setPaintProperty("f", "color", ["coalesce", ["get", "missing"], "#0000ff"])`,
+        400,
+        300,
+        700,
+      );
+      const blended = driven.filter((p) => p[0] > 40 && p[0] < 215 && p[2] > 40 && p[2] < 215).length;
+      if (blended < 3 || !near(driven[driven.length - 1]!, BLUE, 6))
+        fail(
+          `colors that depend on the feature should fade too, got ${driven.map((p) => `${p[0]}/${p[2]}`).join(" ")}`,
+        );
+      await page.evaluate(`(() => {
+        window.map.setPaintProperty("f", "colorTransition", { duration: 0 });
+        window.map.setPaintProperty("f", "color", "#00ff00");
+      })()`);
+      await page.evaluate("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
+      const own = await pixel(page, 400, 300);
+      if (!near(own, GREEN, 6)) fail(`a property's own transition should win over the style's, got ${own}`);
+      const kept = await page.evaluate<unknown>(`window.map.getPaintProperty("f", "colorTransition")`);
+      if (JSON.stringify(kept) !== '{"duration":0}')
+        fail(`getPaintProperty should return the transition, got ${JSON.stringify(kept)}`);
+
+      const next = {
+        ...style,
+        layers: [{ id: "bg", type: "background", paint: { color: "#ffffff" } }, style.layers[1]],
+      };
+      const themed = await framesDuring(page, `void window.map.setStyle(${JSON.stringify(next)})`, 40, 40, 700);
+      const lights = themed.map((p) => p[0]);
+      if (lights[0]! > 40 || lights[lights.length - 1]! < 253 || lights.filter((g) => g > 40 && g < 215).length < 3)
+        fail(`switching styles should fade the colors that changed, got ${lights.join(" ")}`);
+
+      await page.evaluate("window.map.remove()");
+      const draped = {
+        ...style,
+        sources: {
+          ...style.sources,
+          dem: { type: "dem", tiles: [`${base}/fixture/dem/{z}/{x}/{y}.png`], tileSize: 256, maxZoom: 12 },
+        },
+        terrain: { source: "dem" },
+      };
+      await createMap(page, JSON.stringify(draped), { zoom: 3, center: [0, 0], pitch: 30 });
+      const reds = await framesDuring(page, `window.map.setPaintProperty("f", "color", "#0000ff")`, 400, 300, 700);
+      const mixed = reds.filter((p) => p[0] > 40 && p[0] < 215 && p[2] > 40 && p[2] < 215).length;
+      const last = reds[reds.length - 1]!;
+      await shot("transition-terrain");
+      if (mixed < 3 || !near(last, BLUE, 8))
+        fail(`a fill draped on terrain should fade too, got ${reds.map((p) => `${p[0]}/${p[2]}`).join(" ")}`);
+
+      await page.evaluate("window.map.remove()");
+      const labelled = {
+        version: 1,
+        transition: { duration: 400 },
+        sources: {
+          g: {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: [
+                { type: "Feature", properties: { name: "WWW" }, geometry: { type: "Point", coordinates: [0, 0] } },
+              ],
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          {
+            id: "t",
+            type: "symbol",
+            source: "g",
+            layout: { text: ["get", "name"], size: 56, weight: "bold", allowOverlap: true },
+            paint: { color: "#ff0000" },
+          },
+        ],
+      };
+      await createMap(page, JSON.stringify(labelled), { zoom: 3, center: [0, 0] });
+      const ink = await page.evaluate<[number, number] | null>(`(() => {
+        const gl = window.map.getCanvas().getContext("webgl2");
+        const px = new Uint8Array(400 * 200 * 4);
+        gl.readPixels(200, gl.drawingBufferHeight - 400, 400, 200, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i] > 245 && px[i + 1] < 10 && px[i + 2] < 10) {
+            const k = i / 4;
+            return [200 + (k % 400), 399 - Math.floor(k / 400)];
+          }
+        }
+        return null;
+      })()`);
+      if (!ink) fail("the label should be drawn in red");
+      const [ix, iy] = ink!;
+      const inks = await framesDuring(page, `window.map.setPaintProperty("t", "color", "#0000ff")`, ix, iy, 700);
+      const purple = inks.filter((p) => p[0] > 40 && p[0] < 215 && p[2] > 40 && p[2] < 215).length;
+      if (purple < 3 || !near(inks[inks.length - 1]!, BLUE, 12))
+        fail(`label colors should fade too, got ${inks.map((p) => `${p[0]}/${p[2]}`).join(" ")}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
