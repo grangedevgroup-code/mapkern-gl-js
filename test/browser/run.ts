@@ -3333,6 +3333,73 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "a building's parts replace the outline drawn around them",
+    async run({ page, shot }) {
+      const box = (half: number, color: string, height: number) => ({
+        type: "Feature",
+        properties: { color, height },
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [-half, -half],
+              [half, -half],
+              [half, half],
+              [-half, half],
+              [-half, -half],
+            ],
+          ],
+        },
+      });
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          g: {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: [box(0.0005, "#ff0000", 200), box(0.0005, "#0000ff", 20), box(0.0001, "#0000ff", 180)],
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          {
+            id: "b",
+            type: "extrusion",
+            source: "g",
+            layout: { hideOutlines: true },
+            paint: { color: ["get", "color"], height: ["get", "height"] },
+          },
+        ],
+      });
+      const count = () =>
+        page.evaluate<{ red: number; blue: number }>(`(() => {
+          const gl = window.map.getCanvas().getContext("webgl2");
+          const px = new Uint8Array(800 * 600 * 4);
+          gl.readPixels(0, 0, 800, 600, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          let red = 0, blue = 0;
+          for (let i = 0; i < px.length; i += 4) {
+            if (px[i] > 90 && px[i + 1] < 40 && px[i + 2] < 40) red++;
+            if (px[i + 2] > 90 && px[i] < 40 && px[i + 1] < 40) blue++;
+          }
+          return { red, blue };
+        })()`);
+      await createMap(page, style, { zoom: 16, pitch: 55 });
+      await shot("parts");
+      const parts = await count();
+      if (parts.red > 0) fail(`the outline should be left out, found ${parts.red} of its pixels`);
+      if (parts.blue < 2000) fail(`the parts should be drawn, found ${parts.blue} pixels of them`);
+      await page.evaluate(`void window.map.setLayoutProperty("b", "hideOutlines", false)`);
+      await idle(page);
+      await shot("outline");
+      const outline = await count();
+      if (outline.red < 2000) fail(`with hideOutlines off the outline should be drawn, found ${outline.red} pixels`);
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
