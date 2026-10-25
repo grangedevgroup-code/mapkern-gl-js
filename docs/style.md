@@ -180,8 +180,9 @@ Draws polygons.
 | `color` | `#000000` | per feature |
 | `opacity` | 1 | per feature |
 | `outlineColor` | the fill color | per feature. The thin line around each polygon |
-| `antialias` | `true` | Draws that outline, which also smooths the edges. Fixed value only |
-| `translate` | `[0, 0]` | Shift in pixels. Fixed value only |
+| `pattern` | none | The name of an [image](#icons) to repeat across the polygon instead of the color, like `"marsh"`. It stays put on the map as you pan, and fades between sizes as you zoom so it never jumps |
+| `antialias` | `true` | Draws that outline, which also smooths the edges |
+| `translate` | `[0, 0]` | Shift in pixels |
 | `translateAnchor` | `map` | `map` turns the shift with the map, `viewport` keeps it pointing the same way on screen |
 
 ### line
@@ -462,7 +463,7 @@ const map = new maplet.Map({ container: "map", style: "https://tiles.openfreemap
 
 Property names lose their prefix and move to camel case, so `fill-color` becomes `color` and `text-halo-width` becomes `haloWidth`, and `fill-extrusion` layers become `extrusion` layers. Filters and property functions in the older format, like `["==", "class", "park"]` or `{ "stops": [[5, 1], [10, 4]] }`, become expressions, `{name}` in a label becomes `["get", "name"]`, and relative addresses are read from where the style lives. Where the two formats disagree on a default, such as the text size or the tile size of raster sources, Maplet uses the one the style was written for. `text-font` picks the font family, weight and slant, and the text is drawn with fonts installed on the device.
 
-A few things can't be drawn yet: pattern fills and lines, `line-gradient`, `icon-text-fit`, `text-pitch-alignment`, `fog`, `sky` and the globe projection. When a style uses them, Maplet leaves out that property, or the layer when nothing else would make sense, and draws the rest. The `styleload` event lists what was left out in `event.skipped`. Addresses starting with `mapbox://` need Mapbox's own servers and are left out too.
+A few things can't be drawn yet: patterns on lines and patterns that change per feature, `line-gradient`, `icon-text-fit`, text lying flat on tilted maps (`text-pitch-alignment: "map"`), `fog`, `sky` and the globe projection. When a style uses them, Maplet leaves out that property, or the layer when nothing else would make sense, and draws the rest. The `styleload` event lists what was left out in `event.skipped`. Addresses starting with `mapbox://` need Mapbox's own servers and are left out too.
 
 `maplet.importStyle(style, url)` does the same conversion without a map and returns `{ style, skipped }`, if you'd like to look at the result or keep it.
 
