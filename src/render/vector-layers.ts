@@ -2,6 +2,7 @@ import { latFromMercatorY, metersPerPixel } from "../geo/mercator.ts";
 import type { GpuGeometry, VectorBucket, VectorTile } from "../sources/vector.ts";
 import { dataDrivenPaint } from "../sources/vector.ts";
 import type { RGBA } from "../style/color.ts";
+import type { StateLookup } from "../style/feature-state.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { Terrain } from "../terrain/terrain.ts";
 import type { RenderPiece, TileManager } from "../tiles/manager.ts";
@@ -131,10 +132,11 @@ export class VectorPainter {
     bucket: VectorBucket,
     zoom: number,
     paint: PaintUniform[],
+    states: StateLookup | null,
   ): void {
     const g = this.gl;
     const gl = g.gl;
-    bucket.paint.update(g, layer, bucket.features, dataDrivenPaint(layer.type), zoom, this.budget);
+    bucket.paint.update(g, layer, bucket.features, dataDrivenPaint(layer.type), zoom, this.budget, states);
     const stride = bucket.paint.stride;
     if (stride === 0 && this.boundStride === 0) return;
     this.boundStride = stride;
@@ -211,6 +213,7 @@ export class VectorPainter {
     stats: PaintStats,
     pick: PickPass | undefined,
   ): void {
+    const states = frame.states?.(layer) ?? null;
     const g = this.gl;
     const gl = g.gl;
     const zoom = frame.view.zoom;
@@ -223,7 +226,7 @@ export class VectorPainter {
       const bucket = piece.tile.data?.buckets.get(layer.id);
       if (!bucket?.main || (frame.accept && !frame.accept(piece))) continue;
       any = true;
-      this.bindPaint(program, layer, bucket, zoom, FILL_PAINT);
+      this.bindPaint(program, layer, bucket, zoom, FILL_PAINT, states);
       this.tileUniforms(program, frame, piece, bucket, pick);
       const units = bucket.extent / (512 * 2 ** (zoom - piece.tile.z));
       gl.uniform2f(program.uniforms.get("u_translate") ?? null, translate[0] * units, translate[1] * units);
@@ -246,7 +249,7 @@ export class VectorPainter {
     for (const piece of manager.pieces) {
       const bucket = piece.tile.data?.buckets.get(layer.id);
       if (!bucket?.outline || (frame.accept && !frame.accept(piece))) continue;
-      this.bindPaint(outlineProgram, layer, bucket, zoom, paint);
+      this.bindPaint(outlineProgram, layer, bucket, zoom, paint, states);
       this.tileUniforms(outlineProgram, frame, piece, bucket, undefined);
       const units = bucket.extent / (512 * 2 ** (zoom - piece.tile.z));
       gl.uniform2f(outlineProgram.uniforms.get("u_translate") ?? null, translate[0] * units, translate[1] * units);
@@ -263,6 +266,7 @@ export class VectorPainter {
     stats: PaintStats,
     pick: PickPass | undefined,
   ): void {
+    const states = frame.states?.(layer) ?? null;
     const g = this.gl;
     const gl = g.gl;
     const zoom = frame.view.zoom;
@@ -291,7 +295,7 @@ export class VectorPainter {
     for (const piece of manager.pieces) {
       const bucket = piece.tile.data?.buckets.get(layer.id);
       if (!bucket?.main || (frame.accept && !frame.accept(piece))) continue;
-      this.bindPaint(program, layer, bucket, zoom, LINE_PAINT);
+      this.bindPaint(program, layer, bucket, zoom, LINE_PAINT, states);
       this.tileUniforms(program, frame, piece, bucket, pick);
       gl.uniform1f(program.uniforms.get("u_units_per_px") ?? null, bucket.extent / (512 * 2 ** (zoom - piece.tile.z)));
       this.drawGeometry(bucket.main, stats);
@@ -306,6 +310,7 @@ export class VectorPainter {
     stats: PaintStats,
     pick: PickPass | undefined,
   ): void {
+    const states = frame.states?.(layer) ?? null;
     const g = this.gl;
     const gl = g.gl;
     const zoom = frame.view.zoom;
@@ -318,7 +323,7 @@ export class VectorPainter {
     for (const piece of manager.pieces) {
       const bucket = piece.tile.data?.buckets.get(layer.id);
       if (!bucket?.main || (frame.accept && !frame.accept(piece))) continue;
-      this.bindPaint(program, layer, bucket, zoom, CIRCLE_PAINT);
+      this.bindPaint(program, layer, bucket, zoom, CIRCLE_PAINT, states);
       this.tileUniforms(program, frame, piece, bucket, pick);
       this.drawGeometry(bucket.main, stats);
       stats.pieces++;
@@ -332,6 +337,7 @@ export class VectorPainter {
     stats: PaintStats,
     pick: PickPass | undefined,
   ): void {
+    const states = frame.states?.(layer) ?? null;
     const g = this.gl;
     const gl = g.gl;
     const transform = frame.transform;
@@ -364,7 +370,7 @@ export class VectorPainter {
       for (const piece of manager.pieces) {
         const bucket = piece.tile.data?.buckets.get(layer.id);
         if (!bucket?.main) continue;
-        this.bindPaint(program, layer, bucket, zoom, EXTRUSION_PAINT);
+        this.bindPaint(program, layer, bucket, zoom, EXTRUSION_PAINT, states);
         this.tileUniforms(program, frame, piece, bucket, pick);
         if (terrain) this.bindGround(program, terrain, piece, bucket.extent);
         const lat = latFromMercatorY((piece.tile.y + 0.5) / 2 ** piece.tile.z);
