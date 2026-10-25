@@ -89,13 +89,18 @@ export function layerProgram(layer: StyleLayer): LayerProgram | null {
   if (type === "symbol") {
     const raw = (layer.spec as { layout?: Record<string, unknown> }).layout ?? {};
     layout.text = raw.text ?? "";
+    layout.icon = raw.icon ?? "";
     layout.size = raw.size ?? 14;
     layout.priority = raw.priority ?? 0;
     layout.placement = layer.fixed<string>("placement");
     layout.spacing = layer.fixed<number>("spacing");
     layout.transform = layer.fixed<string>("transform");
-    for (const name of ["text", "size", "priority"]) {
+    for (const name of ["text", "size", "priority", "icon", "iconSize", "iconRotate"]) {
       const c = layer.layoutProperty<unknown>(name);
+      if (c.featureDependent) for (const k of c.properties) keys.add(k);
+    }
+    for (const name of ["iconColor", "iconHaloColor", "iconHaloWidth", "iconOpacity"]) {
+      const c = layer.paintProperty<unknown>(name);
       if (c.featureDependent) for (const k of c.properties) keys.add(k);
     }
   }
