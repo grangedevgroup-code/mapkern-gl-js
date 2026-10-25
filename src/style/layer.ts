@@ -1,3 +1,4 @@
+import type { LayerUpdate } from "./diff.ts";
 import type { Compiled, EvalContext, OutputKind } from "./expression.ts";
 import { compile } from "./expression.ts";
 import type { LayerSpec, LayerType } from "./types.ts";
@@ -324,6 +325,15 @@ export class StyleLayer {
     if (filter === undefined || filter === null) delete spec.filter;
     else spec.filter = structuredClone(filter);
     this.revision++;
+  }
+
+  restyle(spec: LayerSpec, update: LayerUpdate): void {
+    for (const [name, value] of update.paint) this.setPaint(name, value);
+    for (const [name, value] of update.layout) this.setLayout(name, value);
+    if (update.filter) this.setFilter((spec as { filter?: unknown }).filter);
+    if (update.zoom) this.setZoomRange(spec.minZoom ?? 0, spec.maxZoom ?? 24);
+    if (update.visible) this.setVisible(spec.visible !== false);
+    this.spec = structuredClone(spec);
   }
 
   setZoomRange(minZoom: number, maxZoom: number): void {
