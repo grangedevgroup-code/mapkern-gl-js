@@ -18,6 +18,17 @@ vec4 paintValue(uint feature, int slot, int composite, vec4 fallback) {
 
 export const clipChunk = `
 uniform vec4 u_clip;
+uniform vec4 u_clip_ground;
+uniform mat3 u_ground;
+uniform int u_clip_mode;
+bool outsideClip(vec2 pos) {
+  if (u_clip_mode == 1) {
+    vec3 g = u_ground * vec3(gl_FragCoord.xy, 1.0);
+    vec2 w = g.xy / g.z;
+    return w.x < u_clip_ground.x || w.y < u_clip_ground.y || w.x >= u_clip_ground.z || w.y >= u_clip_ground.w;
+  }
+  return pos.x < u_clip.x || pos.y < u_clip.y || pos.x >= u_clip.z || pos.y >= u_clip.w;
+}
 `;
 
 export const fillPatternShader = {
@@ -62,7 +73,7 @@ vec4 sampleAt(vec2 css) {
   return mix(top, bottom, f.y);
 }
 void main() {
-  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x >= u_clip.z || v_pos.y >= u_clip.w) discard;
+  if (outsideClip(v_pos)) discard;
   fragColor = mix(sampleAt(v_pattern.xy), sampleAt(v_pattern.zw), u_mix) * u_opacity;
 }
 `,
@@ -110,7 +121,7 @@ out highp uvec4 pickColor;
 out vec4 fragColor;
 #endif
 void main() {
-  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x >= u_clip.z || v_pos.y >= u_clip.w) discard;
+  if (outsideClip(v_pos)) discard;
 #ifdef PICK
   pickColor = uvec4(u_draw, v_feature, 0u, 1u);
 #else
@@ -166,7 +177,7 @@ out highp uvec4 pickColor;
 out vec4 fragColor;
 #endif
 void main() {
-  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x >= u_clip.z || v_pos.y >= u_clip.w) discard;
+  if (outsideClip(v_pos)) discard;
   float dist = length(v_screen - gl_FragCoord.xy);
   float alpha = 1.0 - smoothstep(0.0, 1.0, dist);
 #ifdef PICK
@@ -276,7 +287,7 @@ out highp uvec4 pickColor;
 out vec4 fragColor;
 #endif
 void main() {
-  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x >= u_clip.z || v_pos.y >= u_clip.w) discard;
+  if (outsideClip(v_pos)) discard;
   float d = v_square > 0.5 ? max(abs(v_side.x), abs(v_side.y)) : length(v_side);
   float band = v_gap > 0.0 ? abs(d - v_gap - v_half) : d;
   float alpha = clamp((v_half + v_edge * 0.5 - band) / v_edge, 0.0, 1.0);
