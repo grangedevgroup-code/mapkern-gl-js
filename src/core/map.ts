@@ -23,7 +23,8 @@ import { compile } from "../style/expression.ts";
 import type { FeatureTarget, StateLookup } from "../style/feature-state.ts";
 import { FeatureStates } from "../style/feature-state.ts";
 import type { StyleLayer } from "../style/layer.ts";
-import { Style } from "../style/style.ts";
+import type { StyleUpdate } from "../style/style.ts";
+import { assertValid, Style } from "../style/style.ts";
 import type { LayerSpec, SourceSpec, StyleSpec, TerrainSpec } from "../style/types.ts";
 import { metersToWorld, Terrain } from "../terrain/terrain.ts";
 import type { TransformRequest } from "../tiles/fetch.ts";
@@ -47,6 +48,10 @@ import type { LayerEventType, PointerInput, PointerType } from "./layer-events.t
 import { LAYER_EVENT_TYPES, LayerEvents } from "./layer-events.ts";
 import type { QueriedFeature, SourceQueriedFeature, StateReader } from "./query.ts";
 import { queryVectorSource, resolveFeatures } from "./query.ts";
+
+export interface SetStyleOptions {
+  diff?: boolean;
+}
 
 export interface MapOptions {
   container: HTMLElement | string;
@@ -1189,7 +1194,8 @@ export class MapletMap extends Emitter<MapEvents> {
     return ground + 50 * terrain.exaggeration + 2 / pixelsPerMeter - above;
   }
 
-  setStyle(style: StyleSpec | string): this {
+  setStyle(style: StyleSpec | string, options: SetStyleOptions = {}): this {
+    const diff = options.diff !== false;
     this.styleRequest?.abort();
     this.styleRequest = null;
     if (typeof style === "string") {
@@ -1206,7 +1212,7 @@ export class MapletMap extends Emitter<MapEvents> {
           } catch (error) {
             throw new MapletError("invalid-style", `Style at ${style} is not valid JSON`, {}, error);
           }
-          this.applyStyle(spec as StyleSpec);
+          this.applyStyle(spec as StyleSpec, diff);
         })
         .catch((error: unknown) => {
           if (controller.signal.aborted || this.removed) return;
@@ -1217,7 +1223,7 @@ export class MapletMap extends Emitter<MapEvents> {
           );
         });
     } else {
-      this.applyStyle(style);
+      this.applyStyle(style, diff);
     }
     return this;
   }
@@ -1820,7 +1826,35 @@ export class MapletMap extends Emitter<MapEvents> {
     return this.style;
   }
 
-  private applyStyle(spec: StyleSpec): void {
+  private applyStyle(spec: StyleSpec, diff = false): void {
+    const current = this.style;
+    if (diff && current) {
+      try {
+        assertValid(spec);
+      } catch (error) {
+        this.fail(
+          error instanceof MapletError ? error : new MapletError("invalid-style", errorMessage(error), {}, error),
+        );
+        return;
+      }
+      let update: StyleUpdate | null = null;
+      try {
+        update = current.apply(spec);
+      } catch {
+        update = null;
+      }
+      if (update) {
+        for (const id of update.dropped) this.featureStates.dropSource(id);
+        if (update.sprite) this.loadSprites(spec.sprite);
+        queueMicrotask(() => {
+          if (this.style !== current || this.removed) return;
+          this.emit("styleload", this.event("styleload"));
+          this.styleChanged();
+        });
+        this.triggerRepaint();
+        return;
+      }
+    }
     let style: Style;
     try {
       style = new Style(spec, (id, source) => this.createSource(id, source), {
