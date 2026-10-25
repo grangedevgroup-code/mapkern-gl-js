@@ -42,11 +42,13 @@ export class SlotView implements RenderView {
     return out;
   }
 
-  overlaps(z: number, x: number, y: number, wrap: number): boolean {
+  overlaps(z: number, x: number, y: number, wrap: number, margin = 0): boolean {
     const n = 2 ** z;
-    const x0 = wrap + x / n;
-    const y0 = y / n;
-    return x0 < this.x0 + this.size && x0 + 1 / n > this.x0 && y0 < this.y0 + this.size && y0 + 1 / n > this.y0;
+    const pad = margin / n;
+    const x0 = wrap + x / n - pad;
+    const y0 = y / n - pad;
+    const span = 1 / n + pad * 2;
+    return x0 < this.x0 + this.size && x0 + span > this.x0 && y0 < this.y0 + this.size && y0 + span > this.y0;
   }
 }
 
