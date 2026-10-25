@@ -1,26 +1,20 @@
 import type { RGBA } from "./color.ts";
 import type { Compiled, EvalContext } from "./expression.ts";
-
-export interface TransitionSpec {
-  duration?: number;
-  delay?: number;
-}
+import type { TransitionSpec } from "./types.ts";
 
 export interface Timing {
   duration: number;
   delay: number;
 }
 
-const NONE: ReadonlySet<string> = new Set();
-
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
 export class Transition implements Compiled<unknown> {
-  readonly featureDependent = false;
-  readonly stateDependent = false;
   readonly constant = false;
-  readonly properties = NONE;
+  readonly featureDependent: boolean;
+  readonly stateDependent: boolean;
   readonly zoomDependent: boolean;
+  readonly properties: ReadonlySet<string>;
   readonly evaluate: (ctx: EvalContext) => unknown;
   readonly target: Compiled<unknown>;
   readonly end: number;
@@ -37,7 +31,10 @@ export class Transition implements Compiled<unknown> {
     this.prior = prior;
     this.target = target;
     this.end = end;
+    this.featureDependent = prior.featureDependent || target.featureDependent;
+    this.stateDependent = prior.stateDependent || target.stateDependent;
     this.zoomDependent = prior.zoomDependent || target.zoomDependent;
+    this.properties = new Set([...prior.properties, ...target.properties]);
     this.evaluate = (ctx) => {
       const now = clock();
       if (now >= end) return target.evaluate(ctx);
