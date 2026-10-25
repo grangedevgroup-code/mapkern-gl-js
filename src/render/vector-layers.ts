@@ -31,6 +31,8 @@ const LINE_PAINT: PaintUniform[] = [
   { name: "width", uniform: "u_width", kind: "number" },
   { name: "opacity", uniform: "u_opacity", kind: "number" },
   { name: "blur", uniform: "u_blur", kind: "number" },
+  { name: "offset", uniform: "u_offset", kind: "number" },
+  { name: "gapWidth", uniform: "u_gap_width", kind: "number" },
 ];
 
 const EXTRUSION_PAINT: PaintUniform[] = [
