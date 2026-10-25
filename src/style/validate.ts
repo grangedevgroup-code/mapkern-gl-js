@@ -72,6 +72,7 @@ const STYLE_KEYS = new Set([
   "terrain",
   "fonts",
   "sprite",
+  "glyphs",
   "transition",
   "metadata",
 ]);
@@ -113,6 +114,12 @@ export function validateStyle(style: unknown): StyleIssue[] {
         ids.add(layer.id);
       }
     });
+  }
+  if (style.glyphs !== undefined) {
+    const g = style.glyphs;
+    if (typeof g !== "string" || !g.includes("{fontstack}") || !g.includes("{range}")) {
+      issues.push({ path: "glyphs", message: "glyphs must be a URL with {fontstack} and {range} in it" });
+    }
   }
   if (style.transition !== undefined) {
     const problem = checkTransition(style.transition);
