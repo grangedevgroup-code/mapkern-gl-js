@@ -32,6 +32,8 @@ import { RequestScheduler } from "../tiles/scheduler.ts";
 import type { Control, ControlPosition } from "../ui/controls.ts";
 import { AttributionControl } from "../ui/controls.ts";
 import { injectStyles } from "../ui/css.ts";
+import type { DebugTile } from "../ui/debug.ts";
+import { DebugOverlay } from "../ui/debug.ts";
 import type { WorkerFactory } from "../worker/pool.ts";
 import { WorkerPool } from "../worker/pool.ts";
 import { errorMessage, MapletError } from "./errors.ts";
@@ -346,6 +348,8 @@ export class MapletMap extends Emitter<MapEvents> {
   private styleRequest: AbortController | null = null;
   private spriteRequest: AbortController | null = null;
   private hash: MapHash | null = null;
+  private debug: DebugOverlay | null = null;
+  private readonly debugFlags = { tiles: false, boxes: false, padding: false };
   private hashPlaced = false;
   private spritesLoading = 0;
   private readonly reportedImages = new Set<string>();
@@ -641,6 +645,79 @@ export class MapletMap extends Emitter<MapEvents> {
       },
       isEnabled: () => this.handlers?.options[key] === true,
     };
+  }
+
+  get showTileBoundaries(): boolean {
+    return this.debugFlags.tiles;
+  }
+
+  set showTileBoundaries(on: boolean) {
+    this.debugFlags.tiles = on === true;
+    this.triggerRepaint();
+  }
+
+  get showCollisionBoxes(): boolean {
+    return this.debugFlags.boxes;
+  }
+
+  set showCollisionBoxes(on: boolean) {
+    this.debugFlags.boxes = on === true;
+    this.triggerRepaint();
+  }
+
+  get showPadding(): boolean {
+    return this.debugFlags.padding;
+  }
+
+  set showPadding(on: boolean) {
+    this.debugFlags.padding = on === true;
+    this.triggerRepaint();
+  }
+
+  private drawDebug(): void {
+    const f = this.debugFlags;
+    if (!f.tiles && !f.boxes && !f.padding) {
+      this.debug?.destroy();
+      this.debug = null;
+      return;
+    }
+    this.debug ??= new DebugOverlay(this.canvasContainer);
+    const t = this.transform;
+    const tiles: DebugTile[] = [];
+    if (f.tiles) {
+      for (const source of this.style?.sources.values() ?? []) {
+        const pieces = (
+          source as {
+            manager?: { pieces: readonly { tile: { z: number; x: number; y: number }; wrap: number }[] } | null;
+          }
+        ).manager?.pieces;
+        if (!pieces) continue;
+        for (const piece of pieces) {
+          const { z, x, y } = piece.tile;
+          const n = 2 ** z;
+          const corners = [
+            [x, y],
+            [x + 1, y],
+            [x + 1, y + 1],
+            [x, y + 1],
+          ].map(([cx, cy]) => {
+            const p = t.project(piece.wrap + cx! / n, cy! / n);
+            return [p.x, p.y] as const;
+          });
+          tiles.push({ corners, label: `${z}/${x}/${y}` });
+        }
+        break;
+      }
+    }
+    this.debug.draw({
+      width: t.width,
+      height: t.height,
+      pixelRatio: this.pixelRatioValue,
+      tiles,
+      boxes: f.boxes ? this.painter.labels.debugBoxes() : [],
+      padding: f.padding ? t.padding : null,
+      center: f.padding ? t.centerPoint : null,
+    });
   }
 
   getContainer(): HTMLElement {
@@ -1700,6 +1777,7 @@ export class MapletMap extends Emitter<MapEvents> {
     this.styleRequest?.abort();
     this.spriteRequest?.abort();
     this.hash?.destroy();
+    this.debug?.destroy();
     this.resizeObserver?.disconnect();
     this.dprQuery?.removeEventListener("change", this.onDprChange);
     this.handlers?.destroy();
@@ -2124,6 +2202,7 @@ export class MapletMap extends Emitter<MapEvents> {
         cameraVersion: this.cameraVersion,
       });
     }
+    this.drawDebug();
     this.emitCameraEvents();
     this.emit("render", this.event("render"));
     if (!this.loadedFired && style?.loaded) {
