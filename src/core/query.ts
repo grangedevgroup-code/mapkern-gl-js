@@ -1,5 +1,5 @@
 import type { VectorFeature, VectorLayer } from "../formats/mvt.ts";
-import { classifyRings, decodeTile, numericId } from "../formats/mvt.ts";
+import { classifyRings, decodeTile, featureIdValue } from "../formats/mvt.ts";
 import type { Geometry, Position } from "../geo/geojson.ts";
 import { latFromMercatorY, lngFromMercatorX } from "../geo/mercator.ts";
 import type { PickedFeature } from "../render/painter.ts";
@@ -10,13 +10,20 @@ import type { Tile } from "../tiles/tile.ts";
 
 export interface QueriedFeature {
   type: "Feature";
-  id: number | undefined;
+  id: number | string | undefined;
   properties: Record<string, unknown>;
   geometry: Geometry | null;
   layer: string;
   source: string;
   sourceLayer: string | undefined;
+  state: Record<string, unknown>;
 }
+
+export type StateReader = (
+  source: string,
+  sourceLayer: string | undefined,
+  id: number | string | undefined,
+) => Record<string, unknown>;
 
 interface Pending {
   slot: number;
@@ -27,6 +34,7 @@ interface Pending {
 export async function resolveFeatures(
   picked: readonly PickedFeature[],
   sources: ReadonlyMap<string, MapSource>,
+  stateOf: StateReader,
 ): Promise<QueriedFeature[]> {
   const out: (QueriedFeature | null)[] = new Array(picked.length).fill(null);
   const decoded = new Map<Tile<VectorTile>, Promise<Map<string, VectorLayer>>>();
@@ -61,8 +69,8 @@ export async function resolveFeatures(
     if (!layer || index >= layer.length) continue;
     const feature = layer.feature(index);
     const properties: Record<string, unknown> = { ...feature.properties() };
-    const promote = (source.spec as { promoteId?: string }).promoteId;
-    const id = promote ? numericId(properties[promote]) : feature.id;
+    const promote = promotedKey((source.spec as { promoteId?: unknown }).promoteId, layer.name);
+    const id = promote ? featureIdValue(properties[promote]) : feature.id;
     const key = id !== undefined ? `${hit.layer.id}|id:${id}` : `${hit.layer.id}|${hit.tile.key}|${index}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -74,6 +82,7 @@ export async function resolveFeatures(
       layer: hit.layer.id,
       source: sourceId,
       sourceLayer: name,
+      state: stateOf(sourceId, name, id),
     };
   }
   for (const [source, wanted] of geojson) {
@@ -89,10 +98,20 @@ export async function resolveFeatures(
         layer: w.hit.layer.id,
         source: source.id,
         sourceLayer: undefined,
+        state: stateOf(source.id, undefined, f.id),
       };
     }
   }
   return out.filter((f): f is QueriedFeature => f !== null);
+}
+
+function promotedKey(promote: unknown, layer: string): string | undefined {
+  if (typeof promote === "string") return promote;
+  if (typeof promote === "object" && promote !== null) {
+    const key = (promote as Record<string, unknown>)[layer];
+    return typeof key === "string" ? key : undefined;
+  }
+  return undefined;
 }
 
 async function decodeRaw(raw: ArrayBuffer): Promise<Map<string, VectorLayer>> {
