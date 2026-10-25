@@ -1,5 +1,5 @@
 import type { VectorFeature } from "../formats/mvt.ts";
-import { classifyRings, decodeTile, numericId } from "../formats/mvt.ts";
+import { classifyRings, decodeTile, featureKey } from "../formats/mvt.ts";
 import type { Compiled, FeatureContext, GeometryType } from "../style/expression.ts";
 import { compile } from "../style/expression.ts";
 import { CircleBuilder, ExtrusionBuilder, FillBuilder, LineBuilder } from "./buckets.ts";
@@ -29,7 +29,7 @@ export interface VectorTileRequest {
   y: number;
   layers: LayerProgram[];
   overzoom: boolean;
-  promoteId: string | null;
+  promoteId: string | Readonly<Record<string, string>> | null;
 }
 
 export interface Geometry {
@@ -92,8 +92,8 @@ class FeatureView implements FeatureContext {
   get properties(): Readonly<Record<string, unknown>> {
     return this.feature.properties();
   }
-  get id(): number | undefined {
-    return this.feature.id;
+  get id(): number | string | undefined {
+    return this.feature.textId ?? this.feature.id;
   }
 }
 
@@ -116,17 +116,28 @@ export async function buildVectorTile(
   return buildBuckets(source, request.z, request.layers, request.overzoom, started);
 }
 
-function promoteIds(layers: ReadonlyMap<string, FeatureLayer>, key: string): Map<string, FeatureLayer> {
+function promoteIds(
+  layers: ReadonlyMap<string, FeatureLayer>,
+  promote: string | Readonly<Record<string, string>>,
+): Map<string, FeatureLayer> {
   const out = new Map<string, FeatureLayer>();
   for (const [name, layer] of layers) {
+    const key = typeof promote === "string" ? promote : promote[name];
+    if (typeof key !== "string") {
+      out.set(name, layer);
+      continue;
+    }
     out.set(name, {
       name: layer.name,
       extent: layer.extent,
       length: layer.length,
       feature: (index) => {
         const feature = layer.feature(index);
+        const raw = feature.property(key);
+        const id = featureKey(raw);
         return {
-          id: numericId(feature.property(key)),
+          id,
+          textId: typeof raw === "string" && id !== undefined ? raw : undefined,
           source: index,
           type: feature.type,
           extent: feature.extent,
