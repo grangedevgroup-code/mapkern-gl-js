@@ -9,7 +9,7 @@ import type { StyleLayer } from "../style/layer.ts";
 import type { RenderPiece, TileManager } from "../tiles/manager.ts";
 import type { Tile } from "../tiles/tile.ts";
 import type { Anchor } from "../ui/anchor.ts";
-import { anchorShift } from "../ui/anchor.ts";
+import { anchorOffsets, anchorShift } from "../ui/anchor.ts";
 import type { FontSpec, GlyphMetrics } from "./glyphs.ts";
 import { cssFamily, GLYPH_SIZE, GlyphAtlas, needsWholeShaping, SDF_RADIUS, splitGraphemes } from "./glyphs.ts";
 import { ICON_SDF_RADIUS, iconShader } from "./icon-shader.ts";
@@ -25,14 +25,22 @@ interface Glyph {
   m: GlyphMetrics;
   x: number;
   y: number;
+  line: number;
 }
 
 interface Laid {
   glyphs: Glyph[];
   width: number;
   height: number;
+  lines: number[];
+}
+
+interface TextPlacement {
+  anchor: Anchor;
   offsetX: number;
   offsetY: number;
+  justify: number;
+  boxes: number[];
 }
 
 interface IconPart {
@@ -63,7 +71,8 @@ interface IconStyle {
   opacity: number;
 }
 
-const EMPTY_LAID: Laid = { glyphs: [], width: 0, height: 0, offsetX: 0, offsetY: 0 };
+const EMPTY_LAID: Laid = { glyphs: [], width: 0, height: 0, lines: [] };
+const JUSTIFY: Record<string, number> = { left: 0, center: 0.5, right: 1 };
 const DEG = Math.PI / 180;
 
 export interface LabelTerrain {
@@ -98,6 +107,12 @@ interface Label {
   boxes: number[];
   showText: boolean;
   icon: IconPart | null;
+  anchor: Anchor;
+  offsetX: number;
+  offsetY: number;
+  justify: number;
+  rotate: number;
+  haloBlur: number;
 }
 
 export interface LabelHit {
@@ -481,7 +496,7 @@ export class LabelRenderer {
       }
       metrics.push(m ?? null);
     }
-    const lineHeight = GLYPH_SIZE * 1.2;
+    const lineHeight = GLYPH_SIZE * layer.fixed<number>("lineHeight");
     const maxWidth = line ? Number.POSITIVE_INFINITY : layer.fixed<number>("maxWidth") * GLYPH_SIZE;
     const lines: { start: number; end: number; width: number }[] = [];
     let start = 0;
@@ -510,25 +525,80 @@ export class LabelRenderer {
     for (const l of lines) width = Math.max(width, l.width);
     const height = lines.length * lineHeight;
     lines.forEach((l, row) => {
-      let pen = (width - l.width) / 2;
-      const baseline = row * lineHeight + GLYPH_SIZE * 0.9;
+      let pen = 0;
+      const baseline = row * lineHeight + GLYPH_SIZE * 0.9 + (lineHeight - GLYPH_SIZE * 1.2) / 2;
       for (let i = l.start; i < l.end; i++) {
         const m = metrics[i];
-        if (m && m.width > 0) glyphs.push({ m, x: pen, y: baseline });
+        if (m && m.width > 0) glyphs.push({ m, x: pen, y: baseline, line: row });
         pen += (m?.advance ?? 0) + spacing;
       }
     });
-    const anchor = layer.fixed<string>("anchor");
+    return { glyphs, width, height, lines: lines.map((l) => l.width) };
+  }
+
+  private textPlacement(
+    layer: StyleLayer,
+    laid: Laid,
+    anchor: Anchor,
+    scale: number,
+    x: number,
+    y: number,
+    rotate: number,
+    padding: number,
+  ): TextPlacement {
+    const variable = layer.fixed<Anchor[] | null>("variableAnchor");
+    const radial = layer.fixed<number | null>("radialOffset");
     const [ox, oy] = layer.fixed<[number, number]>("offset");
-    let offsetX = -width / 2;
-    let offsetY = -height / 2;
-    if (anchor === "top") offsetY = 0;
-    else if (anchor === "bottom") offsetY = -height;
-    else if (anchor === "left") offsetX = 0;
-    else if (anchor === "right") offsetX = -width;
-    offsetX += ox * GLYPH_SIZE;
-    offsetY += oy * GLYPH_SIZE;
-    return { glyphs, width, height, offsetX, offsetY };
+    let dx = ox;
+    let dy = oy;
+    if (radial !== null) {
+      [dx, dy] = anchorOffsets(radial)[anchor];
+    } else if (variable) {
+      const [sx, sy] = anchorShift(anchor);
+      dx = sx === 0 ? Math.abs(ox) : sx === -1 ? -Math.abs(ox) : 0;
+      dy = sy === 0 ? Math.abs(oy) : sy === -1 ? -Math.abs(oy) : 0;
+    }
+    const [sx, sy] = anchorShift(anchor);
+    const offsetX = sx * laid.width + dx * GLYPH_SIZE;
+    const offsetY = sy * laid.height + dy * GLYPH_SIZE;
+    const mode = layer.fixed<string>("justify");
+    const justify = mode === "auto" ? (sx === 0 ? 0 : sx === -1 ? 1 : 0.5) : (JUSTIFY[mode] ?? 0.5);
+    const x0 = offsetX * scale;
+    const y0 = offsetY * scale;
+    const x1 = x0 + laid.width * scale;
+    const y1 = y0 + laid.height * scale;
+    let bx0 = x0;
+    let by0 = y0;
+    let bx1 = x1;
+    let by1 = y1;
+    if (rotate !== 0) {
+      const cos = Math.cos(rotate);
+      const sin = Math.sin(rotate);
+      bx0 = Infinity;
+      by0 = Infinity;
+      bx1 = -Infinity;
+      by1 = -Infinity;
+      for (const [cx, cy] of [
+        [x0, y0],
+        [x1, y0],
+        [x1, y1],
+        [x0, y1],
+      ] as const) {
+        const rx = cx * cos - cy * sin;
+        const ry = cx * sin + cy * cos;
+        bx0 = Math.min(bx0, rx);
+        by0 = Math.min(by0, ry);
+        bx1 = Math.max(bx1, rx);
+        by1 = Math.max(by1, ry);
+      }
+    }
+    return {
+      anchor,
+      offsetX,
+      offsetY,
+      justify,
+      boxes: [x + bx0 - padding, y + by0 - padding, x + bx1 + padding, y + by1 + padding],
+    };
   }
 
   private place(
@@ -562,8 +632,24 @@ export class LabelRenderer {
       const iconAllowOverlap = layer.fixed<boolean>("iconAllowOverlap");
       const iconOptional = layer.fixed<boolean>("iconOptional");
       const alignment = layer.fixed<string>("iconRotationAlignment");
-      const linePlacement = layer.fixed<string>("placement") === "line";
+      const linePlacement = layer.fixed<string>("placement") !== "point";
       const alignMap = alignment === "map" || (alignment === "auto" && linePlacement);
+      const ignoreText = layer.fixed<boolean>("ignorePlacement");
+      const ignoreIcon = layer.fixed<boolean>("iconIgnorePlacement");
+      const maxAngle = (layer.fixed<number>("maxAngle") * Math.PI) / 180;
+      const keepUpright = layer.fixed<boolean>("keepUpright");
+      const fixedAnchor = layer.fixed<Anchor>("anchor");
+      const variable = layer.fixed<Anchor[] | null>("variableAnchor");
+      const [textShiftX, textShiftY] = screenShift(
+        layer.fixed<[number, number]>("translate"),
+        layer.fixed<string>("translateAnchor"),
+        transform.bearing,
+      );
+      const [iconShiftX, iconShiftY] = screenShift(
+        layer.fixed<[number, number]>("iconTranslate"),
+        layer.fixed<string>("iconTranslateAnchor"),
+        transform.bearing,
+      );
       const ctx: EvalContext = { zoom, images: hasImage };
       const items: {
         piece: RenderPiece<VectorTile>;
@@ -656,8 +742,10 @@ export class LabelRenderer {
           const size = layer.layoutValue<number>("size", ctx);
           const scale = (size / GLYPH_SIZE) * perspective;
           const w = laid.width * scale;
-          const h = laid.height * scale;
+          const rotate = isLine ? 0 : (layer.layoutValue<number>("rotate", ctx) * Math.PI) / 180;
           const minDist = isLine ? Math.max(spacing, w * 1.5) : Math.max(80, w * 1.2);
+          const key = `${dedupeKey}|${featureId ?? ""}|${Math.round((wx * ws) / 4)}|${Math.round((wy * ws) / 4)}`;
+          const existing = this.labels.get(key);
           const prior = text ? placed.get(dedupeKey) : undefined;
           if (prior?.some(([x, y]) => Math.hypot(x - p.x, y - p.y) < minDist)) continue;
           let path: Float64Array | null = null;
@@ -674,22 +762,61 @@ export class LabelRenderer {
               for (let k = 0; k < heights.length; k++) heights[k] = terrain.height(path[k * 2]!, path[k * 2 + 1]!);
             }
             if (text) {
-              const quads = layoutAlongPath(transform, path, anchorDist, laid, scale, heights);
+              const quads = layoutAlongPath(transform, path, anchorDist, laid, scale, heights, maxAngle, keepUpright);
               if (!quads) continue;
               for (const q of quads) {
                 const half = (size * 0.6) / 2 + padding;
-                boxes.push(q.cx - half, q.cy - half, q.cx + half, q.cy + half);
+                boxes.push(
+                  q.cx + textShiftX - half,
+                  q.cy + textShiftY - half,
+                  q.cx + textShiftX + half,
+                  q.cy + textShiftY + half,
+                );
               }
             }
-          } else if (text) {
-            const x0 = p.x + laid.offsetX * scale - padding;
-            const y0 = p.y + laid.offsetY * scale - padding;
-            boxes = [x0, y0, x0 + w + padding * 2, y0 + h + padding * 2];
           }
-          const iconBox = icon ? iconBounds(transform, icon, p.x, p.y, path, heights, iconPadding) : null;
+          let chosen: TextPlacement | null = null;
+          let textHit = false;
+          if (text && !isLine) {
+            const tries = variable && variable.length > 0 ? preferred(variable, existing?.anchor) : [fixedAnchor];
+            for (const anchor of tries) {
+              const candidate = this.textPlacement(
+                layer,
+                laid,
+                anchor,
+                scale,
+                p.x + textShiftX,
+                p.y + textShiftY,
+                rotate,
+                padding,
+              );
+              if (allowOverlap || !gridHits(grid, candidate.boxes)) {
+                chosen = candidate;
+                break;
+              }
+            }
+            if (!chosen) {
+              textHit = true;
+              chosen = this.textPlacement(
+                layer,
+                laid,
+                tries[0]!,
+                scale,
+                p.x + textShiftX,
+                p.y + textShiftY,
+                rotate,
+                padding,
+              );
+            }
+            boxes = chosen.boxes;
+          } else if (text) {
+            textHit = !allowOverlap && gridHits(grid, boxes);
+          }
+          const iconBox = icon
+            ? iconBounds(transform, icon, p.x + iconShiftX, p.y + iconShiftY, path, heights, iconPadding)
+            : null;
           let showText = text.length > 0;
           let showIcon = icon !== null;
-          const textHit = showText && !allowOverlap && gridHits(grid, boxes);
           const iconHit = iconBox !== null && !iconAllowOverlap && gridHits(grid, iconBox);
           if (showText && showIcon) {
             if (textHit && iconHit) continue;
@@ -705,19 +832,25 @@ export class LabelRenderer {
             continue;
           }
           if (!showText) boxes = [];
-          if (showIcon && iconBox) boxes.push(...iconBox);
-          for (let i = 0; i < boxes.length; i += 4) grid.insert(boxes[i]!, boxes[i + 1]!, boxes[i + 2]!, boxes[i + 3]!);
+          if (showText && !ignoreText) {
+            for (let i = 0; i < boxes.length; i += 4)
+              grid.insert(boxes[i]!, boxes[i + 1]!, boxes[i + 2]!, boxes[i + 3]!);
+          }
+          if (showIcon && iconBox) {
+            if (!ignoreIcon) grid.insert(iconBox[0]!, iconBox[1]!, iconBox[2]!, iconBox[3]!);
+            boxes.push(...iconBox);
+          }
           if (showText) {
             if (prior) prior.push([p.x, p.y]);
             else placed.set(dedupeKey, [[p.x, p.y]]);
           }
-          const key = `${dedupeKey}|${featureId ?? ""}|${Math.round((wx * ws) / 4)}|${Math.round((wy * ws) / 4)}`;
           visible.add(key);
-          const existing = this.labels.get(key);
           const color = layer.paintValue<RGBA>("color", ctx);
           const halo = layer.paintValue<RGBA>("haloColor", ctx);
           const haloWidth = layer.paintValue<number>("haloWidth", ctx);
+          const haloBlur = Math.max(0, layer.paintValue<number>("haloBlur", ctx));
           const opacity = layer.paintValue<number>("opacity", ctx);
+          const place = chosen ?? { anchor: fixedAnchor, offsetX: 0, offsetY: 0, justify: 0.5, boxes: [] };
           if (existing) {
             existing.wx = wx;
             existing.wy = wy;
@@ -739,6 +872,12 @@ export class LabelRenderer {
             existing.boxes = boxes;
             existing.showText = showText;
             existing.icon = showIcon ? icon : null;
+            existing.anchor = place.anchor;
+            existing.offsetX = place.offsetX;
+            existing.offsetY = place.offsetY;
+            existing.justify = place.justify;
+            existing.rotate = rotate;
+            existing.haloBlur = haloBlur;
           } else {
             this.labels.set(key, {
               key,
@@ -767,6 +906,12 @@ export class LabelRenderer {
               boxes,
               showText,
               icon: showIcon ? icon : null,
+              anchor: place.anchor,
+              offsetX: place.offsetX,
+              offsetY: place.offsetY,
+              justify: place.justify,
+              rotate,
+              haloBlur,
             });
           }
           if (!isLine) break;
@@ -811,7 +956,7 @@ export class LabelRenderer {
       f32[o / 4 + 5] = label.opacity;
       f32[o / 4 + 6] = label.scale;
       f32[o / 4 + 7] = label.haloWidth;
-      f32[o / 4 + 8] = 0;
+      f32[o / 4 + 8] = label.haloBlur;
       v++;
     };
     for (const label of this.labels.values()) {
@@ -843,18 +988,46 @@ export class LabelRenderer {
       const p = transform.project(label.wx, label.wy, label.wz * transform.worldSize);
       if (p.w <= 0) continue;
       visible++;
-      const ax = Math.round((p.x + label.laid.offsetX * s) * pixelRatio) / pixelRatio;
-      const ay = Math.round((p.y + label.laid.offsetY * s) * pixelRatio) / pixelRatio;
-      for (const glyph of label.laid.glyphs) {
+      const layer = label.layer;
+      const [shiftX, shiftY] = screenShift(
+        layer.fixed<[number, number]>("translate"),
+        layer.fixed<string>("translateAnchor"),
+        transform.bearing,
+      );
+      const laid = label.laid;
+      const originX = p.x + shiftX;
+      const originY = p.y + shiftY;
+      const rotate = label.rotate;
+      const cos = Math.cos(rotate);
+      const sin = Math.sin(rotate);
+      const ax = rotate === 0 ? Math.round((originX + label.offsetX * s) * pixelRatio) / pixelRatio : 0;
+      const ay = rotate === 0 ? Math.round((originY + label.offsetY * s) * pixelRatio) / pixelRatio : 0;
+      for (const glyph of laid.glyphs) {
         const m = glyph.m;
-        const x0 = ax + (glyph.x + m.left) * s;
-        const y0 = ay + (glyph.y + m.top) * s;
-        const x1 = x0 + m.width * s;
-        const y1 = y0 + m.height * s;
-        put(x0, y0, m.x, m.y, label);
-        put(x1, y0, m.x + m.width, m.y, label);
-        put(x1, y1, m.x + m.width, m.y + m.height, label);
-        put(x0, y1, m.x, m.y + m.height, label);
+        const gx = glyph.x + (laid.width - (laid.lines[glyph.line] ?? laid.width)) * label.justify;
+        const lx0 = (gx + m.left) * s;
+        const ly0 = (glyph.y + m.top) * s;
+        const lx1 = lx0 + m.width * s;
+        const ly1 = ly0 + m.height * s;
+        if (rotate === 0) {
+          put(ax + lx0, ay + ly0, m.x, m.y, label);
+          put(ax + lx1, ay + ly0, m.x + m.width, m.y, label);
+          put(ax + lx1, ay + ly1, m.x + m.width, m.y + m.height, label);
+          put(ax + lx0, ay + ly1, m.x, m.y + m.height, label);
+          continue;
+        }
+        const bx = label.offsetX * s;
+        const by = label.offsetY * s;
+        for (const [cx, cy, u, w] of [
+          [lx0, ly0, m.x, m.y],
+          [lx1, ly0, m.x + m.width, m.y],
+          [lx1, ly1, m.x + m.width, m.y + m.height],
+          [lx0, ly1, m.x, m.y + m.height],
+        ] as const) {
+          const x = bx + cx;
+          const y = by + cy;
+          put(originX + x * cos - y * sin, originY + x * sin + y * cos, u, w, label);
+        }
       }
     }
     this.visibleCount = visible;
@@ -997,6 +1170,20 @@ function describeVertices(gl: WebGL2RenderingContext): void {
   gl.vertexAttribPointer(4, 4, gl.FLOAT, false, STRIDE, 20);
 }
 
+function preferred(anchors: readonly Anchor[], previous: Anchor | undefined): Anchor[] {
+  if (!previous || !anchors.includes(previous) || anchors[0] === previous) return [...anchors];
+  return [previous, ...anchors.filter((a) => a !== previous)];
+}
+
+function screenShift(translate: [number, number] | undefined, anchor: string, bearing: number): [number, number] {
+  const [x, y] = translate ?? [0, 0];
+  if ((x === 0 && y === 0) || anchor === "viewport" || bearing === 0) return [x, y];
+  const b = (-bearing * Math.PI) / 180;
+  const cos = Math.cos(b);
+  const sin = Math.sin(b);
+  return [x * cos - y * sin, x * sin + y * cos];
+}
+
 function gridHits(grid: CollisionGrid, boxes: readonly number[]): boolean {
   for (let i = 0; i < boxes.length; i += 4) {
     if (grid.hits(boxes[i]!, boxes[i + 1]!, boxes[i + 2]!, boxes[i + 3]!)) return true;
@@ -1083,6 +1270,8 @@ function layoutAlongPath(
   laid: Laid,
   scale: number,
   heights: Float64Array | null,
+  maxAngle = Math.PI / 4,
+  keepUpright = true,
 ): PathGlyph[] | null {
   const n = path.length / 2;
   if (n < 2) return null;
@@ -1152,7 +1341,7 @@ function layoutAlongPath(
     return [ax + (bx - ax) * t, ay + (by - ay) * t, Math.atan2(by - ay, bx - ax)];
   };
   const mid = pointAt(start + width / 2);
-  const flip = Math.cos(mid[2]) < 0;
+  const flip = keepUpright && Math.cos(mid[2]) < 0;
   const out: PathGlyph[] = [];
   let lastAngle = Number.NaN;
   for (const g of laid.glyphs) {
@@ -1164,7 +1353,7 @@ function layoutAlongPath(
     if (!Number.isNaN(lastAngle)) {
       let diff = Math.abs(angle - lastAngle);
       if (diff > Math.PI) diff = 2 * Math.PI - diff;
-      if (diff > Math.PI / 4) return null;
+      if (diff > maxAngle) return null;
     }
     lastAngle = angle;
     out.push({ glyph: g, cx, cy, angle, advance });
