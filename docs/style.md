@@ -15,7 +15,7 @@ const style = {
 };
 ```
 
-A style can also set `center`, `zoom`, `bearing` and `pitch`. The map uses them when you don't pass those options yourself. With `terrain` it raises the ground in 3D, see [Terrain](#terrain).
+A style can also set `center`, `zoom`, `bearing` and `pitch`. The map uses them when you don't pass those options yourself. With `terrain` it raises the ground in 3D, see [Terrain](#terrain), and `sprite` loads a sheet of icons, see [Icons](#icons).
 
 Maplet checks the whole style before drawing it. If something is wrong you get a single `error` event that lists every problem, like `layers[2].paint.colour: "colour" is not a property of fill layers`. `validateStyle(style)` runs the same check without a map.
 
@@ -197,7 +197,7 @@ Put extrusion layers after your roads and point layers, so buildings hide what's
 
 ### symbol
 
-Draws text. When labels would overlap, the one with the lower `priority` is hidden.
+Draws text, icons, or both. When symbols would overlap, the one with the lower `priority` is hidden.
 
 | Layout | Default | |
 | --- | --- | --- |
@@ -216,6 +216,16 @@ Draws text. When labels would overlap, the one with the lower `priority` is hidd
 | `spacing` | 250 | Distance between repeats of a line label, in pixels |
 | `allowOverlap` | `false` | Show the label even when it collides |
 | `transform` | `none` | Or `uppercase`, `lowercase` |
+| `optional` | `false` | With an icon, show the icon alone when the text doesn't fit |
+| `icon` | none | per feature. The name of an [image](#icons), such as `"cafe"` or `["get", "kind"]` |
+| `iconSize` | 1 | per feature. Scales the image |
+| `iconRotate` | 0 | per feature, in degrees clockwise |
+| `iconAnchor` | `center` | Which part of the icon sits on the point: `top`, `bottom`, `left`, `right` or a corner like `bottom-left` |
+| `iconOffset` | `[0, 0]` | Shift in pixels, before `iconSize` |
+| `iconPadding` | 2 | Space kept clear around the icon, in pixels |
+| `iconAllowOverlap` | `false` | Show the icon even when it collides |
+| `iconOptional` | `false` | Show the text alone when the icon doesn't fit |
+| `iconRotationAlignment` | `auto` | `map` turns icons with the map, `viewport` keeps them upright. `auto` means `map` on lines and `viewport` on points |
 
 | Paint | Default | |
 | --- | --- | --- |
@@ -223,6 +233,26 @@ Draws text. When labels would overlap, the one with the lower `priority` is hidd
 | `haloColor` | transparent | per feature |
 | `haloWidth` | 0 | per feature |
 | `opacity` | 1 | per feature |
+| `iconOpacity` | 1 | per feature |
+| `iconColor` | `#000000` | per feature, for SDF icons only |
+| `iconHaloColor` | transparent | per feature, for SDF icons only |
+| `iconHaloWidth` | 0 | per feature, in pixels, for SDF icons only |
+
+A symbol with both an icon and text needs room for both, unless you set `optional` or `iconOptional`. On lines, icons sit at each repeat and turn with the line, which is how one-way arrows are drawn.
+
+## Icons
+
+Icons come from images you add with [`map.addImage`](api.md#images), or from a sprite: one PNG holding many icons, with a JSON file that says where each one is.
+
+```js
+{ version: 1, sprite: "https://example.com/sprites/streets", sources: { ... }, layers: [ ... ] }
+```
+
+Maplet loads `streets.json` and `streets.png`, or `streets@2x.json` and `streets@2x.png` on high-density screens when they exist. The JSON maps each name to `{ x, y, width, height, pixelRatio, sdf }`. To use several sheets, give a list instead, `[{ id: "roads", url: "..." }, { id: "poi", url: "..." }]`, and refer to icons as `roads:shield` or `poi:cafe`. A sheet with the id `default` keeps plain names.
+
+The `image` expression checks that an image exists, which is handy for a fallback: `["coalesce", ["image", ["get", "kind"]], ["image", "dot"]]` shows a generic dot for kinds you have no icon for.
+
+SDF icons are stored as a distance field instead of colors. They stay sharp at any size, and `iconColor` and `iconHaloColor` paint them, so one image can serve many colors.
 
 ## Colors
 
@@ -256,6 +286,7 @@ Here's what else is available:
 - Text: `concat`, `upcase`, `downcase`, `length`, `slice`, `index-of`, `split` and `number-format`.
 - Lists: `at`, `index-of`, `length` and `slice`.
 - Types: `to-string`, `to-number`, `to-boolean`, `to-color`, `typeof`, and `number`, `string`, `boolean`, `array` and `object`, which return the first of their arguments that has that type, or `null`.
+- Images: `image`, which returns the name of an [icon](#icons) when it exists and `null` when it doesn't.
 - Colors: `rgb`, `rgba`, `hsl`, `hsla`, `to-rgba` and `to-hsla`.
 - Names: `let` and `var`, for working something out once and using it twice.
 
