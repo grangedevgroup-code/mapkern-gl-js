@@ -2,6 +2,7 @@ import type { RGBA } from "../style/color.ts";
 import type { Compiled, EvalContext, GeometryType } from "../style/expression.ts";
 import type { StateLookup } from "../style/feature-state.ts";
 import type { StyleLayer } from "../style/layer.ts";
+import { Transition } from "../style/transition.ts";
 import type { FeatureTable } from "../worker/packed.ts";
 import type { GL } from "./gl.ts";
 
@@ -31,6 +32,8 @@ export class PaintTable {
   stride = 0;
   readonly slots = new Map<string, PaintSlot>();
   private revision = -1;
+  private motion = -1;
+  private animated = false;
   private evaluatedZoom = Number.NaN;
   private hasComposite = false;
   private hasState = false;
@@ -84,9 +87,11 @@ export class PaintTable {
     const base = Math.floor(zoom);
     const zoomStale = this.hasComposite && base !== this.evaluatedZoom;
     const stateStale = this.hasState && states !== null && states.version !== this.stateVersion;
-    if (!layoutChanged && !zoomStale && !stateStale && this.texture) return;
+    const animated = layer.animating && this.moving(layer);
+    const moved = layer.motion !== this.motion && (animated || this.animated);
+    if (!layoutChanged && !zoomStale && !stateStale && !moved && this.texture) return;
     const slots = [...this.slots].map(([name, slot]) => ({ slot, property: layer.paintProperty<unknown>(name) }));
-    if (!layoutChanged && !zoomStale && stateStale && this.texture && this.data && states) {
+    if (!layoutChanged && !zoomStale && !moved && stateStale && this.texture && this.data && states) {
       const changed = states.changedSince(this.stateVersion);
       if (changed && changed.size <= INCREMENTAL_LIMIT) {
         const index = this.index(features);
@@ -104,6 +109,8 @@ export class PaintTable {
     }
     this.evaluatedZoom = base;
     this.stateVersion = states?.version ?? -1;
+    this.motion = layer.motion;
+    this.animated = animated;
     const total = Math.max(1, features.count * this.stride);
     const width = Math.min(total, 2048);
     const height = Math.ceil(total / width);
@@ -112,6 +119,11 @@ export class PaintTable {
     this.data = this.hasState ? data : null;
     this.upload(gl, data, width, height);
     this.width = width;
+  }
+
+  private moving(layer: StyleLayer): boolean {
+    for (const name of this.slots.keys()) if (layer.paintProperty(name) instanceof Transition) return true;
+    return false;
   }
 
   slot(name: string): PaintSlot {
