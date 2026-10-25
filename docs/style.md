@@ -97,7 +97,7 @@ A few notes on what comes through:
 
 ## Layers
 
-Every layer has an `id` and a `type`: `background`, `raster`, `hillshade`, `fill`, `line`, `circle`, `extrusion` or `symbol`. Layers that draw data also name a `source`, and for vector tiles a `sourceLayer`, which is the layer inside the tiles. Layers are drawn in order, so later ones end up on top.
+Every layer has an `id` and a `type`: `background`, `raster`, `hillshade`, `fill`, `line`, `circle`, `heatmap`, `extrusion` or `symbol`. Layers that draw data also name a `source`, and for vector tiles a `sourceLayer`, which is the layer inside the tiles. Layers are drawn in order, so later ones end up on top.
 
 Any layer can have a `filter` (an expression; only features where it's true get drawn), `minZoom` and `maxZoom` to hide it outside a zoom range, and `visible: false` to hide it altogether. Fill, line and circle layers can also have a `sortKey` expression: features with a higher value are drawn over the others.
 
@@ -185,6 +185,26 @@ Draws a circle at each point.
 | `strokeColor` | `#000000` | per feature |
 | `strokeWidth` | 0 | per feature, in pixels |
 | `blur` | 0 | per feature. Softens the edge, in pixels |
+
+### heatmap
+
+Shows where points crowd together, as a smooth glow that gets warmer the more points there are.
+
+| Paint | Default | |
+| --- | --- | --- |
+| `radius` | 30 | per feature. How far each point spreads, in pixels |
+| `weight` | 1 | per feature. How much each point counts |
+| `intensity` | 1 | Multiplies every weight. Raise it as you zoom out, when points pile up less |
+| `color` | blue to red | The color for each density, from 0 to 1 |
+| `opacity` | 1 | |
+
+`color` is an expression of `["heatmap-density"]`, which goes from 0 where there are no points to 1 where they're dense:
+
+```js
+color: ["interpolate", ["linear"], ["heatmap-density"], 0, "rgba(0, 0, 0, 0)", 0.3, "#5b8def", 0.7, "#f2c14e", 1, "#d7263d"]
+```
+
+Start the ramp with a fully transparent color so the map shows through where there are no points. Heatmaps can't be queried, so pair one with a circle layer at higher zooms if people need to click on the points.
 
 ### extrusion
 
@@ -306,6 +326,7 @@ Here's what else is available:
 - Lists: `at`, `index-of`, `length` and `slice`.
 - Types: `to-string`, `to-number`, `to-boolean`, `to-color`, `typeof`, and `number`, `string`, `boolean`, `array` and `object`, which return the first of their arguments that has that type, or `null`.
 - Images: `image`, which returns the name of an [icon](#icons) when it exists and `null` when it doesn't.
+- Heatmaps: `heatmap-density`, for a [heatmap](#heatmap) `color`.
 - Colors: `rgb`, `rgba`, `hsl`, `hsla`, `to-rgba` and `to-hsla`.
 - Names: `let` and `var`, for working something out once and using it twice.
 
