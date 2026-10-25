@@ -147,7 +147,7 @@ export interface LineLayerSpec extends SourceLayerBase {
     width?: Value<number>;
     opacity?: Value<number>;
     blur?: Value<number>;
-    dash?: number[];
+    dash?: Value<number[]>;
   } & Transitions<"offset" | "gapWidth" | "color" | "width" | "opacity" | "blur">;
   layout?: {
     cap?: "butt" | "round" | "square";
