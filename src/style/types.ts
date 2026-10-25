@@ -84,6 +84,13 @@ export type SourceSpec =
   | VideoSourceSpec
   | CanvasSourceSpec;
 
+export interface TransitionSpec {
+  duration?: number;
+  delay?: number;
+}
+
+type Transitions<K extends string> = { [P in K as `${P}Transition`]?: TransitionSpec };
+
 interface LayerBase {
   id: string;
   minZoom?: number;
@@ -99,7 +106,7 @@ interface SourceLayerBase extends LayerBase {
 
 export interface BackgroundLayerSpec extends LayerBase {
   type: "background";
-  paint?: { color?: Value<Color>; opacity?: Value<number> };
+  paint?: { color?: Value<Color>; opacity?: Value<number> } & Transitions<"color" | "opacity">;
 }
 
 export interface RasterLayerSpec extends LayerBase {
@@ -114,7 +121,7 @@ export interface RasterLayerSpec extends LayerBase {
     hueRotate?: Value<number>;
     fadeDuration?: number;
     resampling?: "linear" | "nearest";
-  };
+  } & Transitions<"opacity" | "brightnessMin" | "brightnessMax" | "contrast" | "saturation" | "hueRotate">;
 }
 
 export interface FillLayerSpec extends SourceLayerBase {
@@ -126,7 +133,7 @@ export interface FillLayerSpec extends SourceLayerBase {
     translate?: [number, number];
     translateAnchor?: "map" | "viewport";
     antialias?: boolean;
-  };
+  } & Transitions<"color" | "opacity" | "outlineColor">;
   sortKey?: Value<number>;
 }
 
@@ -140,7 +147,7 @@ export interface LineLayerSpec extends SourceLayerBase {
     opacity?: Value<number>;
     blur?: Value<number>;
     dash?: number[];
-  };
+  } & Transitions<"offset" | "gapWidth" | "color" | "width" | "opacity" | "blur">;
   layout?: {
     cap?: "butt" | "round" | "square";
     join?: "miter" | "round" | "bevel";
@@ -163,7 +170,7 @@ export interface CircleLayerSpec extends SourceLayerBase {
     translateAnchor?: "map" | "viewport";
     pitchScale?: "map" | "viewport";
     pitchAlignment?: "map" | "viewport";
-  };
+  } & Transitions<"radius" | "color" | "opacity" | "strokeColor" | "strokeWidth" | "strokeOpacity" | "blur">;
   sortKey?: Value<number>;
 }
 
@@ -230,7 +237,17 @@ export interface SymbolLayerSpec extends SourceLayerBase {
     iconHaloColor?: Value<Color>;
     iconHaloWidth?: Value<number>;
     iconOpacity?: Value<number>;
-  };
+  } & Transitions<
+    | "color"
+    | "haloColor"
+    | "haloWidth"
+    | "haloBlur"
+    | "opacity"
+    | "iconColor"
+    | "iconHaloColor"
+    | "iconHaloWidth"
+    | "iconOpacity"
+  >;
 }
 
 export interface HeatmapLayerSpec extends SourceLayerBase {
@@ -241,7 +258,7 @@ export interface HeatmapLayerSpec extends SourceLayerBase {
     intensity?: Value<number>;
     color?: Value<Color>;
     opacity?: Value<number>;
-  };
+  } & Transitions<"radius" | "weight" | "intensity" | "opacity">;
 }
 
 export interface ExtrusionLayerSpec extends SourceLayerBase {
@@ -251,7 +268,7 @@ export interface ExtrusionLayerSpec extends SourceLayerBase {
     height?: Value<number>;
     base?: Value<number>;
     opacity?: Value<number>;
-  };
+  } & Transitions<"color" | "height" | "base" | "opacity">;
 }
 
 export interface HillshadeLayerSpec extends LayerBase {
@@ -264,7 +281,7 @@ export interface HillshadeLayerSpec extends LayerBase {
     accentColor?: Value<Color>;
     illuminationDirection?: number;
     illuminationAnchor?: "viewport" | "map";
-  };
+  } & Transitions<"exaggeration" | "shadowColor" | "highlightColor" | "accentColor">;
 }
 
 export type LayerSpec =
@@ -297,5 +314,6 @@ export interface StyleSpec {
   terrain?: TerrainSpec;
   fonts?: Record<string, string[]>;
   sprite?: string | { id: string; url: string }[];
+  transition?: TransitionSpec;
   metadata?: Record<string, unknown>;
 }
