@@ -30,7 +30,7 @@ roads: { type: "vector", tiles: ["https://example.com/tiles/{z}/{x}/{y}.pbf"], m
 
 `url` can point to a `.pmtiles` or `.mbtiles` file, or to a TileJSON document. Tile files are read with range requests, so the server has to support them, which nearly every static host does. `tiles` takes one or more URL templates. Besides `{z}`, `{x}` and `{y}`, templates understand `{-y}`, `{quadkey}` and `{bbox-epsg-3857}` for servers that number tiles differently.
 
-The other options are `minZoom` and `maxZoom` (0 and 14 unless the file says otherwise), `bounds` as `[west, south, east, north]` to skip requests outside an area, `scheme: "tms"` for tile sets numbered from the south, `attribution` for the credit line, and `promoteId` to use one of the feature's properties as its id. Anything you set in the style wins over what the file says.
+The other options are `minZoom` and `maxZoom` (0 and 14 unless the file says otherwise), `bounds` as `[west, south, east, north]` to skip requests outside an area, `scheme: "tms"` for tile sets numbered from the south, `attribution` for the credit line, and `promoteId` to use one of the feature's properties as its id. `promoteId` is a property name, or an object such as `{ "buildings": "osm_id", "roads": "ref" }` to pick a different property in each source layer. Anything you set in the style wins over what the file says.
 
 When you zoom past `maxZoom`, Maplet keeps drawing the last level, scaled up.
 
@@ -64,7 +64,7 @@ stations: { type: "geojson", data: "stations.geojson" }
 
 `data` is a GeoJSON object or a URL. Maplet cuts the data into tiles in a worker, so the page stays responsive while it works. You can change the data later with [`setData()`](api.md#geojson).
 
-A few options control how the tiles are made. `maxZoom` (18) is the last zoom level that gets its own tiles. `tolerance` (0.375) is how far, in pixels, lines and polygons may be simplified when zoomed out; 0 keeps every point. `buffer` (64) is how far each tile reaches past its edge, in pixels of a 512 pixel tile. Raise it if you draw very wide lines or big circles and see them cut off at tile edges. `attribution` and `promoteId` work as for vector tiles.
+A few options control how the tiles are made. `maxZoom` (18) is the last zoom level that gets its own tiles. `tolerance` (0.375) is how far, in pixels, lines and polygons may be simplified when zoomed out; 0 keeps every point. `buffer` (64) is how far each tile reaches past its edge, in pixels of a 512 pixel tile. Raise it if you draw very wide lines or big circles and see them cut off at tile edges. `attribution` and `promoteId` work as for vector tiles, except that `promoteId` is always a single property name here. `generateId: true` numbers the features 0, 1, 2 and so on, in the order they appear, which is handy for [feature state](api.md#highlighting-features) when the data has no ids of its own.
 
 Polygon rings can wind either way, and shapes that cross the 180th meridian show up on both sides of it.
 
@@ -246,13 +246,28 @@ The first one reads a property. The second picks a color by road class, with whi
 ["step", ["zoom"], "#999999", 12, "#555555", 15, "#222222"]
 ```
 
+`interpolate-lab` and `interpolate-hcl` blend colors the way people see them, so a ramp from yellow to blue doesn't go muddy grey in the middle. `interpolate-hcl` keeps colors saturated by going around the color wheel.
+
 Here's what else is available:
 
-- Reading data: `get`, `has`, `properties`, `id`, `geometry-type` (`"Point"`, `"LineString"` or `"Polygon"`), `zoom`, and `literal` for arrays and objects you want used as-is.
+- Reading data: `get`, `has`, `properties`, `id`, `geometry-type` (`"Point"`, `"LineString"` or `"Polygon"`), `zoom`, `feature-state`, and `literal` for arrays and objects you want used as-is.
 - Decisions: `==`, `!=`, `<`, `<=`, `>`, `>=`, `all`, `any`, `none`, `!`, `in`, `match`, `case` and `coalesce`. In `match`, a label can be a list of values.
-- Math: `+`, `-`, `*`, `/`, `%`, `^`, `abs`, `min`, `max`, `round`, `floor`, `ceil`, `sqrt`, `ln`, `log10`, `log2`, `sin`, `cos`, `tan`, `pi` and `e`.
-- Text: `concat`, `upcase`, `downcase`, `length` and `slice`.
-- Types: `to-string`, `to-number`, `to-boolean`, `to-color`, `rgb`, `rgba` and `typeof`.
+- Math: `+`, `-`, `*`, `/`, `%`, `^`, `abs`, `min`, `max`, `round`, `floor`, `ceil`, `sqrt`, `ln`, `log10`, `log2`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `pi`, `e` and `ln2`.
+- Text: `concat`, `upcase`, `downcase`, `length`, `slice`, `index-of`, `split` and `number-format`.
+- Lists: `at`, `index-of`, `length` and `slice`.
+- Types: `to-string`, `to-number`, `to-boolean`, `to-color`, `typeof`, and `number`, `string`, `boolean`, `array` and `object`, which return the first of their arguments that has that type, or `null`.
+- Colors: `rgb`, `rgba`, `hsl`, `hsla`, `to-rgba` and `to-hsla`.
+- Names: `let` and `var`, for working something out once and using it twice.
+
+A few of these deserve an example:
+
+```js
+["let", "area", ["*", ["get", "width"], ["get", "depth"]], ["case", [">", ["var", "area"], 500], 1, ["/", ["var", "area"], 500]]]
+["number-format", ["get", "price"], { "locale": "en-US", "currency": "USD" }]
+["case", ["boolean", ["feature-state", "selected"], false], "#d33", "#888"]
+```
+
+`number-format` also takes `min-fraction-digits` and `max-fraction-digits`, and leaves out `locale` to use the reader's own. `feature-state` reads the state your code [sets on a feature](api.md#highlighting-features), and works in paint properties only. `is-supported-script` is there for styles written for other map libraries and always returns `true`, since Maplet draws every script the browser can.
 
 A filter is just an expression that comes out true or false:
 
