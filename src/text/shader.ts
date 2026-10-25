@@ -11,12 +11,12 @@ uniform vec2 u_atlas_size;
 out vec2 v_uv;
 out vec4 v_color;
 out vec4 v_halo;
-out vec3 v_params;
+out vec4 v_params;
 void main() {
   v_uv = a_uv / u_atlas_size;
   v_color = a_color;
   v_halo = a_halo;
-  v_params = a_params.xyz;
+  v_params = a_params;
   gl_Position = vec4(a_pos.x / u_viewport.x * 2.0 - 1.0, 1.0 - a_pos.y / u_viewport.y * 2.0, 0.0, 1.0);
 }
 `,
@@ -28,7 +28,7 @@ uniform float u_radius;
 in vec2 v_uv;
 in vec4 v_color;
 in vec4 v_halo;
-in vec3 v_params;
+in vec4 v_params;
 out vec4 fragColor;
 void main() {
   float d = texture(u_atlas, v_uv).r;
@@ -40,7 +40,8 @@ void main() {
     float halo = v_params.z;
     if (halo <= 0.0 || v_halo.a <= 0.0) discard;
     float haloEdge = max(0.05, edge - halo / (u_radius * scale));
-    float a = smoothstep(haloEdge - gamma, haloEdge + gamma, d);
+    float blur = v_params.w / (u_radius * scale);
+    float a = smoothstep(haloEdge - gamma - blur, haloEdge + gamma, d);
     if (a <= 0.0) discard;
     fragColor = v_halo * a * opacity;
   } else {
