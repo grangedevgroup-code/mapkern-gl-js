@@ -249,6 +249,12 @@ export const CSS = `
 .maplet-popup-anchor-bottom-right .maplet-popup-content {
   border-bottom-right-radius: 0;
 }
+.maplet-debug {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
 .maplet-cooperative {
   position: absolute;
   inset: 0;
