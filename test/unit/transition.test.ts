@@ -49,7 +49,7 @@ test("a transition holds, eases and lands, and a second one starts from where th
   assert.equal(settled(second, 120), second);
 });
 
-test("layers only animate values that don't depend on the feature", () => {
+test("layers animate constant values and per feature values alike", () => {
   const layer = new StyleLayer({ id: "f", type: "fill", source: "s", paint: { color: "#ffffff" } });
   const start = performance.now();
   layer.setPaint("color", "#000000", { duration: 100 });
@@ -58,10 +58,20 @@ test("layers only animate values that don't depend on the feature", () => {
   assert.equal(layer.settle(start + 10_000), false);
   assert.deepEqual(layer.paintValue("color", { zoom: 0 }), [0, 0, 0, 1]);
   assert.ok(!(layer.paintProperty("color") instanceof Transition));
+
+  const begin = performance.now();
   layer.setPaint("color", ["get", "color"], { duration: 100 });
-  assert.equal(layer.settle(start + 10_000), false);
-  layer.setPaint("opacity", 0.5, { duration: 100 });
-  assert.equal(layer.settle(start - 1000), true);
+  const moving = layer.paintProperty("color");
+  assert.ok(moving instanceof Transition && moving.featureDependent && moving.properties.has("color"));
+  const feature = {
+    zoom: 0,
+    feature: { properties: { color: "#ffffff" }, id: undefined, geometryType: "Polygon" as const },
+  };
+  assert.equal(layer.settle(begin + 50), true);
+  const middle = layer.paintValue<number[]>("color", feature);
+  assert.ok(middle[0]! > 0.3 && middle[0]! < 0.7, `got ${middle}`);
+  assert.equal(layer.settle(begin + 10_000), false);
+  assert.deepEqual(layer.paintValue("color", feature), [1, 1, 1, 1]);
 });
 
 test("a property's own transition wins over the style's", () => {
