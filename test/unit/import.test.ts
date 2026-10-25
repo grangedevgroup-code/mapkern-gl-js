@@ -87,7 +87,7 @@ test("symbols keep v8 defaults, fonts, sort keys and overlap", () => {
     bold: false,
     italic: false,
   });
-  assert.equal(tokens("{ref}"), tokens("{ref}"));
+  assert.deepEqual(tokens("{ref}"), ["to-string", ["get", "ref"]]);
   assert.deepEqual(tokens("plain"), "plain");
   assert.deepEqual(tokens("road_{len}"), ["concat", "road_", ["to-string", ["get", "len"]]]);
 });
@@ -169,6 +169,7 @@ test("old style functions turn into the matching expressions", () => {
     layout: {
       "text-field": "{name}",
       "text-size": {
+        property: "value",
         stops: [
           [{ zoom: 10, value: 0 }, 10],
           [{ zoom: 10, value: 10 }, 20],
