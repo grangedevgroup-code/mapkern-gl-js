@@ -187,9 +187,9 @@ export function validateLayer(layer: unknown, path: string, sources: Record<stri
   }
   if (layer.visible !== undefined && typeof layer.visible !== "boolean")
     issues.push({ path: `${path}.visible`, message: "visible must be true or false" });
-  if (layer.filter !== undefined) issues.push(...checkExpression(layer.filter, `${path}.filter`));
-  issues.push(...checkGroup(layer.paint, PAINT[type], `${path}.paint`, type));
-  issues.push(...checkGroup(layer.layout, LAYOUT[type], `${path}.layout`, type));
+  if (layer.filter !== undefined) issues.push(...checkExpression(layer.filter, `${path}.filter`, false));
+  issues.push(...checkGroup(layer.paint, PAINT[type], `${path}.paint`, type, true));
+  issues.push(...checkGroup(layer.layout, LAYOUT[type], `${path}.layout`, type, false));
   return issues;
 }
 
@@ -220,6 +220,7 @@ function checkGroup(
   defs: Record<string, { expression: boolean; check?: (v: unknown) => string | null; kind: string }>,
   path: string,
   type: string,
+  allowState: boolean,
 ): StyleIssue[] {
   if (group === undefined) return [];
   if (!isObject(group)) return [{ path, message: "must be an object" }];
@@ -231,7 +232,7 @@ function checkGroup(
       continue;
     }
     if (def.expression) {
-      issues.push(...checkExpression(value, `${path}.${key}`));
+      issues.push(...checkExpression(value, `${path}.${key}`, allowState));
     } else if (def.check) {
       const problem = def.check(value);
       if (problem) issues.push({ path: `${path}.${key}`, message: problem });
@@ -240,9 +241,9 @@ function checkGroup(
   return issues;
 }
 
-function checkExpression(value: unknown, path: string): StyleIssue[] {
+function checkExpression(value: unknown, path: string, allowState: boolean): StyleIssue[] {
   try {
-    compile(value, "any", null, path);
+    compile(value, "any", null, path, allowState);
     return [];
   } catch (error) {
     const message = error instanceof ExpressionError ? error.message.replace(`${path}: `, "") : String(error);
