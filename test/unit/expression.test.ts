@@ -97,7 +97,9 @@ test("colors in rgb, hsl, lab and hcl", () => {
   const lab = run(["interpolate-lab", ["linear"], ["zoom"], 0, "#000000", 1, "#ffffff"], { zoom: 0.5 }) as number[];
   close(lab[0], lab[1], 1e-6);
   assert.ok(lab[0]! > 0.4 && lab[0]! < 0.5, `perceptual middle grey was ${lab[0]}`);
-  const hcl = run(["interpolate-hcl", ["linear"], ["zoom"], 0, "#ff0000", 1, "#0000ff"], { zoom: 0 }) as number[];
+  const hcl = compile(["interpolate-hcl", ["linear"], ["zoom"], 0, "#ff0000", 1, "#0000ff"], "color", null).evaluate({
+    zoom: 0,
+  }) as number[];
   assert.deepEqual(
     hcl.map((v) => Math.round(v * 100) / 100),
     [1, 0, 0, 1],
