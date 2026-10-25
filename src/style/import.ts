@@ -177,6 +177,8 @@ const V8_HEAT = [
 
 const LEGACY_COMPARE = new Set(["==", "!=", "<", "<=", ">", ">="]);
 
+const STEPPED = new Set(["line-dasharray", "text-variable-anchor", "text-font", "icon-image", "text-field"]);
+
 class Skipped {
   private readonly reasons = new Map<string, string[]>();
 
@@ -602,7 +604,7 @@ function keyOf(key: string): unknown {
 
 function convertValue(value: unknown, def: PropertyDef | undefined, key: string): unknown {
   const text = key === "text-field" || key === "icon-image";
-  if (isFunction(value)) return functionValue(value, def, text);
+  if (isFunction(value)) return functionValue(value, def, text, !STEPPED.has(key));
   if (text && typeof value === "string") return tokens(value);
   if (key === "text-field") return plainFormat(value);
   if (def && !def.expression && Array.isArray(value) && value[0] === "literal") return value[1];
@@ -623,7 +625,7 @@ function isFunction(value: unknown): value is Json {
   return isObject(value) && (Array.isArray(value.stops) || value.type === "identity");
 }
 
-function functionValue(fn: Json, def: PropertyDef | undefined, text: boolean): unknown {
+function functionValue(fn: Json, def: PropertyDef | undefined, text: boolean, smooth: boolean): unknown {
   const output = (v: unknown) => (text && typeof v === "string" ? tokens(v) : Array.isArray(v) ? ["literal", v] : v);
   const stops = (Array.isArray(fn.stops) ? fn.stops : []).filter(
     (s): s is [unknown, unknown] => Array.isArray(s) && s.length === 2,
@@ -632,9 +634,8 @@ function functionValue(fn: Json, def: PropertyDef | undefined, text: boolean): u
   const numeric = stops.every(
     ([, v]) => typeof v === "number" || (Array.isArray(v) && v.every((n) => typeof n === "number")),
   );
-  const interpolatable = def
-    ? def.kind === "number" || def.kind === "color" || (def.kind === "any" && numeric)
-    : numeric;
+  const interpolatable =
+    smooth && (def ? def.kind === "number" || def.kind === "color" || (def.kind === "any" && numeric) : numeric);
   const base = numberOr(fn.base, 1);
   const curve = base === 1 ? ["linear"] : ["exponential", base];
   const op = fn.colorSpace === "lab" ? "interpolate-lab" : fn.colorSpace === "hcl" ? "interpolate-hcl" : "interpolate";
