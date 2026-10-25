@@ -5,9 +5,11 @@ import { MIN_ZOOM, Transform } from "../camera/transform.ts";
 import { featureKey } from "../formats/mvt.ts";
 import type { LngLat, LngLatLike } from "../geo/mercator.ts";
 import { latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY, toLngLat, wrapLongitude } from "../geo/mercator.ts";
+import { sunAltitude, sunAzimuth, sunPosition } from "../geo/sun.ts";
 import type { InputOptions, TouchType } from "../input/handlers.ts";
 import { InputHandlers } from "../input/handlers.ts";
 import { GL } from "../render/gl.ts";
+import type { SunLook } from "../render/night.ts";
 import type { PickBox } from "../render/painter.ts";
 import { Painter } from "../render/painter.ts";
 import { DemSource } from "../sources/dem.ts";
@@ -18,6 +20,7 @@ import { registerPmtilesProtocol } from "../sources/pmtiles.ts";
 import { RasterSource } from "../sources/raster.ts";
 import type { MapSource, SourceContext } from "../sources/source.ts";
 import { VectorSource } from "../sources/vector.ts";
+import { parseColor } from "../style/color.ts";
 import type { Compiled } from "../style/expression.ts";
 import { compile } from "../style/expression.ts";
 import type { FeatureTarget, StateLookup } from "../style/feature-state.ts";
@@ -26,8 +29,8 @@ import { importStyle, isStyleV8 } from "../style/import.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { StyleUpdate } from "../style/style.ts";
 import { assertValid, Style } from "../style/style.ts";
-import type { LayerSpec, SkySpec, SourceSpec, StyleSpec, StyleSpecV8, TerrainSpec } from "../style/types.ts";
-import { validateSky } from "../style/validate.ts";
+import type { LayerSpec, SkySpec, SourceSpec, StyleSpec, StyleSpecV8, SunSpec, TerrainSpec } from "../style/types.ts";
+import { sunTime, validateSky, validateSun } from "../style/validate.ts";
 import { metersToWorld, Terrain } from "../terrain/terrain.ts";
 import type { TransformRequest } from "../tiles/fetch.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
@@ -398,6 +401,7 @@ export class MapletMap extends Emitter<MapEvents> {
   private elevationFrom = 0;
   private elevationTo: number | null = null;
   private removed = false;
+  private sunClock = 0;
   private loadedFired = false;
   private idleFired = false;
   private contextLost = false;
@@ -932,6 +936,53 @@ export class MapletMap extends Emitter<MapEvents> {
   getSky(): SkySpec | null {
     const sky = this.style?.meta.sky;
     return sky ? structuredClone(sky) : null;
+  }
+
+  setSun(sun: (Omit<SunSpec, "time"> & { time?: SunSpec["time"] | Date }) | null): this {
+    const style = this.style;
+    if (!style) throw new MapletError("invalid-option", "Set a style before turning on day and night");
+    if (sun === null) {
+      delete style.meta.sun;
+    } else {
+      const spec: SunSpec = sun.time instanceof Date ? { ...sun, time: sun.time.getTime() } : (sun as SunSpec);
+      const issues = validateSun(spec);
+      if (issues.length > 0) {
+        throw new MapletError("invalid-option", `${issues[0]!.path} ${issues[0]!.message}`, { sun });
+      }
+      style.meta.sun = structuredClone(spec);
+    }
+    this.triggerRepaint();
+    return this;
+  }
+
+  getSun(): SunSpec | null {
+    const sun = this.style?.meta.sun;
+    return sun ? structuredClone(sun) : null;
+  }
+
+  private sunLook(sun: SunSpec | undefined): SunLook | null {
+    if (!sun) {
+      if (this.sunClock) clearInterval(this.sunClock);
+      this.sunClock = 0;
+      return null;
+    }
+    const live = sun.time === undefined || sun.time === "now";
+    if (live && !this.sunClock) this.sunClock = setInterval(() => this.triggerRepaint(), 60000) as unknown as number;
+    if (!live && this.sunClock) {
+      clearInterval(this.sunClock);
+      this.sunClock = 0;
+    }
+    const time = sunTime(sun.time) ?? Date.now();
+    const night = parseColor(sun.night ?? NIGHT) ?? [0.16, 0.2, 0.36, 1];
+    const position = sunPosition(time);
+    let light: [number, number, number] | null = null;
+    if (sun.shade !== false) {
+      const [lng, lat] = this.transform.center;
+      const azimuth = (sunAzimuth(position, lng, lat) * Math.PI) / 180;
+      const altitude = (Math.min(75, Math.max(4, sunAltitude(position, lng, lat))) * Math.PI) / 180;
+      light = [Math.sin(azimuth) * Math.cos(altitude), -Math.cos(azimuth) * Math.cos(altitude), Math.sin(altitude)];
+    }
+    return { sun: position, night: [night[0], night[1], night[2]], twilight: sun.twilight ?? 12, light };
   }
 
   easeTo(options: CameraOptions & AnimationOptions): this {
@@ -1813,6 +1864,8 @@ export class MapletMap extends Emitter<MapEvents> {
     if (this.frameHandle) cancelAnimationFrame(this.frameHandle);
     this.frameHandle = 0;
     if (this.wakeTimer !== undefined) clearTimeout(this.wakeTimer);
+    if (this.sunClock) clearInterval(this.sunClock);
+    this.sunClock = 0;
     this.styleRequest?.abort();
     this.spriteRequest?.abort();
     this.hash?.destroy();
@@ -2289,6 +2342,7 @@ export class MapletMap extends Emitter<MapEvents> {
         layers: style.layers,
         sources: style.sources,
         sky: style.meta.sky ?? null,
+        sun: this.sunLook(style.meta.sun),
         now,
         cameraVersion: this.cameraVersion,
         states: this.stateScope,
@@ -2709,6 +2763,8 @@ function workerFactory(url: string | undefined): WorkerFactory | null {
 }
 
 export const DEFAULT_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+
+const NIGHT = "#29335c";
 
 function worldView(container: HTMLElement): { zoom: number; center: [number, number] } {
   const top = mercatorY(75);
