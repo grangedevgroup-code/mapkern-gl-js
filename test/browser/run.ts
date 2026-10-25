@@ -1546,6 +1546,99 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "circle stroke opacity, translate and pitch options",
+    async run({ page, shot }) {
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          g: {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [0, 0] } }],
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          {
+            id: "dot",
+            type: "circle",
+            source: "g",
+            paint: { radius: 20, color: "#ff0000", strokeColor: "#0000ff", strokeWidth: 6, strokeOpacity: 0 },
+          },
+        ],
+      });
+      await createMap(page, style, { zoom: 5, center: [0, 0] });
+      const ring = await pixel(page, 423, 300);
+      if (!near(ring, WHITE, 10)) fail(`strokeOpacity 0 should hide the stroke, got ${ring}`);
+      await page.evaluate(
+        `void window.map.setPaintProperty("dot", "strokeOpacity", 1).setPaintProperty("dot", "opacity", 0.5)`,
+      );
+      await idle(page);
+      const stroke = await pixel(page, 423, 300);
+      const fill = await pixel(page, 400, 300);
+      if (!near(stroke, BLUE, 10)) fail(`a circle's opacity should not fade its stroke, got ${stroke}`);
+      if (!near(fill, [255, 128, 128, 255], 10)) fail(`opacity 0.5 should fade the fill, got ${fill}`);
+      const extent = (row: number) =>
+        page.evaluate<number>(`(() => {
+          let count = 0;
+          for (let x = 0; x < 800; x++) {
+            const c = window.pixel(x, ${row});
+            if (c[0] > 200 && c[1] < 180 && c[2] < 180) count++;
+          }
+          return count;
+        })()`);
+      await page.evaluate(
+        `void window.map.setPaintProperty("dot", "opacity", 1).setPaintProperty("dot", "translate", [30, 0])`,
+      );
+      await idle(page);
+      const moved = await pixel(page, 430, 300);
+      const left = await pixel(page, 385, 300);
+      if (!near(moved, RED, 10) || near(left, RED, 10))
+        fail(`translate [30, 0] should move the circle right, got ${moved} and ${left}`);
+      await page.evaluate("void window.map.setBearing(90)");
+      await idle(page);
+      const mapAnchored = await pixel(page, 400, 270);
+      if (!near(mapAnchored, RED, 10))
+        fail(`a map-anchored translate turns with the map, got ${mapAnchored} at 400,270`);
+      await page.evaluate(`void window.map.setPaintProperty("dot", "translateAnchor", "viewport")`);
+      await idle(page);
+      const screenAnchored = await pixel(page, 430, 300);
+      if (!near(screenAnchored, RED, 10))
+        fail(`a viewport-anchored translate stays screen right, got ${screenAnchored} at 430,300`);
+      await page.evaluate(
+        `void window.map.setPaintProperty("dot", "translate", [0, 0]).jumpTo({ bearing: 0, pitch: 60, center: [0, -5] })`,
+      );
+      await idle(page);
+      const far = await page.evaluate<{ x: number; y: number }>("window.map.project([0, 0])");
+      const row = Math.round(far.y);
+      const plain = await extent(row);
+      await page.evaluate(`void window.map.setPaintProperty("dot", "pitchScale", "map")`);
+      await idle(page);
+      const scaled = await extent(row);
+      const ratio = await page.evaluate<number>(
+        "(() => { const t = window.map.transform; return t.cameraToCenterDistance / t.project(0.5, 0.5, 0).w; })()",
+      );
+      if (!(ratio < 0.95) || Math.abs(scaled - plain * ratio) > 2.5)
+        fail(`pitchScale map should shrink a distant circle to ${plain * ratio} px, got ${scaled} px from ${plain} px`);
+      await page.evaluate(`void window.map.setPaintProperty("dot", "pitchAlignment", "map")`);
+      await idle(page);
+      await shot("circle-pitch-map");
+      const tall = await page.evaluate<number>(`(() => {
+        let count = 0;
+        for (let y = 0; y < 600; y++) {
+          const c = window.pixel(${Math.round(far.x)}, y);
+          if (c[0] > 200 && c[1] < 180 && c[2] < 180) count++;
+        }
+        return count;
+      })()`);
+      const wide = await extent(row);
+      if (!(tall < wide * 0.75))
+        fail(`a circle lying flat on a tilted map should look squashed, got ${tall} tall and ${wide} wide`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
