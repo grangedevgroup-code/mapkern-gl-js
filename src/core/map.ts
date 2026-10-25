@@ -1,5 +1,6 @@
 import type { CameraMotion, CameraState, Easing } from "../camera/animation.ts";
-import { easeInOutCubic, easeMotion, easeOutCubic, flyMotion, readState } from "../camera/animation.ts";
+import { easeInOutCubic, easeMotion, easeOutCubic, flyMotion, readState, samePadding } from "../camera/animation.ts";
+import type { Padding, WorldBounds } from "../camera/transform.ts";
 import { Transform } from "../camera/transform.ts";
 import { featureKey } from "../formats/mvt.ts";
 import type { LngLat, LngLatLike } from "../geo/mercator.ts";
@@ -51,6 +52,10 @@ export interface MapOptions {
   minPitch?: number;
   maxPitch?: number;
   renderWorldCopies?: boolean;
+  maxBounds?: BoundsLike;
+  bounds?: BoundsLike;
+  fitBoundsOptions?: FitBoundsOptions;
+  padding?: PaddingOptions;
   interactive?: boolean;
   dragPan?: boolean;
   dragRotate?: boolean;
@@ -59,6 +64,7 @@ export interface MapOptions {
   touchZoomRotate?: boolean;
   touchPitch?: boolean;
   keyboard?: boolean;
+  boxZoom?: boolean;
   bearingSnap?: number;
   clickTolerance?: number;
   pixelRatio?: number;
@@ -97,12 +103,15 @@ export interface ScreenPosition {
   occluded: boolean;
 }
 
+export type PaddingOptions = number | { top?: number; right?: number; bottom?: number; left?: number };
+
 export interface CameraOptions {
   center?: LngLatLike;
   zoom?: number;
   bearing?: number;
   pitch?: number;
   around?: LngLatLike;
+  padding?: PaddingOptions;
 }
 
 export interface AnimationOptions {
@@ -119,7 +128,7 @@ export interface FlyToOptions extends CameraOptions, AnimationOptions {
 }
 
 export interface FitBoundsOptions extends AnimationOptions {
-  padding?: number | { top?: number; right?: number; bottom?: number; left?: number };
+  padding?: PaddingOptions;
   maxZoom?: number;
   bearing?: number;
   pitch?: number;
@@ -203,6 +212,9 @@ export interface MapEvents {
   pitchstart: MapMoveEvent;
   pitch: MapMoveEvent;
   pitchend: MapMoveEvent;
+  boxzoomstart: MapMoveEvent;
+  boxzoomend: MapMoveEvent;
+  boxzoomcancel: MapMoveEvent;
   error: MapErrorEvent;
   sourcedata: SourceDataEvent;
   click: MapPointerEvent;
@@ -248,6 +260,7 @@ export class MapletMap extends Emitter<MapEvents> {
   readonly touchZoomRotate: TouchZoomRotateSwitch;
   readonly touchPitch: HandlerSwitch;
   readonly keyboard: HandlerSwitch;
+  readonly boxZoom: HandlerSwitch;
   private readonly container: HTMLElement;
   private readonly canvasContainer: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
@@ -347,6 +360,8 @@ export class MapletMap extends Emitter<MapEvents> {
     this.transform.setZoom(checkNumber(options.zoom, "zoom", 0));
     this.transform.setBearing(checkNumber(options.bearing, "bearing", 0));
     this.transform.setPitch(checkNumber(options.pitch, "pitch", 0));
+    if (options.padding !== undefined) this.transform.setPadding(normalizePadding(options.padding));
+    if (options.maxBounds !== undefined) this.transform.setMaxBounds(worldBounds(options.maxBounds));
     this.lastState = readState(this.transform);
 
     container.classList.add("maplet-map");
@@ -407,6 +422,7 @@ export class MapletMap extends Emitter<MapEvents> {
         touchPitch: options.touchPitch ?? true,
         touchRotate: true,
         keyboard: options.keyboard ?? true,
+        boxZoom: options.boxZoom ?? true,
         clickTolerance: checkNumber(options.clickTolerance, "clickTolerance", 4),
       };
       this.handlers = new InputHandlers(this.inputHost(), input);
@@ -419,6 +435,7 @@ export class MapletMap extends Emitter<MapEvents> {
     this.doubleClickZoom = this.handlerSwitch("doubleClickZoom");
     this.touchPitch = this.handlerSwitch("touchPitch");
     this.keyboard = this.handlerSwitch("keyboard");
+    this.boxZoom = this.handlerSwitch("boxZoom");
     const rotation = this.handlerSwitch("touchRotate");
     this.touchZoomRotate = {
       ...this.handlerSwitch("touchZoomRotate"),
@@ -432,6 +449,11 @@ export class MapletMap extends Emitter<MapEvents> {
       this.addControl(new AttributionControl(custom === undefined ? {} : { custom }));
     }
 
+    if (options.bounds !== undefined) {
+      const camera = this.cameraForBounds(options.bounds, options.fitBoundsOptions ?? {});
+      if (camera) this.applyCamera(camera);
+      this.lastState = readState(this.transform);
+    }
     if (options.style !== undefined) this.setStyle(options.style);
     this.triggerRepaint();
   }
@@ -506,7 +528,8 @@ export class MapletMap extends Emitter<MapEvents> {
       | "touchZoomRotate"
       | "touchPitch"
       | "touchRotate"
-      | "keyboard",
+      | "keyboard"
+      | "boxZoom",
   ): HandlerSwitch {
     return {
       enable: () => {
@@ -588,6 +611,31 @@ export class MapletMap extends Emitter<MapEvents> {
 
   getMaxPitch(): number {
     return this.transform.maxPitch;
+  }
+
+  getMaxBounds(): [[number, number], [number, number]] | null {
+    const b = this.transform.maxBounds;
+    if (!b) return null;
+    return [
+      [lngFromMercatorX(b.x0), latFromMercatorY(b.y1)],
+      [lngFromMercatorX(b.x1), latFromMercatorY(b.y0)],
+    ];
+  }
+
+  setMaxBounds(bounds: BoundsLike | null): this {
+    this.transform.setMaxBounds(bounds === null || bounds === undefined ? null : worldBounds(bounds));
+    this.cameraChanged();
+    return this;
+  }
+
+  getPadding(): Padding {
+    return this.transform.padding;
+  }
+
+  setPadding(padding: PaddingOptions): this {
+    this.transform.setPadding(normalizePadding(padding));
+    this.cameraChanged();
+    return this;
   }
 
   getRenderWorldCopies(): boolean {
@@ -713,7 +761,8 @@ export class MapletMap extends Emitter<MapEvents> {
 
   panBy(offset: [number, number], options: AnimationOptions = {}): this {
     const t = this.transform;
-    const target = t.unprojectClamped(t.width / 2 + offset[0], t.height / 2 + offset[1]);
+    const [cx, cy] = t.centerPoint;
+    const target = t.unprojectClamped(cx + offset[0], cy + offset[1]);
     return this.easeTo({ ...options, center: [lngFromMercatorX(target[0]), latFromMercatorY(target[1])] });
   }
 
@@ -754,42 +803,87 @@ export class MapletMap extends Emitter<MapEvents> {
   fitBounds(bounds: BoundsLike, options: FitBoundsOptions = {}): this {
     const camera = this.cameraForBounds(bounds, options);
     if (!camera) return this;
+    return this.moveTo(camera, options);
+  }
+
+  cameraForBounds(bounds: BoundsLike, options: FitBoundsOptions = {}): CameraOptions | null {
+    const b = worldBounds(bounds);
+    return this.cameraForWorld(
+      [
+        [b.x0, b.y0],
+        [b.x1, b.y0],
+        [b.x1, b.y1],
+        [b.x0, b.y1],
+      ],
+      options,
+    );
+  }
+
+  fitScreenCoordinates(p0: PointLike, p1: PointLike, bearing: number, options: FitBoundsOptions = {}): this {
+    const [ax, ay] = screenPoint(p0);
+    const [bx, by] = screenPoint(p1);
+    const points: [number, number][] = [];
+    for (const [x, y] of [
+      [ax, ay],
+      [bx, ay],
+      [bx, by],
+      [ax, by],
+    ] as const) {
+      const hit = this.pickWorld(x, y);
+      if (hit) points.push([hit[0], hit[1]]);
+    }
+    if (points.length === 0) return this;
+    const camera = this.cameraForWorld(points, { ...options, bearing: checkNumber(bearing, "bearing", 0) });
+    if (!camera) return this;
+    return this.moveTo(camera, options);
+  }
+
+  private cameraForWorld(
+    points: readonly (readonly [number, number])[],
+    options: FitBoundsOptions,
+  ): CameraOptions | null {
+    const pad = normalizePadding(options.padding);
+    const t = this.transform;
+    const own = t.padding;
+    const width = t.width - pad.left - pad.right - own.left - own.right;
+    const height = t.height - pad.top - pad.bottom - own.top - own.bottom;
+    if (width <= 0 || height <= 0) return null;
+    const bearing = ((options.bearing ?? t.bearing) * Math.PI) / 180;
+    const cos = Math.cos(bearing);
+    const sin = Math.sin(bearing);
+    let u0 = Infinity;
+    let u1 = -Infinity;
+    let v0 = Infinity;
+    let v1 = -Infinity;
+    for (const [x, y] of points) {
+      const u = x * cos + y * sin;
+      const v = -x * sin + y * cos;
+      u0 = Math.min(u0, u);
+      u1 = Math.max(u1, u);
+      v0 = Math.min(v0, v);
+      v1 = Math.max(v1, v);
+    }
+    const scale = Math.min(width / Math.max((u1 - u0) * 512, 1e-12), height / Math.max((v1 - v0) * 512, 1e-12));
+    const zoom = Math.min(Math.log2(scale), options.maxZoom ?? t.maxZoom);
+    const ws = 512 * 2 ** zoom;
+    const uc = (u0 + u1) / 2 - (pad.left - pad.right) / 2 / ws;
+    const vc = (v0 + v1) / 2 - (pad.top - pad.bottom) / 2 / ws;
+    const x = uc * cos - vc * sin;
+    const y = uc * sin + vc * cos;
+    return {
+      center: [lngFromMercatorX(x), latFromMercatorY(y)],
+      zoom,
+      bearing: options.bearing ?? t.bearing,
+      pitch: options.pitch ?? t.pitch,
+    };
+  }
+
+  private moveTo(camera: CameraOptions, options: FitBoundsOptions): this {
     const anim: AnimationOptions = {};
     if (options.duration !== undefined) anim.duration = options.duration;
     if (options.easing !== undefined) anim.easing = options.easing;
     if (options.animate !== undefined) anim.animate = options.animate;
     return options.linear === false ? this.flyTo({ ...camera, ...anim }) : this.easeTo({ ...camera, ...anim });
-  }
-
-  cameraForBounds(bounds: BoundsLike, options: FitBoundsOptions = {}): CameraOptions | null {
-    const [[w, s], [e, n]] = normalizeBounds(bounds);
-    const pad = normalizePadding(options.padding);
-    const t = this.transform;
-    const width = t.width - pad.left - pad.right;
-    const height = t.height - pad.top - pad.bottom;
-    if (width <= 0 || height <= 0) return null;
-    const x0 = mercatorX(w);
-    let x1 = mercatorX(e);
-    if (x1 < x0) x1 += 1;
-    const y0 = mercatorY(n);
-    const y1 = mercatorY(s);
-    const bearing = ((options.bearing ?? t.bearing) * Math.PI) / 180;
-    const cos = Math.abs(Math.cos(bearing));
-    const sin = Math.abs(Math.sin(bearing));
-    const bw = (x1 - x0) * cos + (y1 - y0) * sin;
-    const bh = (x1 - x0) * sin + (y1 - y0) * cos;
-    const scale = Math.min(width / Math.max(bw * 512, 1e-12), height / Math.max(bh * 512, 1e-12));
-    let zoom = Math.log2(scale);
-    zoom = Math.min(zoom, options.maxZoom ?? t.maxZoom);
-    const cx = (x0 + x1) / 2;
-    const cy = (y0 + y1) / 2;
-    const offX = (pad.left - pad.right) / 2;
-    const offY = (pad.top - pad.bottom) / 2;
-    const ws = 512 * 2 ** zoom;
-    const rx = offY * Math.sin(bearing) - offX * Math.cos(bearing);
-    const ry = -offX * Math.sin(bearing) - offY * Math.cos(bearing);
-    const center: [number, number] = [lngFromMercatorX(cx + rx / ws), latFromMercatorY(cy + ry / ws)];
-    return { center, zoom, bearing: options.bearing ?? t.bearing, pitch: options.pitch ?? t.pitch };
   }
 
   stop(): this {
@@ -1053,7 +1147,7 @@ export class MapletMap extends Emitter<MapEvents> {
     return this.featureStates.scope(layer.source, source.type === "vector" ? layer.sourceLayer : undefined);
   };
 
-  private readonly readState: StateReader = (source, sourceLayer, id) => {
+  private readonly stateOf: StateReader = (source, sourceLayer, id) => {
     const key = featureKey(id);
     return key === undefined ? {} : this.featureStates.get(source, sourceLayer, key);
   };
@@ -1092,7 +1186,7 @@ export class MapletMap extends Emitter<MapEvents> {
         ? { frame: { ...frame, transform: ground.transform, view: ground.transform, terrain: null }, box: ground.box }
         : undefined,
     );
-    return resolveFeatures(picked, style.sources, this.readState);
+    return resolveFeatures(picked, style.sources, this.stateOf);
   }
 
   private groundQuery(box: PickBox): { transform: Transform; box: PickBox } | null {
@@ -1114,6 +1208,8 @@ export class MapletMap extends Emitter<MapEvents> {
     }
     if (points.length === 0) return null;
     const flat = t.clone();
+    flat.setMaxBounds(null);
+    flat.setPadding({ top: 0, right: 0, bottom: 0, left: 0 });
     flat.setPitchRange(0, 85);
     flat.setPitch(0);
     flat.setElevation(0);
@@ -1577,6 +1673,7 @@ export class MapletMap extends Emitter<MapEvents> {
 
   private targetState(options: CameraOptions): CameraState {
     const t = this.transform.clone();
+    if (options.padding !== undefined) t.setPadding(normalizePadding(options.padding));
     if (options.center !== undefined) {
       const [lng, lat] = toLngLat(options.center);
       t.setCenter(lng, lat);
@@ -1587,13 +1684,14 @@ export class MapletMap extends Emitter<MapEvents> {
     const state = readState(t);
     if (options.center !== undefined) {
       const [lng] = toLngLat(options.center);
-      state.x = mercatorX(lng);
+      state.x += Math.round(mercatorX(lng) - state.x);
     }
     return state;
   }
 
   private applyCamera(options: CameraOptions): void {
     const t = this.transform;
+    if (options.padding !== undefined) t.setPadding(normalizePadding(options.padding));
     if (options.zoom !== undefined) {
       const zoom = checkNumber(options.zoom, "zoom", t.zoom);
       if (options.around !== undefined && options.center === undefined) {
@@ -1754,7 +1852,8 @@ export class MapletMap extends Emitter<MapEvents> {
     const zoomed = Math.abs(state.zoom - last.zoom) > 1e-12;
     const rotated = Math.abs(state.bearing - last.bearing) > 1e-12;
     const pitched = Math.abs(state.pitch - last.pitch) > 1e-12;
-    const moved = changed && (zoomed || rotated || pitched || state.x !== last.x || state.y !== last.y);
+    const padded = !samePadding(state.padding, last.padding);
+    const moved = changed && (zoomed || rotated || pitched || padded || state.x !== last.x || state.y !== last.y);
     this.lastState = state;
     const original = this.gestureEvent;
     const ev = (type: string): MapMoveEvent => ({ target: this, type, originalEvent: original });
@@ -1811,6 +1910,14 @@ export class MapletMap extends Emitter<MapEvents> {
       },
       rotateEnded: () => {
         this.snapToNorth();
+      },
+      boxZoom: (stage: "start" | "end" | "cancel", from: [number, number], to: [number, number], event: Event) => {
+        const type = stage === "start" ? "boxzoomstart" : stage === "end" ? "boxzoomend" : "boxzoomcancel";
+        if (stage === "end") {
+          this.gestureEvent = event;
+          this.fitScreenCoordinates(from, to, this.transform.bearing, { linear: true });
+        }
+        this.emit(type, { target: this, type, originalEvent: event });
       },
       ease: (
         target: { zoom?: number; bearing?: number; pitch?: number; panBy?: [number, number] },
@@ -1925,15 +2032,57 @@ function normalizeBounds(bounds: BoundsLike): [[number, number], [number, number
   ];
 }
 
-function normalizePadding(padding: FitBoundsOptions["padding"]): {
-  top: number;
-  right: number;
-  bottom: number;
-  left: number;
-} {
+function normalizePadding(padding: PaddingOptions | undefined): Padding {
   if (padding === undefined) return { top: 0, right: 0, bottom: 0, left: 0 };
-  if (typeof padding === "number") return { top: padding, right: padding, bottom: padding, left: padding };
-  return { top: padding.top ?? 0, right: padding.right ?? 0, bottom: padding.bottom ?? 0, left: padding.left ?? 0 };
+  const side = (value: unknown, name: string): number => {
+    if (value === undefined) return 0;
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+      throw new MapletError("invalid-option", `padding ${name} must be a number of pixels, 0 or more`);
+    }
+    return value;
+  };
+  if (typeof padding === "number") {
+    const all = side(padding, "");
+    return { top: all, right: all, bottom: all, left: all };
+  }
+  if (typeof padding !== "object" || padding === null) {
+    throw new MapletError("invalid-option", "padding must be a number or { top, right, bottom, left }");
+  }
+  return {
+    top: side(padding.top, "top"),
+    right: side(padding.right, "right"),
+    bottom: side(padding.bottom, "bottom"),
+    left: side(padding.left, "left"),
+  };
+}
+
+function worldBounds(bounds: BoundsLike): WorldBounds {
+  if (!Array.isArray(bounds) || (bounds.length !== 2 && bounds.length !== 4)) {
+    throw new MapletError(
+      "invalid-option",
+      "bounds must be [[west, south], [east, north]] or [west, south, east, north]",
+    );
+  }
+  const [[w, s], [e, n]] = normalizeBounds(bounds);
+  if (![w, s, e, n].every(Number.isFinite)) {
+    throw new MapletError(
+      "invalid-option",
+      "bounds must be [[west, south], [east, north]] or [west, south, east, north]",
+    );
+  }
+  const x0 = mercatorX(w);
+  let x1 = mercatorX(e);
+  if (x1 < x0) x1 += 1;
+  return { x0, y0: mercatorY(Math.min(85.051129, n)), x1, y1: mercatorY(Math.max(-85.051129, s)) };
+}
+
+function screenPoint(p: PointLike): [number, number] {
+  const x = Array.isArray(p) ? p[0] : p?.x;
+  const y = Array.isArray(p) ? p[1] : p?.y;
+  if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) {
+    throw new MapletError("invalid-option", "points must be [x, y] or { x, y } in pixels");
+  }
+  return [x, y];
 }
 
 declare const MAPLET_WORKER_SOURCE: string | undefined;
