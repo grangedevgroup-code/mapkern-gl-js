@@ -3,6 +3,11 @@ import type { GL } from "./gl.ts";
 const ZERO = new Uint32Array(4);
 const ONE = new Float32Array([1]);
 
+export interface PendingRead {
+  buffer: WebGLBuffer;
+  length: number;
+}
+
 export class PickBuffer {
   private readonly gl: GL;
   private framebuffer: WebGLFramebuffer | null = null;
@@ -34,6 +39,50 @@ export class PickBuffer {
     const gl = this.gl.gl;
     gl.readPixels(0, 0, this.width, this.height, gl.RGBA_INTEGER, gl.UNSIGNED_INT, this.pixels);
     return this.pixels;
+  }
+
+  copy(): PendingRead | null {
+    const gl = this.gl.gl;
+    const buffer = gl.createBuffer();
+    if (!buffer) return null;
+    const length = this.width * this.height * 4;
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, buffer);
+    gl.bufferData(gl.PIXEL_PACK_BUFFER, length * 4, gl.STREAM_READ);
+    gl.readPixels(0, 0, this.width, this.height, gl.RGBA_INTEGER, gl.UNSIGNED_INT, 0);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    return { buffer, length };
+  }
+
+  async collect(reads: readonly (PendingRead | null)[]): Promise<(Uint32Array | null)[]> {
+    const gl = this.gl.gl;
+    const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    gl.flush();
+    if (sync) {
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          if (this.gl.isLost) return resolve();
+          const status = gl.clientWaitSync(sync, 0, 0);
+          if (status === gl.TIMEOUT_EXPIRED) setTimeout(check, 1);
+          else resolve();
+        };
+        check();
+      });
+      if (!this.gl.isLost) gl.deleteSync(sync);
+    }
+    const out: (Uint32Array | null)[] = [];
+    for (const read of reads) {
+      if (!read || this.gl.isLost) {
+        out.push(null);
+        continue;
+      }
+      const pixels = new Uint32Array(read.length);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, read.buffer);
+      gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, pixels);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      gl.deleteBuffer(read.buffer);
+      out.push(pixels);
+    }
+    return out;
   }
 
   end(): void {
