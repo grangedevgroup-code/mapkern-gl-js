@@ -286,6 +286,7 @@ function buildBucket(
   if (program.type === "symbol") {
     const symbol: SymbolLayout = {
       text: cachedCompile(`${program.id}.text`, layout.text ?? "", "string"),
+      icon: cachedCompile(`${program.id}.icon`, layout.icon ?? "", "string"),
       size: cachedCompile(`${program.id}.size`, layout.size ?? 14, "number"),
       priority: cachedCompile(`${program.id}.priority`, layout.priority ?? 0, "number"),
       placement: layout.placement === "line" ? "line" : "point",
@@ -300,7 +301,7 @@ function buildBucket(
         const info = labelInfo({ zoom, feature: f }, symbol);
         const parts = info ? f.feature.geometry() : [];
         if (!info || parts.length === 0) continue;
-        const key = `${info.size}|${info.text}`;
+        const key = `${info.size}|${info.text}|${info.icon}`;
         const group = streets.get(key);
         if (group) {
           group.info.priority = Math.max(group.info.priority, info.priority);
@@ -313,12 +314,12 @@ function buildBucket(
       }
       const found = labelCandidates(f.feature, index, { zoom, feature: f }, symbol, source.extent);
       if (found.length === 0) continue;
-      for (const c of found) labels.add(c.text, c.feature, c.size, c.priority, c.line, c.anchors, c.path);
+      for (const c of found) labels.add(c.text, c.icon, c.feature, c.size, c.priority, c.line, c.anchors, c.path);
       features.add(f.feature, f.index);
     }
     for (const { info, index, parts } of streets.values()) {
       for (const c of lineLabels(mergeParts(parts), info, index, symbol, source.extent)) {
-        labels.add(c.text, c.feature, c.size, c.priority, c.line, c.anchors, c.path);
+        labels.add(c.text, c.icon, c.feature, c.size, c.priority, c.line, c.anchors, c.path);
       }
     }
     if (labels.count === 0) return null;
