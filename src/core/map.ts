@@ -32,7 +32,10 @@ import { injectStyles } from "../ui/css.ts";
 import type { WorkerFactory } from "../worker/pool.ts";
 import { WorkerPool } from "../worker/pool.ts";
 import { errorMessage, MapletError } from "./errors.ts";
+import type { Listener } from "./events.ts";
 import { Emitter } from "./events.ts";
+import type { LayerEventType, PointerInput, PointerType } from "./layer-events.ts";
+import { LAYER_EVENT_TYPES, LayerEvents } from "./layer-events.ts";
 import type { QueriedFeature, StateReader } from "./query.ts";
 import { resolveFeatures } from "./query.ts";
 
@@ -154,6 +157,13 @@ export interface MapPointerEvent extends MapEvent {
   readonly defaultPrevented: boolean;
 }
 
+export interface MapLayerEvent extends MapPointerEvent {
+  readonly type: LayerEventType;
+  readonly features: QueriedFeature[];
+}
+
+export type MapLayerEvents = { [K in LayerEventType]: MapLayerEvent };
+
 export interface MapErrorEvent extends MapEvent {
   readonly error: MapletError;
   readonly sourceId?: string | undefined;
@@ -250,6 +260,28 @@ export class MapletMap extends Emitter<MapEvents> {
   private motion: { motion: CameraMotion; start: number; flags: CameraFlags } | null = null;
   private terrain: Terrain | null = null;
   private featureStates = new FeatureStates();
+  private readonly layerEvents: LayerEvents<MapLayerEvent> = new LayerEvents<MapLayerEvent>({
+    query: (point, layers) => this.queryLayersAt(point, layers),
+    event: (type, input, features, prevent) => {
+      let prevented = false;
+      return {
+        target: this,
+        type,
+        point: { x: input.point[0], y: input.point[1] },
+        lngLat: input.lngLat,
+        originalEvent: input.event,
+        features,
+        preventDefault: () => {
+          prevented = true;
+          prevent();
+        },
+        get defaultPrevented() {
+          return prevented;
+        },
+      };
+    },
+    active: () => !this.removed,
+  });
   private elevationIntent: "zoom" | "camera" = "zoom";
   private elevationFrom = 0;
   private elevationTo: number | null = null;
@@ -396,6 +428,63 @@ export class MapletMap extends Emitter<MapEvents> {
 
   text(key: UiText): string {
     return this.strings[key];
+  }
+
+  override on<K extends keyof MapEvents>(type: K, listener: Listener<MapEvents[K]>): this;
+  override on<K extends keyof MapLayerEvents>(
+    type: K,
+    layers: string | readonly string[],
+    listener: Listener<MapLayerEvents[K]>,
+  ): this;
+  override on(type: keyof MapEvents, layersOrListener: unknown, listener?: unknown): this {
+    if (typeof layersOrListener === "function")
+      return super.on(type, layersOrListener as Listener<MapEvents[keyof MapEvents]>);
+    this.layerEvents.add(layerEventType(type), layerList(layersOrListener), checkListener(listener));
+    return this;
+  }
+
+  override off<K extends keyof MapEvents>(type: K, listener: Listener<MapEvents[K]>): this;
+  override off<K extends keyof MapLayerEvents>(
+    type: K,
+    layers: string | readonly string[],
+    listener: Listener<MapLayerEvents[K]>,
+  ): this;
+  override off(type: keyof MapEvents, layersOrListener: unknown, listener?: unknown): this {
+    if (typeof layersOrListener === "function")
+      return super.off(type, layersOrListener as Listener<MapEvents[keyof MapEvents]>);
+    this.layerEvents.remove(layerEventType(type), layerList(layersOrListener), checkListener(listener));
+    return this;
+  }
+
+  override once<K extends keyof MapEvents>(type: K, listener?: Listener<MapEvents[K]>): Promise<MapEvents[K]>;
+  override once<K extends keyof MapLayerEvents>(
+    type: K,
+    layers: string | readonly string[],
+    listener?: Listener<MapLayerEvents[K]>,
+  ): Promise<MapLayerEvents[K]>;
+  override once(type: keyof MapEvents, layersOrListener?: unknown, listener?: unknown): Promise<unknown> {
+    if (layersOrListener === undefined || typeof layersOrListener === "function") {
+      return super.once(type, layersOrListener as Listener<MapEvents[keyof MapEvents]> | undefined);
+    }
+    const kind = layerEventType(type);
+    const layers = layerList(layersOrListener);
+    const callback = listener === undefined ? undefined : checkListener(listener);
+    return new Promise((resolve) => {
+      const wrapper: Listener<MapLayerEvent> = (event) => {
+        this.layerEvents.remove(kind, layers, wrapper);
+        callback?.(event);
+        resolve(event);
+      };
+      this.layerEvents.add(kind, layers, wrapper);
+    });
+  }
+
+  private async queryLayersAt(point: [number, number], layers: readonly string[]): Promise<QueriedFeature[]> {
+    const style = this.style;
+    if (!style || this.removed) return [];
+    const existing = layers.filter((id) => style.getLayer(id) !== undefined);
+    if (existing.length === 0) return [];
+    return this.queryRenderedFeatures(point, { layers: existing });
   }
 
   private handlerSwitch(
@@ -1299,6 +1388,7 @@ export class MapletMap extends Emitter<MapEvents> {
     this.teardownDom();
     this.emit("remove", this.event("remove"));
     this.removeAllListeners();
+    this.layerEvents.clear();
   }
 
   private teardownDom(): void {
@@ -1713,31 +1803,34 @@ export class MapletMap extends Emitter<MapEvents> {
         }
         this.easeTo(options);
       },
-      pointerEvent: (
-        type: "click" | "dblclick" | "contextmenu" | "mousemove" | "mousedown" | "mouseup" | "mouseout",
-        event: MouseEvent,
-        point: [number, number],
-      ) => {
+      pointerEvent: (type: PointerType, event: MouseEvent, point: [number, number]): Promise<boolean> | null => {
         this.gestureEvent = event;
-        if (!this.listens(type)) return;
-        let prevented = false;
+        const mapListeners = this.listens(type);
+        const layerListeners = this.layerEvents.wants(type);
+        if (!mapListeners && !layerListeners) return null;
         const hit = this.pickWorld(point[0], point[1]);
-        const ll: LngLat | null = hit ? [lngFromMercatorX(hit[0]), latFromMercatorY(hit[1])] : null;
-        const e: MapPointerEvent = {
-          target: this,
-          type,
-          point: { x: point[0], y: point[1] },
-          lngLat: ll ? [wrapLongitude(ll[0]), ll[1]] : null,
-          originalEvent: event,
-          preventDefault: () => {
-            prevented = true;
-            event.preventDefault();
-          },
-          get defaultPrevented() {
-            return prevented;
-          },
-        };
-        this.emit(type, e);
+        const lngLat: LngLat | null = hit ? [wrapLongitude(lngFromMercatorX(hit[0])), latFromMercatorY(hit[1])] : null;
+        if (mapListeners) {
+          let prevented = false;
+          const e: MapPointerEvent = {
+            target: this,
+            type,
+            point: { x: point[0], y: point[1] },
+            lngLat,
+            originalEvent: event,
+            preventDefault: () => {
+              prevented = true;
+              event.preventDefault();
+            },
+            get defaultPrevented() {
+              return prevented;
+            },
+          };
+          this.emit(type, e);
+        }
+        if (!layerListeners) return null;
+        const input: PointerInput = { type, event, point, lngLat };
+        return this.layerEvents.dispatch(input);
       },
     };
   }
@@ -1759,6 +1852,26 @@ export class MapletMap extends Emitter<MapEvents> {
     this.emit("contextrestored", this.event("contextrestored"));
     this.triggerRepaint();
   };
+}
+
+function layerEventType(type: string): LayerEventType {
+  if (!LAYER_EVENT_TYPES.has(type)) {
+    throw new MapletError("invalid-option", `"${type}" events can't be bound to layers`, { event: type });
+  }
+  return type as LayerEventType;
+}
+
+function layerList(layers: unknown): string[] {
+  const list = typeof layers === "string" ? [layers] : Array.isArray(layers) ? [...layers] : null;
+  if (!list || list.length === 0 || list.some((id) => typeof id !== "string" || id === "")) {
+    throw new MapletError("invalid-option", "Layer events need a layer id or a list of layer ids");
+  }
+  return list as string[];
+}
+
+function checkListener<E>(listener: unknown): Listener<E> {
+  if (typeof listener !== "function") throw new MapletError("invalid-option", "The listener must be a function");
+  return listener as Listener<E>;
 }
 
 function checkNumber(value: unknown, name: string, fallback: number): number {
