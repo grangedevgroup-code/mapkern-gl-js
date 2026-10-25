@@ -195,6 +195,8 @@ map.on("click", async (event) => {
 
 Each result has `id`, `properties`, `geometry` in longitude and latitude, `layer`, `source`, `sourceLayer` and `state`, the feature's [state](#highlighting-features). Features from vector tiles come back cut at the tile edge; GeoJSON features come back whole.
 
+`querySourceFeatures(sourceId, { sourceLayer, filter })` returns everything a source has loaded for the current view, drawn or not. For vector tiles that's every feature in the visible tiles, so a feature that crosses a tile edge can come back more than once, cut at each edge. For GeoJSON each feature comes back once and whole, and a clustered source returns the clusters you'd see at the current zoom. `filter` is an [expression](style.md#expressions), the same as a layer filter.
+
 For the height of the ground, ask an elevation source: `map.getSource("dem").elevationAt(event.lngLat)` returns meters, or `null` where no elevation tile is loaded.
 
 ## Highlighting features
