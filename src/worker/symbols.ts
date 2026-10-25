@@ -20,7 +20,7 @@ export interface SymbolLayout {
   priority: Compiled<unknown>;
   placement: "point" | "line" | "line-center";
   spacing: number;
-  transform: "none" | "uppercase" | "lowercase";
+  transform: Compiled<unknown>;
 }
 
 export interface LabelInfo {
@@ -33,13 +33,19 @@ export interface LabelInfo {
 export function labelInfo(ctx: EvalContext, layout: SymbolLayout): LabelInfo | null {
   const raw = layout.text.evaluate(ctx);
   let text = typeof raw === "string" ? raw : typeof raw === "number" ? String(raw) : "";
-  text = text.replace(/\s+/g, " ").trim();
+  text = text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line.length > 0)
+    .join("\n");
   const rawIcon = layout.icon.evaluate(ctx);
   const icon = typeof rawIcon === "string" ? rawIcon : "";
   if (text.length === 0 && icon === "") return null;
   if (text.length > 200) text = `${text.slice(0, 199)}…`;
-  if (layout.transform === "uppercase") text = text.toLocaleUpperCase();
-  else if (layout.transform === "lowercase") text = text.toLocaleLowerCase();
+  const transform = layout.transform.evaluate(ctx);
+  if (transform === "uppercase") text = text.toLocaleUpperCase();
+  else if (transform === "lowercase") text = text.toLocaleLowerCase();
   return {
     text,
     icon,
