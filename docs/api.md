@@ -27,7 +27,7 @@ const map = new maplet.Map({
 | `bounds` | | Start with this area in view instead, as `[[west, south], [east, north]]`. `fitBoundsOptions` takes the same options as `fitBounds` |
 | `maxBounds` | | Keep the view inside this area |
 | `padding` | 0 | Space in pixels the map keeps free at its edges, as a number or `{ top, right, bottom, left }` |
-| `minZoom`, `maxZoom` | -2, 22 | Below zoom 0 the whole world fits on a phone screen |
+| `minZoom`, `maxZoom` | -2, 22 | Zooming out also stops where the world fills the map from top to bottom |
 | `minPitch`, `maxPitch` | 0, 60 | |
 | `interactive` | `true` | `false` ignores mouse, touch and keyboard |
 | `hash` | `false` | `true` keeps the position in the page address, like `#12.5/47.6/-122.33`, so links open the same view. A name such as `"map"` stores it as `#map=...` next to your own parameters |
@@ -75,6 +75,8 @@ map.easeTo({ center: [-122.33, 47.6], padding: { left: 0 }, duration: 600 });
 ```
 
 The center of the map then sits in the middle of what's left, so `getCenter()`, `easeTo` and `fitBounds` all work around the panel. `jumpTo`, `easeTo` and `flyTo` take `padding` and animate it along with everything else, and `getPadding()` reads it back.
+
+The map always fills its container. You can't pan past the poles, and zooming out stops once the world reaches from the top of the map to the bottom, so there's never empty space above or below it. Sideways the world repeats, or with `renderWorldCopies: false` you stop at its edges instead. On a tall, narrow map this stop can sit above `minZoom`, and `map.transform.lowestZoom` tells you where it is right now.
 
 `setMaxBounds([[west, south], [east, north]])` keeps the whole view inside an area: you can't pan out of it, and zooming out stops once the area fills the screen. `setMaxBounds(null)` lifts the limit and `getMaxBounds()` reads it.
 
