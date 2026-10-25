@@ -94,7 +94,7 @@ function parseTag(body: string): XmlElement {
   let i = 0;
   while (i < body.length && !isSpace(body.charCodeAt(i))) i++;
   const element: XmlElement = { name: localName(body.slice(0, i)), attrs: {}, children: [], text: "" };
-  const attr = /([^\s=]+)\s*=\s*("([^"]*)"|'([^']*)')/g;
+  const attr = /(?<=\s)([^\s=]+)\s*=\s*("([^"]*)"|'([^']*)')/g;
   attr.lastIndex = i;
   for (let m = attr.exec(body); m; m = attr.exec(body)) {
     element.attrs[localName(m[1]!)] = decode(m[3] ?? m[4] ?? "");
