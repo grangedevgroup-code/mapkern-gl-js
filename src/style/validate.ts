@@ -72,6 +72,7 @@ const STYLE_KEYS = new Set([
   "layers",
   "terrain",
   "sky",
+  "sun",
   "fonts",
   "sprite",
   "glyphs",
@@ -128,6 +129,7 @@ export function validateStyle(style: unknown): StyleIssue[] {
     if (problem) issues.push({ path: "transition", message: problem });
   }
   if (style.sky !== undefined) issues.push(...validateSky(style.sky));
+  if (style.sun !== undefined) issues.push(...validateSun(style.sun));
   if (style.terrain !== undefined) {
     const t = style.terrain;
     if (!isObject(t) || typeof t.source !== "string") {
@@ -170,6 +172,39 @@ export function validateSky(sky: unknown): StyleIssue[] {
     } catch (error) {
       const message = error instanceof ExpressionError ? error.message.replace(`sky.${key}: `, "") : String(error);
       issues.push({ path: `sky.${key}`, message });
+    }
+  }
+  return issues;
+}
+
+export function sunTime(time: unknown): number | null {
+  if (time === undefined || time === "now") return Date.now();
+  if (typeof time === "number") return Number.isFinite(time) ? time : null;
+  if (typeof time === "string") {
+    const ms = Date.parse(time);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (time instanceof Date) return Number.isFinite(time.getTime()) ? time.getTime() : null;
+  return null;
+}
+
+export function validateSun(sun: unknown): StyleIssue[] {
+  if (!isObject(sun)) return [{ path: "sun", message: "sun must be an object" }];
+  const issues: StyleIssue[] = [];
+  for (const [key, value] of Object.entries(sun)) {
+    const path = `sun.${key}`;
+    if (key === "time") {
+      if (sunTime(value) === null)
+        issues.push({ path, message: 'must be "now", a date and time like "2026-06-21T20:00:00Z", or milliseconds' });
+    } else if (key === "night") {
+      if (typeof value !== "string" || !parseColor(value)) issues.push({ path, message: "must be a color" });
+    } else if (key === "twilight") {
+      if (typeof value !== "number" || !(value >= 0.5 && value <= 18))
+        issues.push({ path, message: "must be a number of degrees from 0.5 to 18" });
+    } else if (key === "shade") {
+      if (typeof value !== "boolean") issues.push({ path, message: "must be true or false" });
+    } else {
+      issues.push({ path, message: `"${key}" is not a sun property` });
     }
   }
   return issues;
