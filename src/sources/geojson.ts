@@ -289,6 +289,7 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
       buffer: Math.min(512, Math.max(0, s.buffer ?? 64)),
       extent: EXTENT,
       promoteId: s.promoteId,
+      generateId: s.generateId === true,
     };
   }
 
