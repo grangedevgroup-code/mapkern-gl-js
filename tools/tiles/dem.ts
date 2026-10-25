@@ -364,9 +364,9 @@ function pixel(input: Input, col: number, row: number): number | null {
   const block = input.blocks.get(Math.floor(row / bh) * blocksAcross(image) + Math.floor(col / bw));
   if (!block) return null;
   const value = block[(row % bh) * bw + (col % bw)]!;
-  if (Number.isNaN(value) || (input.noData !== null && value === input.noData) || value < -11000 || value > 9000)
-    return null;
-  return value;
+  if (Number.isNaN(value) || (input.noData !== null && value === input.noData)) return null;
+  const meters = value * input.unit;
+  return meters < -11000 || meters > 9000 ? null : value;
 }
 
 function sample(input: Input, u: number, v: number): number | null {
