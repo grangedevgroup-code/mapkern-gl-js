@@ -18,6 +18,7 @@ import type { Tile } from "../tiles/tile.ts";
 import type { DrapeEntry, RenderView } from "./drape.ts";
 import { DrapeCache, Hash, SlotView } from "./drape.ts";
 import type { GL, Program } from "./gl.ts";
+import type { PendingRead } from "./pick.ts";
 import { PickBuffer } from "./pick.ts";
 import { hillshadeShader } from "./shaders/hillshade.ts";
 import { rasterShader, solidShader } from "./shaders/raster.ts";
@@ -441,18 +442,23 @@ export class Painter {
     return this.terrainGeometry;
   }
 
-  pick(
+  async pick(
     frame: FrameInput,
     box: PickBox,
     accept: (layer: StyleLayer) => boolean,
     ground?: { frame: FrameInput; box: PickBox },
-  ): PickedFeature[] {
+  ): Promise<PickedFeature[]> {
     if (this.gl.isLost) return [];
     const zoom = frame.transform.zoom;
     const main = pickSetup(frame, box);
     const flat = ground ? pickSetup(ground.frame, ground.box) : main;
     const stats: PaintStats = { drawCalls: 0, pieces: 0, drapes: 0 };
     const found: PickedFeature[] = [];
+    const reads: {
+      layer: StyleLayer;
+      draws: { piece: RenderPiece<VectorTile>; bucket: VectorBucket }[];
+      read: PendingRead | null;
+    }[] = [];
     let bound: PickSetup | null = null;
     try {
       for (let i = frame.layers.length - 1; i >= 0; i--) {
@@ -478,23 +484,29 @@ export class Painter {
         this.pickBuffer.clear();
         this.vector.draw(input, layer, manager, stats, pass);
         if (draws.length === 0) continue;
-        const pixels = this.pickBuffer.read();
-        const seen = new Set<number>();
-        for (let p = 0; p < pixels.length; p += 4) {
-          const draw = pixels[p]!;
-          if (draw === 0) continue;
-          const feature = pixels[p + 1]!;
-          const key = draw * 4294967296 + feature;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          const hit = draws[draw - 1];
-          if (hit) found.push({ layer, tile: hit.piece.tile, bucket: hit.bucket, feature });
-        }
+        reads.push({ layer, draws, read: this.pickBuffer.copy() });
       }
     } finally {
       if (bound) this.pickBuffer.end();
     }
     const labels = this.labels.hits(box, (layer) => layer.isVisible(zoom) && accept(layer));
+    const results = reads.length > 0 ? await this.pickBuffer.collect(reads.map((r) => r.read)) : [];
+    for (let r = 0; r < reads.length; r++) {
+      const pixels = results[r];
+      if (!pixels) continue;
+      const { layer, draws } = reads[r]!;
+      const seen = new Set<number>();
+      for (let p = 0; p < pixels.length; p += 4) {
+        const draw = pixels[p]!;
+        if (draw === 0) continue;
+        const feature = pixels[p + 1]!;
+        const key = draw * 4294967296 + feature;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const hit = draws[draw - 1];
+        if (hit) found.push({ layer, tile: hit.piece.tile, bucket: hit.bucket, feature });
+      }
+    }
     const order = new Map(frame.layers.map((l, i) => [l, i]));
     return [...labels, ...found].sort((a, b) => (order.get(b.layer) ?? 0) - (order.get(a.layer) ?? 0));
   }
