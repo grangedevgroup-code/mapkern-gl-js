@@ -88,7 +88,19 @@ export interface MapOptions {
   locale?: Partial<Record<UiText, string>>;
 }
 
-export type UiText = "zoomIn" | "zoomOut" | "resetNorth" | "map" | "marker" | "popup" | "closePopup";
+export type UiText =
+  | "zoomIn"
+  | "zoomOut"
+  | "resetNorth"
+  | "map"
+  | "marker"
+  | "popup"
+  | "closePopup"
+  | "fullscreen"
+  | "exitFullscreen"
+  | "geolocate"
+  | "locationUnavailable"
+  | "yourLocation";
 
 const DEFAULT_TEXT: Record<UiText, string> = {
   zoomIn: "Zoom in",
@@ -98,6 +110,11 @@ const DEFAULT_TEXT: Record<UiText, string> = {
   marker: "Map marker",
   popup: "Map popup",
   closePopup: "Close popup",
+  fullscreen: "Enter fullscreen",
+  exitFullscreen: "Exit fullscreen",
+  geolocate: "Find my location",
+  locationUnavailable: "Your location is not available",
+  yourLocation: "Your location",
 };
 
 export interface ScreenPosition {
@@ -333,6 +350,8 @@ export class MapletMap extends Emitter<MapEvents> {
   private movingFlags: CameraFlags = { zoom: false, rotate: false, pitch: false };
   private gestureDepth = 0;
   private gestureEvent: Event | undefined;
+  private lastInput: Event | undefined;
+  private hostCall = false;
   private frameTimes: number[] = [];
   private frameCount = 0;
   private longFrames = 0;
@@ -700,6 +719,7 @@ export class MapletMap extends Emitter<MapEvents> {
   }
 
   jumpTo(options: CameraOptions): this {
+    if (!this.hostCall) this.gestureEvent = undefined;
     this.stop();
     this.elevationIntent = "zoom";
     this.elevationTo = null;
@@ -734,6 +754,7 @@ export class MapletMap extends Emitter<MapEvents> {
   }
 
   easeTo(options: CameraOptions & AnimationOptions): this {
+    if (!this.hostCall) this.gestureEvent = undefined;
     this.stop();
     const from = readState(this.transform);
     const to = this.targetState(options);
@@ -752,6 +773,7 @@ export class MapletMap extends Emitter<MapEvents> {
   }
 
   flyTo(options: FlyToOptions): this {
+    if (!this.hostCall) this.gestureEvent = undefined;
     this.stop();
     const from = readState(this.transform);
     const to = this.targetState(options);
@@ -2084,7 +2106,11 @@ export class MapletMap extends Emitter<MapEvents> {
       },
       changed: () => {
         this.elevationIntent = "camera";
+        this.gestureEvent = this.lastInput;
         this.cameraChanged();
+      },
+      input: (event: Event) => {
+        this.lastInput = event;
       },
       gesture: (active: boolean) => {
         this.gestureDepth = Math.max(0, this.gestureDepth + (active ? 1 : -1));
@@ -2096,8 +2122,13 @@ export class MapletMap extends Emitter<MapEvents> {
       boxZoom: (stage: "start" | "end" | "cancel", from: [number, number], to: [number, number], event: Event) => {
         const type = stage === "start" ? "boxzoomstart" : stage === "end" ? "boxzoomend" : "boxzoomcancel";
         if (stage === "end") {
+          this.hostCall = true;
           this.gestureEvent = event;
-          this.fitScreenCoordinates(from, to, this.transform.bearing, { linear: true });
+          try {
+            this.fitScreenCoordinates(from, to, this.transform.bearing, { linear: true });
+          } finally {
+            this.hostCall = false;
+          }
         }
         this.emit(type, { target: this, type, originalEvent: event });
       },
@@ -2106,50 +2137,68 @@ export class MapletMap extends Emitter<MapEvents> {
         around: [number, number] | null,
         duration: number,
       ) => {
-        if (target.panBy) {
-          this.panBy(target.panBy, { duration });
-          return;
+        this.hostCall = true;
+        this.gestureEvent = this.lastInput;
+        try {
+          this.hostEase(target, around, duration);
+        } finally {
+          this.hostCall = false;
         }
-        const options: CameraOptions & AnimationOptions = { duration };
-        if (target.zoom !== undefined) options.zoom = target.zoom;
-        if (target.bearing !== undefined) options.bearing = target.bearing;
-        if (target.pitch !== undefined) options.pitch = target.pitch;
-        if (around) {
-          const hit = this.pickWorld(around[0], around[1]);
-          if (hit) options.around = [lngFromMercatorX(hit[0]), latFromMercatorY(hit[1])];
-        }
-        this.easeTo(options);
       },
       pointerEvent: (type: PointerType, event: MouseEvent, point: [number, number]): Promise<boolean> | null => {
-        this.gestureEvent = event;
-        const mapListeners = this.listens(type);
-        const layerListeners = this.layerEvents.wants(type);
-        if (!mapListeners && !layerListeners) return null;
-        const hit = this.pickWorld(point[0], point[1]);
-        const lngLat: LngLat | null = hit ? [wrapLongitude(lngFromMercatorX(hit[0])), latFromMercatorY(hit[1])] : null;
-        if (mapListeners) {
-          let prevented = false;
-          const e: MapPointerEvent = {
-            target: this,
-            type,
-            point: { x: point[0], y: point[1] },
-            lngLat,
-            originalEvent: event,
-            preventDefault: () => {
-              prevented = true;
-              event.preventDefault();
-            },
-            get defaultPrevented() {
-              return prevented;
-            },
-          };
-          this.emit(type, e);
-        }
-        if (!layerListeners) return null;
-        const input: PointerInput = { type, event, point, lngLat };
-        return this.layerEvents.dispatch(input);
+        this.lastInput = event;
+        return this.pointerEvent(type, event, point);
       },
     };
+  }
+
+  private hostEase(
+    target: { zoom?: number; bearing?: number; pitch?: number; panBy?: [number, number] },
+    around: [number, number] | null,
+    duration: number,
+  ): void {
+    if (target.panBy) {
+      this.panBy(target.panBy, { duration });
+      return;
+    }
+    const options: CameraOptions & AnimationOptions = { duration };
+    if (target.zoom !== undefined) options.zoom = target.zoom;
+    if (target.bearing !== undefined) options.bearing = target.bearing;
+    if (target.pitch !== undefined) options.pitch = target.pitch;
+    if (around) {
+      const hit = this.pickWorld(around[0], around[1]);
+      if (hit) options.around = [lngFromMercatorX(hit[0]), latFromMercatorY(hit[1])];
+    }
+    this.easeTo(options);
+  }
+
+  private pointerEvent(type: PointerType, event: MouseEvent, point: [number, number]): Promise<boolean> | null {
+    const mapListeners = this.listens(type);
+    const layerListeners = this.layerEvents.wants(type);
+    if (!mapListeners && !layerListeners) return null;
+    const hit = this.pickWorld(point[0], point[1]);
+    const lngLat: LngLat | null = hit ? [wrapLongitude(lngFromMercatorX(hit[0])), latFromMercatorY(hit[1])] : null;
+    if (mapListeners) {
+      let prevented = false;
+      const e: MapPointerEvent = {
+        target: this,
+        type,
+        point: { x: point[0], y: point[1] },
+        lngLat,
+        originalEvent: event,
+        preventDefault: () => {
+          prevented = true;
+          event.preventDefault();
+        },
+        get defaultPrevented() {
+          return prevented;
+        },
+      };
+      this.emit(type, e);
+    }
+    if (!layerListeners) return null;
+    const input: PointerInput = { type, event, point, lngLat };
+    return this.layerEvents.dispatch(input);
   }
 
   private readonly onContextLost = (event: Event) => {
