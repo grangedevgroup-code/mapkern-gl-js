@@ -1,5 +1,6 @@
 import type { FeatureFormat } from "../formats/feature-format.ts";
 import { FEATURE_FORMATS } from "../formats/feature-format.ts";
+import { parseColor } from "./color.ts";
 import { compile, ExpressionError } from "./expression.ts";
 import { isPlainValue, LAYOUT, literalList, PAINT, transitionOf } from "./layer.ts";
 import { checkTransition } from "./transition.ts";
@@ -70,6 +71,7 @@ const STYLE_KEYS = new Set([
   "sources",
   "layers",
   "terrain",
+  "sky",
   "fonts",
   "sprite",
   "glyphs",
@@ -125,12 +127,49 @@ export function validateStyle(style: unknown): StyleIssue[] {
     const problem = checkTransition(style.transition);
     if (problem) issues.push({ path: "transition", message: problem });
   }
+  if (style.sky !== undefined) issues.push(...validateSky(style.sky));
   if (style.terrain !== undefined) {
     const t = style.terrain;
     if (!isObject(t) || typeof t.source !== "string") {
       issues.push({ path: "terrain", message: "terrain must be { source, exaggeration? }" });
     } else if (isObject(sources) && (sources as Record<string, SourceSpec>)[t.source]?.type !== "dem") {
       issues.push({ path: "terrain.source", message: `terrain source "${t.source}" must be a dem source` });
+    }
+  }
+  return issues;
+}
+
+const SKY_KEYS: Record<string, "color" | "number"> = {
+  color: "color",
+  horizonColor: "color",
+  fogColor: "color",
+  fogBlend: "number",
+  horizonFogBlend: "number",
+  horizonBlend: "number",
+};
+
+export function validateSky(sky: unknown): StyleIssue[] {
+  if (!isObject(sky)) return [{ path: "sky", message: "sky must be an object" }];
+  const issues: StyleIssue[] = [];
+  for (const [key, value] of Object.entries(sky)) {
+    const kind = SKY_KEYS[key];
+    if (!kind) {
+      issues.push({ path: `sky.${key}`, message: `"${key}" is not a sky property` });
+      continue;
+    }
+    if (kind === "number" && typeof value === "number" && !(value >= 0 && value <= 1)) {
+      issues.push({ path: `sky.${key}`, message: "must be between 0 and 1" });
+      continue;
+    }
+    if (kind === "color" && typeof value === "string" && !parseColor(value)) {
+      issues.push({ path: `sky.${key}`, message: `"${value}" is not a color` });
+      continue;
+    }
+    try {
+      compile(value, kind, null, `sky.${key}`);
+    } catch (error) {
+      const message = error instanceof ExpressionError ? error.message.replace(`sky.${key}: `, "") : String(error);
+      issues.push({ path: `sky.${key}`, message });
     }
   }
   return issues;
