@@ -268,6 +268,11 @@ export class Transform {
     const angle = this.bearingDeg * DEG;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
+    const pitch = this.pitchDeg * DEG;
+    const tilt = Math.sin(pitch);
+    const upright = Math.cos(pitch);
+    const d = this.height / 2 / Math.tan((this.fov * DEG) / 2);
+    const reach = d * upright * Math.tan(MAX_GROUND_ANGLE);
     let left = Infinity;
     let right = -Infinity;
     let top = Infinity;
@@ -278,8 +283,14 @@ export class Transform {
       [this.width - px, this.height - py],
       [-px, this.height - py],
     ] as const) {
-      const dx = sx * cos - sy * sin;
-      const dy = sx * sin + sy * cos;
+      const ahead = d * tilt - sy * upright;
+      const down = d * upright + sy * tilt;
+      let t = sy < 0 ? 1 : down > 0 ? (d * upright) / down : Infinity;
+      if (ahead > 0 && t * ahead > reach) t = reach / ahead;
+      const gx = t * sx;
+      const gy = sy < 0 ? sy : d * tilt - t * ahead;
+      const dx = gx * cos - gy * sin;
+      const dy = gx * sin + gy * cos;
       left = Math.min(left, dx);
       right = Math.max(right, dx);
       top = Math.min(top, dy);
@@ -303,11 +314,11 @@ export class Transform {
       x = this.cx + Math.round(mid - this.cx);
       const minX = b.x0 - left / ws;
       const maxX = b.x1 - right / ws;
-      x = minX > maxX ? mid : Math.min(maxX, Math.max(minX, x));
+      x = minX > maxX ? (minX + maxX) / 2 : Math.min(maxX, Math.max(minX, x));
     }
     const minY = b.y0 - top / ws;
     const maxY = b.y1 - bottom / ws;
-    const y = minY > maxY ? (b.y0 + b.y1) / 2 : Math.min(maxY, Math.max(minY, this.cy));
+    const y = minY > maxY ? (minY + maxY) / 2 : Math.min(maxY, Math.max(minY, this.cy));
     const nx = this.renderWorldCopies ? x - Math.floor(x) : Math.min(1, Math.max(0, x));
     if (nx === this.cx && y === this.cy && z === this.z) return;
     this.cx = nx;
@@ -322,6 +333,7 @@ export class Transform {
     if (p === this.pitchDeg) return;
     this.pitchDeg = p;
     this.dirty = true;
+    this.constrain();
   }
 
   setElevation(meters: number): void {
