@@ -1,6 +1,6 @@
 import { demChunk } from "./terrain.ts";
 
-const paintChunk = `
+export const paintChunk = `
 uniform highp sampler2D u_paint;
 uniform int u_paint_width;
 uniform int u_paint_stride;
@@ -16,7 +16,7 @@ vec4 paintValue(uint feature, int slot, int composite, vec4 fallback) {
 }
 `;
 
-const clipChunk = `
+export const clipChunk = `
 uniform vec4 u_clip;
 `;
 
@@ -62,7 +62,7 @@ out highp uvec4 pickColor;
 out vec4 fragColor;
 #endif
 void main() {
-  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
+  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x >= u_clip.z || v_pos.y >= u_clip.w) discard;
 #ifdef PICK
   pickColor = uvec4(u_draw, v_feature, 0u, 1u);
 #else
@@ -118,7 +118,7 @@ out highp uvec4 pickColor;
 out vec4 fragColor;
 #endif
 void main() {
-  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
+  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x >= u_clip.z || v_pos.y >= u_clip.w) discard;
   float dist = length(v_screen - gl_FragCoord.xy);
   float alpha = 1.0 - smoothstep(0.0, 1.0, dist);
 #ifdef PICK
@@ -214,7 +214,7 @@ out highp uvec4 pickColor;
 out vec4 fragColor;
 #endif
 void main() {
-  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
+  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x >= u_clip.z || v_pos.y >= u_clip.w) discard;
   float d = v_square > 0.5 ? max(abs(v_side.x), abs(v_side.y)) : length(v_side);
   float alpha = clamp((v_half + v_edge * 0.5 - d) / v_edge, 0.0, 1.0);
   if (u_dash_count > 0) {
@@ -282,7 +282,7 @@ out float v_stroke;
 out float v_edge;
 out vec4 v_fill;
 out vec4 v_strokeColor;
-out vec2 v_pos;
+flat out vec2 v_pos;
 #ifdef PICK
 flat out highp uint v_feature;
 #endif
@@ -317,7 +317,7 @@ in float v_stroke;
 in float v_edge;
 in vec4 v_fill;
 in vec4 v_strokeColor;
-in vec2 v_pos;
+flat in vec2 v_pos;
 #ifdef PICK
 uniform highp uint u_draw;
 flat in highp uint v_feature;
@@ -326,7 +326,7 @@ out highp uvec4 pickColor;
 out vec4 fragColor;
 #endif
 void main() {
-  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
+  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x >= u_clip.z || v_pos.y >= u_clip.w) discard;
   float d = length(v_offset);
   float outer = v_radius + v_stroke;
   float alpha = clamp((outer + v_edge * 0.5 - d) / v_edge, 0.0, 1.0);
@@ -405,7 +405,7 @@ out highp uvec4 pickColor;
 out vec4 fragColor;
 #endif
 void main() {
-  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
+  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x >= u_clip.z || v_pos.y >= u_clip.w) discard;
 #ifdef PICK
   pickColor = uvec4(u_draw, v_feature, 0u, 1u);
 #else
