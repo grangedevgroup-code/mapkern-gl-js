@@ -41,13 +41,15 @@ test("a layer is updated in place unless its type, source or sort key changes", 
   const same = layerUpdate(before, structuredClone(before));
   assert.deepEqual(same, { paint: [], layout: [], filter: false, zoom: false, visible: false });
   const changed = layerUpdate(before, {
-    ...before,
-    minZoom: undefined,
+    id: "roads",
+    type: "line",
+    source: "osm",
+    sourceLayer: "roads",
     maxZoom: 24,
     visible: true,
     filter: ["==", ["get", "kind"], "minor"],
     paint: { color: "#000000", opacity: 0.5 },
-  } as LayerSpec);
+  });
   assert.deepEqual(changed, {
     paint: [
       ["color", "#000000"],
