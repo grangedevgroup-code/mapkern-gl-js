@@ -5,7 +5,7 @@ import { Transform } from "../camera/transform.ts";
 import { featureKey } from "../formats/mvt.ts";
 import type { LngLat, LngLatLike } from "../geo/mercator.ts";
 import { latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY, toLngLat, wrapLongitude } from "../geo/mercator.ts";
-import type { InputOptions } from "../input/handlers.ts";
+import type { InputOptions, TouchType } from "../input/handlers.ts";
 import { InputHandlers } from "../input/handlers.ts";
 import { GL } from "../render/gl.ts";
 import type { PickBox } from "../render/painter.ts";
@@ -37,6 +37,7 @@ import { WorkerPool } from "../worker/pool.ts";
 import { errorMessage, MapletError } from "./errors.ts";
 import type { Listener } from "./events.ts";
 import { Emitter } from "./events.ts";
+import { MapHash } from "./hash.ts";
 import type { ImageInput, ImageOptions } from "./images.ts";
 import { pixelsOf, spriteImages, spriteSheets, spriteUrl, styleImage } from "./images.ts";
 import type { LayerEventType, PointerInput, PointerType } from "./layer-events.ts";
@@ -58,6 +59,8 @@ export interface MapOptions {
   renderWorldCopies?: boolean;
   maxBounds?: BoundsLike;
   bounds?: BoundsLike;
+  hash?: boolean | string;
+  cooperativeGestures?: boolean;
   fitBoundsOptions?: FitBoundsOptions;
   padding?: PaddingOptions;
   interactive?: boolean;
@@ -100,7 +103,10 @@ export type UiText =
   | "exitFullscreen"
   | "geolocate"
   | "locationUnavailable"
-  | "yourLocation";
+  | "yourLocation"
+  | "scrollZoomBlocker"
+  | "scrollZoomBlockerMac"
+  | "touchPanBlocker";
 
 const DEFAULT_TEXT: Record<UiText, string> = {
   zoomIn: "Zoom in",
@@ -115,6 +121,9 @@ const DEFAULT_TEXT: Record<UiText, string> = {
   geolocate: "Find my location",
   locationUnavailable: "Your location is not available",
   yourLocation: "Your location",
+  scrollZoomBlocker: "Use Ctrl + scroll to zoom the map",
+  scrollZoomBlockerMac: "Use ⌘ + scroll to zoom the map",
+  touchPanBlocker: "Use two fingers to move the map",
 };
 
 export interface ScreenPosition {
@@ -208,8 +217,29 @@ export interface StyleImageMissingEvent extends MapEvent {
   readonly id: string;
 }
 
+export interface MapWheelEvent extends MapEvent {
+  readonly point: { x: number; y: number };
+  readonly lngLat: LngLat | null;
+  readonly originalEvent: WheelEvent;
+  preventDefault(): void;
+  readonly defaultPrevented: boolean;
+}
+
+export interface MapTouchEvent extends MapEvent {
+  readonly point: { x: number; y: number };
+  readonly lngLat: LngLat | null;
+  readonly points: { x: number; y: number }[];
+  readonly lngLats: (LngLat | null)[];
+  readonly originalEvent: TouchEvent;
+}
+
 export interface MapErrorEvent extends MapEvent {
   readonly error: MapletError;
+  readonly sourceId?: string | undefined;
+}
+
+export interface MapDataEvent extends MapEvent {
+  readonly dataType: "style" | "source";
   readonly sourceId?: string | undefined;
 }
 
@@ -250,6 +280,16 @@ export interface MapEvents {
   mousedown: MapPointerEvent;
   mouseup: MapPointerEvent;
   mouseout: MapPointerEvent;
+  wheel: MapWheelEvent;
+  dragstart: MapMoveEvent;
+  drag: MapMoveEvent;
+  dragend: MapMoveEvent;
+  touchstart: MapTouchEvent;
+  touchmove: MapTouchEvent;
+  touchend: MapTouchEvent;
+  touchcancel: MapTouchEvent;
+  styledata: MapEvent;
+  data: MapDataEvent;
   contextlost: MapEvent;
   contextrestored: MapEvent;
 }
@@ -287,6 +327,7 @@ export class MapletMap extends Emitter<MapEvents> {
   readonly touchPitch: HandlerSwitch;
   readonly keyboard: HandlerSwitch;
   readonly boxZoom: HandlerSwitch;
+  readonly cooperativeGestures: HandlerSwitch;
   private readonly container: HTMLElement;
   private readonly canvasContainer: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
@@ -304,6 +345,8 @@ export class MapletMap extends Emitter<MapEvents> {
   private style: Style | null = null;
   private styleRequest: AbortController | null = null;
   private spriteRequest: AbortController | null = null;
+  private hash: MapHash | null = null;
+  private hashPlaced = false;
   private spritesLoading = 0;
   private readonly reportedImages = new Set<string>();
   private reportedVersion = -1;
@@ -455,6 +498,7 @@ export class MapletMap extends Emitter<MapEvents> {
         touchRotate: true,
         keyboard: options.keyboard ?? true,
         boxZoom: options.boxZoom ?? true,
+        cooperative: options.cooperativeGestures === true,
         clickTolerance: checkNumber(options.clickTolerance, "clickTolerance", 4),
       };
       this.handlers = new InputHandlers(this.inputHost(), input);
@@ -468,6 +512,19 @@ export class MapletMap extends Emitter<MapEvents> {
     this.touchPitch = this.handlerSwitch("touchPitch");
     this.keyboard = this.handlerSwitch("keyboard");
     this.boxZoom = this.handlerSwitch("boxZoom");
+    const cooperative = this.handlerSwitch("cooperative");
+    this.cooperativeGestures = {
+      enable: () => {
+        cooperative.enable();
+        this.canvasContainer.style.touchAction = "pan-x pan-y";
+      },
+      disable: () => {
+        cooperative.disable();
+        this.canvasContainer.style.touchAction = "";
+      },
+      isEnabled: cooperative.isEnabled,
+    };
+    if (options.cooperativeGestures === true) this.canvasContainer.style.touchAction = "pan-x pan-y";
     const rotation = this.handlerSwitch("touchRotate");
     this.touchZoomRotate = {
       ...this.handlerSwitch("touchZoomRotate"),
@@ -485,6 +542,15 @@ export class MapletMap extends Emitter<MapEvents> {
       const camera = this.cameraForBounds(options.bounds, options.fitBoundsOptions ?? {});
       if (camera) this.applyCamera(camera);
       this.lastState = readState(this.transform);
+    }
+    if (options.hash !== undefined && options.hash !== false) {
+      this.hash = new MapHash(this, typeof options.hash === "string" ? options.hash : null);
+      const position = this.hash.read();
+      if (position) {
+        this.applyCamera(position);
+        this.lastState = readState(this.transform);
+        this.hashPlaced = true;
+      }
     }
     if (options.style !== undefined) this.setStyle(options.style);
     this.triggerRepaint();
@@ -561,7 +627,8 @@ export class MapletMap extends Emitter<MapEvents> {
       | "touchPitch"
       | "touchRotate"
       | "keyboard"
-      | "boxZoom",
+      | "boxZoom"
+      | "cooperative",
   ): HandlerSwitch {
     return {
       enable: () => {
@@ -570,7 +637,7 @@ export class MapletMap extends Emitter<MapEvents> {
       disable: () => {
         if (!this.handlers) return;
         this.handlers.options[key] = false;
-        if (key !== "touchRotate") this.handlers.stopMomentum();
+        if (key !== "touchRotate" && key !== "cooperative") this.handlers.stopMomentum();
       },
       isEnabled: () => this.handlers?.options[key] === true,
     };
@@ -1136,12 +1203,14 @@ export class MapletMap extends Emitter<MapEvents> {
 
   addSource(id: string, spec: SourceSpec): this {
     this.requireStyle().addSource(id, spec);
+    this.styleChanged();
     return this;
   }
 
   removeSource(id: string): this {
     this.requireStyle().removeSource(id);
     this.featureStates.dropSource(id);
+    this.styleChanged();
     this.triggerRepaint();
     return this;
   }
@@ -1424,16 +1493,19 @@ export class MapletMap extends Emitter<MapEvents> {
 
   addLayer(layer: LayerSpec, beforeId?: string): this {
     this.requireStyle().addLayer(layer, beforeId);
+    this.styleChanged();
     return this;
   }
 
   removeLayer(id: string): this {
     this.requireStyle().removeLayer(id);
+    this.styleChanged();
     return this;
   }
 
   moveLayer(id: string, beforeId?: string): this {
     this.requireStyle().moveLayer(id, beforeId);
+    this.styleChanged();
     return this;
   }
 
@@ -1447,12 +1519,14 @@ export class MapletMap extends Emitter<MapEvents> {
 
   setPaintProperty(layerId: string, name: string, value: unknown): this {
     this.layer(layerId).setPaint(name, value);
+    this.styleChanged();
     this.triggerRepaint();
     return this;
   }
 
   setLayoutProperty(layerId: string, name: string, value: unknown): this {
     this.layer(layerId).setLayout(name, value);
+    this.styleChanged();
     this.triggerRepaint();
     return this;
   }
@@ -1487,18 +1561,21 @@ export class MapletMap extends Emitter<MapEvents> {
 
   setFilter(layerId: string, filter: unknown): this {
     this.layer(layerId).setFilter(filter);
+    this.styleChanged();
     this.triggerRepaint();
     return this;
   }
 
   setLayerVisibility(layerId: string, visible: boolean): this {
     this.layer(layerId).setVisible(visible);
+    this.styleChanged();
     this.triggerRepaint();
     return this;
   }
 
   setLayerZoomRange(layerId: string, minZoom: number, maxZoom: number): this {
     this.layer(layerId).setZoomRange(minZoom, maxZoom);
+    this.styleChanged();
     this.triggerRepaint();
     return this;
   }
@@ -1622,6 +1699,7 @@ export class MapletMap extends Emitter<MapEvents> {
     if (this.wakeTimer !== undefined) clearTimeout(this.wakeTimer);
     this.styleRequest?.abort();
     this.spriteRequest?.abort();
+    this.hash?.destroy();
     this.resizeObserver?.disconnect();
     this.dprQuery?.removeEventListener("change", this.onDprChange);
     this.handlers?.destroy();
@@ -1669,6 +1747,7 @@ export class MapletMap extends Emitter<MapEvents> {
       style = new Style(spec, (id, source) => this.createSource(id, source), {
         sourceLoaded: (source) => {
           this.emit("sourcedata", { ...this.event("sourcedata"), sourceId: source.id, kind: "metadata" });
+          this.emit("data", { ...this.event("data"), dataType: "source", sourceId: source.id });
           this.triggerRepaint();
         },
         sourceFailed: (source, error) => {
@@ -1688,7 +1767,7 @@ export class MapletMap extends Emitter<MapEvents> {
     this.style = style;
     this.featureStates = new FeatureStates();
     this.loadSprites(spec.sprite);
-    if (first) {
+    if (first && !this.hashPlaced) {
       const o = this.options;
       const t = this.transform;
       if (o.center === undefined && spec.center) t.setCenter(spec.center[0], spec.center[1]);
@@ -1698,7 +1777,9 @@ export class MapletMap extends Emitter<MapEvents> {
       this.cameraVersion++;
     }
     queueMicrotask(() => {
-      if (this.style === style && !this.removed) this.emit("styleload", this.event("styleload"));
+      if (this.style !== style || this.removed) return;
+      this.emit("styleload", this.event("styleload"));
+      this.styleChanged();
     });
     this.triggerRepaint();
   }
@@ -1775,6 +1856,19 @@ export class MapletMap extends Emitter<MapEvents> {
     }
   }
 
+  private styleQueued = false;
+
+  private styleChanged(): void {
+    if (this.styleQueued) return;
+    this.styleQueued = true;
+    queueMicrotask(() => {
+      this.styleQueued = false;
+      if (this.removed) return;
+      this.emit("styledata", this.event("styledata"));
+      this.emit("data", { ...this.event("data"), dataType: "style" });
+    });
+  }
+
   private createSource(id: string, spec: SourceSpec): MapSource {
     const ctx = this.sourceContext();
     switch (spec.type) {
@@ -1807,6 +1901,7 @@ export class MapletMap extends Emitter<MapEvents> {
       error: (error) => this.fail(error, typeof error.detail.sourceId === "string" ? error.detail.sourceId : undefined),
       content: (sourceId) => {
         this.emit("sourcedata", { ...this.event("sourcedata"), sourceId, kind: "content" });
+        this.emit("data", { ...this.event("data"), dataType: "source", sourceId });
         this.triggerRepaint();
       },
       changed: () => this.triggerRepaint(),
@@ -2112,6 +2207,13 @@ export class MapletMap extends Emitter<MapEvents> {
       input: (event: Event) => {
         this.lastInput = event;
       },
+      wheel: (event: WheelEvent) => this.wheelEvent(event),
+      drag: (stage: "start" | "move" | "end", event: Event) => {
+        const type = stage === "start" ? "dragstart" : stage === "end" ? "dragend" : "drag";
+        if (this.listens(type)) this.emit(type, { target: this, type, originalEvent: event });
+      },
+      touch: (type: TouchType, event: TouchEvent) => this.touchEvent(type, event),
+      notice: (kind: "wheel" | "touch") => this.showNotice(kind),
       gesture: (active: boolean) => {
         this.gestureDepth = Math.max(0, this.gestureDepth + (active ? 1 : -1));
         this.triggerRepaint();
@@ -2150,6 +2252,80 @@ export class MapletMap extends Emitter<MapEvents> {
         return this.pointerEvent(type, event, point);
       },
     };
+  }
+
+  private wheelEvent(event: WheelEvent): boolean {
+    if (!this.listens("wheel")) return false;
+    const rect = this.canvasContainer.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    let prevented = false;
+    this.emit("wheel", {
+      target: this,
+      type: "wheel",
+      point: { x, y },
+      lngLat: this.unproject([x, y]),
+      originalEvent: event,
+      preventDefault: () => {
+        prevented = true;
+      },
+      get defaultPrevented() {
+        return prevented;
+      },
+    });
+    return prevented;
+  }
+
+  private touchEvent(type: TouchType, event: TouchEvent): void {
+    if (!this.listens(type)) return;
+    const rect = this.canvasContainer.getBoundingClientRect();
+    const list = type === "touchend" || type === "touchcancel" ? event.changedTouches : event.touches;
+    const points: { x: number; y: number }[] = [];
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i]!;
+      points.push({ x: t.clientX - rect.left, y: t.clientY - rect.top });
+    }
+    const point = points.length
+      ? {
+          x: points.reduce((sum, p) => sum + p.x, 0) / points.length,
+          y: points.reduce((sum, p) => sum + p.y, 0) / points.length,
+        }
+      : { x: 0, y: 0 };
+    this.emit(type, {
+      target: this,
+      type,
+      point,
+      lngLat: points.length ? this.unproject([point.x, point.y]) : null,
+      points,
+      lngLats: points.map((p) => this.unproject([p.x, p.y])),
+      originalEvent: event,
+    });
+  }
+
+  private noticeElement: HTMLElement | null = null;
+  private noticeTimer: ReturnType<typeof setTimeout> | undefined;
+
+  private showNotice(kind: "wheel" | "touch"): void {
+    const doc = this.container.ownerDocument;
+    if (!this.noticeElement) {
+      const el = doc.createElement("div");
+      el.className = "maplet-cooperative";
+      el.setAttribute("aria-live", "polite");
+      this.container.appendChild(el);
+      this.noticeElement = el;
+      this.cleanup.push(() => el.remove());
+    }
+    const el = this.noticeElement;
+    const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
+    el.textContent = this.text(
+      kind === "touch" ? "touchPanBlocker" : mac ? "scrollZoomBlockerMac" : "scrollZoomBlocker",
+    );
+    el.classList.add("maplet-visible");
+    if (this.noticeTimer !== undefined) clearTimeout(this.noticeTimer);
+    this.noticeTimer = setTimeout(() => {
+      this.noticeTimer = undefined;
+      el.classList.remove("maplet-visible");
+    }, 1500);
   }
 
   private hostEase(
