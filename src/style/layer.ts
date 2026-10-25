@@ -212,6 +212,7 @@ export const LAYOUT: Record<LayerType, Record<string, PropertyDef>> = {
     lineHeight: checked("number", 1.2, false, numberAtLeast(0)),
     rotate: p("number", 0),
     rotationAlignment: checked("string", "auto", false, oneOf("auto", "map", "viewport")),
+    pitchAlignment: checked("string", "auto", false, oneOf("auto", "map", "viewport")),
     ignorePlacement: checked("boolean", false, false, isBoolean),
     iconIgnorePlacement: checked("boolean", false, false, isBoolean),
     maxAngle: checked("number", 45, false, numberAtLeast(0)),
