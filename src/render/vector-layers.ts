@@ -436,7 +436,8 @@ export class VectorPainter {
     gl.uniform1f(program.uniforms.get("u_pixel_ratio") ?? null, frame.pixelRatio);
     gl.uniform1f(program.uniforms.get("u_min_width") ?? null, 0);
     gl.uniform2f(program.uniforms.get("u_translate") ?? null, 0, 0);
-    const dash = layer.fixed<number[] | null>("dash");
+    const raw = layer.paintValue<unknown>("dash", { zoom });
+    const dash = Array.isArray(raw) && raw.every((n) => typeof n === "number" && n >= 0) ? (raw as number[]) : null;
     if (dash && dash.length > 0) {
       const pattern = dash.length % 2 === 1 ? [...dash, ...dash] : dash;
       const n = Math.min(8, pattern.length);
