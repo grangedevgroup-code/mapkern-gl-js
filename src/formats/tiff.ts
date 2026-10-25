@@ -22,6 +22,7 @@ export interface TiffImage {
   predictor: number;
   blockWidth: number;
   blockHeight: number;
+  tiled: boolean;
   offsets: number[];
   counts: number[];
   noData: number | null;
@@ -199,6 +200,7 @@ function imageFrom(entries: Map<number, Entry>, little: boolean): TiffImage {
     compression: num(259, 1),
     predictor: num(317, 1),
     blockWidth,
+    tiled,
     blockHeight,
     offsets,
     counts,
@@ -265,9 +267,10 @@ export async function readBlock(source: ByteSource, image: TiffImage, index: num
   const offset = image.offsets[index];
   const count = image.counts[index];
   if (offset === undefined || count === undefined) throw new TiffError(`TIFF block ${index} does not exist`);
-  const rows = Math.min(image.blockHeight, image.height - Math.floor(index / blocksAcross(image)) * image.blockHeight);
-  const tiled = image.blockWidth !== image.width || image.blockHeight !== image.height || image.offsets.length > 1;
-  const height = tiled && image.blockWidth !== image.width ? image.blockHeight : rows;
+  const strips = Math.ceil(image.height / image.blockHeight);
+  const height = image.tiled
+    ? image.blockHeight
+    : Math.min(image.blockHeight, image.height - (index % strips) * image.blockHeight);
   const bytesPerSample = image.bitsPerSample / 8;
   if (!Number.isInteger(bytesPerSample) || bytesPerSample < 1 || bytesPerSample > 8) {
     throw new TiffError(`${image.bitsPerSample}-bit TIFF samples are not supported`);
