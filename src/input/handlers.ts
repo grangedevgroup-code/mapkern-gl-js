@@ -9,7 +9,9 @@ export interface InputOptions {
   doubleClickZoom: boolean;
   touchZoomRotate: boolean;
   touchPitch: boolean;
+  touchRotate: boolean;
   keyboard: boolean;
+  clickTolerance: number;
 }
 
 export type GestureKind = "pan" | "zoom" | "rotate" | "pitch";
@@ -22,6 +24,7 @@ export interface InputHost {
   interrupt(): void;
   changed(): void;
   gesture(active: boolean): void;
+  rotateEnded(): void;
   ease(
     target: { zoom?: number; bearing?: number; pitch?: number; panBy?: [number, number] },
     around: [number, number] | null,
@@ -85,7 +88,6 @@ interface WheelZoom {
   last: number;
 }
 
-const CLICK_TOLERANCE = 4;
 const MAX_INERTIA_SPEED = 1.4;
 const INERTIA_DECELERATION = 0.0025;
 const DOUBLE_TAP_MS = 300;
@@ -249,7 +251,7 @@ export class InputHandlers {
     const mode = this.mode;
     const transform = this.host.transform;
     if (mode.kind === "press" && mode.pointer === e.pointerId) {
-      if (Math.hypot(x - pointer.startX, y - pointer.startY) < CLICK_TOLERANCE) return;
+      if (Math.hypot(x - pointer.startX, y - pointer.startY) < this.options.clickTolerance) return;
       if (mode.rotate) {
         if (!this.options.dragRotate) return;
         this.mode = {
@@ -318,6 +320,7 @@ export class InputHandlers {
     if (mode.kind === "rotate" && mode.pointer === e.pointerId) {
       this.mode = { kind: "idle" };
       this.host.gesture(false);
+      if (mode.moved) this.host.rotateEnded();
       return;
     }
     if (mode.kind === "touch2" && mode.ids.includes(e.pointerId)) {
@@ -432,7 +435,7 @@ export class InputHandlers {
     }
     transform.setZoom(mode.zoom0 + Math.log2(now.dist / s.dist));
     const turn = angleDelta(now.angle, s.angle);
-    if (!mode.rotating && Math.abs(turn) > (12 * Math.PI) / 180) mode.rotating = true;
+    if (!mode.rotating && this.options.touchRotate && Math.abs(turn) > (12 * Math.PI) / 180) mode.rotating = true;
     if (mode.rotating) transform.setBearing(mode.bearing0 - (turn * 180) / Math.PI);
     if (mode.anchor) transform.setLocationAtPoint(mode.anchor, now.midX, now.midY, mode.anchor[2]);
     this.host.changed();
