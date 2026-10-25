@@ -44,7 +44,11 @@ export class DebugOverlay {
     ctx.fillStyle = "rgba(217, 71, 63, 0.95)";
     for (const tile of frame.tiles) {
       ctx.beginPath();
-      tile.corners.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+      for (let i = 0; i < tile.corners.length; i++) {
+        const [x, y] = tile.corners[i]!;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
       ctx.closePath();
       ctx.stroke();
       const [x, y] = tile.corners[0]!;
