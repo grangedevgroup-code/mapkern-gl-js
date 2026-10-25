@@ -154,6 +154,7 @@ Draws polygons.
 | `outlineColor` | the fill color | per feature. The thin line around each polygon |
 | `antialias` | `true` | Draws that outline, which also smooths the edges. Fixed value only |
 | `translate` | `[0, 0]` | Shift in pixels. Fixed value only |
+| `translateAnchor` | `map` | `map` turns the shift with the map, `viewport` keeps it pointing the same way on screen |
 
 ### line
 
@@ -184,7 +185,11 @@ Draws a circle at each point.
 | `opacity` | 1 | per feature |
 | `strokeColor` | `#000000` | per feature |
 | `strokeWidth` | 0 | per feature, in pixels |
+| `strokeOpacity` | 1 | per feature. `opacity` fades only the inside |
 | `blur` | 0 | per feature. Softens the edge, in pixels |
+| `translate` | `[0, 0]` | Shift in pixels, with `translateAnchor` as for fills |
+| `pitchScale` | `viewport` | `map` makes circles smaller in the distance when the map tilts |
+| `pitchAlignment` | `viewport` | `map` lays circles flat on the tilted map |
 
 ### heatmap
 
@@ -308,6 +313,8 @@ An expression is an array that starts with the name of an operation. Maplet work
 ```
 
 The first one reads a property. The second picks a color by road class, with white for everything else. The third makes something 1 pixel wide at zoom 10 and 8 pixels wide at zoom 16, growing smoothly in between.
+
+An array that starts with a name Maplet doesn't know, like `["sum", 1, 2]`, is reported as an error rather than quietly ignored. To use a list of values as it is, wrap it: `["literal", ["a", "b"]]`. The labels in `match` and the list in `in` are the exceptions, and can be written plainly.
 
 `interpolate` also takes `["exponential", 1.5]` for a curve that speeds up, and `["cubic-bezier", x1, y1, x2, y2]` like a CSS easing. It works on numbers and colors. `step` jumps instead of blending:
 
