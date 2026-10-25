@@ -45,6 +45,23 @@ const numberList = (v: unknown) =>
     ? null
     : "must be a list of up to 16 non-negative numbers";
 
+const ANCHOR_NAMES = [
+  "center",
+  "top",
+  "bottom",
+  "left",
+  "right",
+  "top-left",
+  "top-right",
+  "bottom-left",
+  "bottom-right",
+];
+
+const anchorList = (v: unknown) =>
+  Array.isArray(v) && v.length > 0 && v.every((a) => typeof a === "string" && ANCHOR_NAMES.includes(a))
+    ? null
+    : `must be a list of anchors: ${ANCHOR_NAMES.join(", ")}`;
+
 const stringList = (v: unknown) =>
   Array.isArray(v) && v.length > 0 && v.every((s) => typeof s === "string") ? null : "must be a list of strings";
 
@@ -112,7 +129,12 @@ export const PAINT: Record<LayerType, Record<string, PropertyDef>> = {
     color: p("color", "#000000"),
     haloColor: p("color", "rgba(0, 0, 0, 0)"),
     haloWidth: p("number", 0),
+    haloBlur: p("number", 0),
     opacity: p("number", 1),
+    translate: fixed([0, 0], numberPair),
+    translateAnchor: fixed("map", oneOf("map", "viewport")),
+    iconTranslate: fixed([0, 0], numberPair),
+    iconTranslateAnchor: fixed("map", oneOf("map", "viewport")),
     iconColor: p("color", "#000000"),
     iconHaloColor: p("color", "rgba(0, 0, 0, 0)"),
     iconHaloWidth: p("number", 0),
@@ -158,8 +180,17 @@ export const LAYOUT: Record<LayerType, Record<string, PropertyDef>> = {
     size: p("number", 14),
     weight: fixed("normal", oneOf("normal", "bold")),
     italic: fixed(false, isBoolean),
-    placement: fixed("point", oneOf("point", "line")),
-    anchor: fixed("center", oneOf("center", "top", "bottom", "left", "right")),
+    placement: fixed("point", oneOf("point", "line", "line-center")),
+    anchor: fixed("center", oneOf(...ANCHOR_NAMES)),
+    variableAnchor: fixed(null, anchorList),
+    radialOffset: fixed(null, numberAtLeast(-1000)),
+    justify: fixed("center", oneOf("auto", "left", "center", "right")),
+    lineHeight: fixed(1.2, numberAtLeast(0)),
+    rotate: p("number", 0),
+    ignorePlacement: fixed(false, isBoolean),
+    iconIgnorePlacement: fixed(false, isBoolean),
+    maxAngle: fixed(45, numberAtLeast(0)),
+    keepUpright: fixed(true, isBoolean),
     offset: fixed([0, 0], numberPair),
     maxWidth: fixed(10, numberAtLeast(1)),
     letterSpacing: fixed(0, numberAtLeast(-1)),
@@ -172,10 +203,7 @@ export const LAYOUT: Record<LayerType, Record<string, PropertyDef>> = {
     icon: p("string", ""),
     iconSize: p("number", 1),
     iconRotate: p("number", 0),
-    iconAnchor: fixed(
-      "center",
-      oneOf("center", "top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right"),
-    ),
+    iconAnchor: fixed("center", oneOf(...ANCHOR_NAMES)),
     iconOffset: fixed([0, 0], numberPair),
     iconPadding: fixed(2, numberAtLeast(0)),
     iconAllowOverlap: fixed(false, isBoolean),
