@@ -249,6 +249,16 @@ export const CSS = `
 .maplet-popup-anchor-bottom-right .maplet-popup-content {
   border-bottom-right-radius: 0;
 }
+.maplet-boxzoom {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  box-sizing: border-box;
+  border: 2px dashed var(--maplet-focus, #2f6fdb);
+  background: rgba(47, 111, 219, 0.12);
+  pointer-events: none;
+}
 .maplet-marker {
   position: absolute;
   top: 0;
