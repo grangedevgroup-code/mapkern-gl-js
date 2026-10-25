@@ -256,7 +256,7 @@ test("what can't be drawn is left out and listed, never the whole style", () => 
   const { style, skipped } = importStyle({
     version: 8,
     sources: { v: vector },
-    fog: { color: "white" },
+    fog: { color: "white", "star-intensity": 0.4 },
     layers: [
       { id: "bg", type: "background", paint: { "background-color": "#fff", "background-pattern": "dots" } },
       { id: "wet", type: "fill", source: "v", "source-layer": "x", paint: { "fill-pattern": "marsh" } },
@@ -280,6 +280,7 @@ test("what can't be drawn is left out and listed, never the whole style", () => 
     ["bg", "wet", "odd", "fit"],
   );
   assert.deepEqual(style.layers[0]!.paint, { color: "#fff" });
+  assert.deepEqual(style.sky, { horizonColor: "white", fogColor: "white" });
   assert.deepEqual(style.layers[1]!.paint, { pattern: "marsh" });
   assert.equal((style.layers[2]!.paint as Record<string, unknown> | undefined)?.color, undefined);
   for (const words of [
@@ -408,4 +409,37 @@ test("layers that borrow from another layer with ref get its type, source, filte
     layout: { cap: "round" },
   });
   assert.equal(style.layers.length, 2);
+});
+
+test("a MapLibre sky and a Mapbox fog become the sky", () => {
+  const sky = importStyle({
+    version: 8,
+    sources: {},
+    layers: [],
+    sky: {
+      "sky-color": "rgb(191,217,242)",
+      "horizon-color": "#fff",
+      "fog-ground-blend": {
+        stops: [
+          [4, 0.2],
+          [10, 0.6],
+        ],
+      },
+      "atmosphere-blend": 0.8,
+    },
+  });
+  assert.deepEqual(sky.style.sky, {
+    color: "rgb(191,217,242)",
+    horizonColor: "#fff",
+    fogBlend: ["interpolate", ["linear"], ["zoom"], 4, 0.2, 10, 0.6],
+  });
+  assert.deepEqual(sky.skipped, []);
+  const fog = importStyle({
+    version: 8,
+    sources: {},
+    layers: [],
+    fog: { color: "#ddd", "high-color": "#245cdf", "horizon-blend": 0.1, range: [1, 8] },
+  });
+  assert.deepEqual(fog.style.sky, { horizonColor: "#ddd", fogColor: "#ddd", color: "#245cdf", horizonBlend: 0.1 });
+  assert.ok(fog.skipped.some((s) => s.includes("fog range")));
 });
