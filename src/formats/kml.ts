@@ -87,7 +87,10 @@ function geometry(node: XmlElement): Geometry | null {
 }
 
 function coordinates(node: XmlElement | undefined): Position[] {
-  const text = textOf(node).replace(/\s*,\s*/g, ",");
+  const text = textOf(node)
+    .split(",")
+    .map((part) => part.trim())
+    .join(",");
   if (!text) return [];
   const out: Position[] = [];
   for (const tuple of text.split(/\s+/)) {
