@@ -13,6 +13,7 @@ export interface EvalContext {
   zoom: number;
   feature?: FeatureContext | undefined;
   state?: Readonly<Record<string, unknown>> | undefined;
+  images?: ((id: string) => boolean) | undefined;
 }
 
 export type OutputKind = "number" | "color" | "string" | "boolean" | "any";
@@ -200,6 +201,7 @@ const OPS = new Set([
   "atan",
   "ln2",
   "is-supported-script",
+  "image",
 ]);
 
 function constant(v: unknown): Node {
@@ -581,6 +583,15 @@ function build(value: unknown, scope: Scope): Node {
       need(1, 1);
       const a = sub(args[0]);
       return combine([a], () => true);
+    }
+    case "image": {
+      need(1, 1);
+      const name = sub(args[0]);
+      return combine([name], (ctx) => {
+        const id = name.fn(ctx);
+        if (typeof id !== "string" || id === "") return null;
+        return !ctx.images || ctx.images(id) ? id : null;
+      });
     }
     case "+":
     case "*":
