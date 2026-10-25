@@ -30,6 +30,8 @@ const map = new maplet.Map({
 | `minZoom`, `maxZoom` | 0, 22 | |
 | `minPitch`, `maxPitch` | 0, 60 | |
 | `interactive` | `true` | `false` ignores mouse, touch and keyboard |
+| `hash` | `false` | `true` keeps the position in the page address, like `#12.5/47.6/-122.33`, so links open the same view. A name such as `"map"` stores it as `#map=...` next to your own parameters |
+| `cooperativeGestures` | `false` | For maps inside a scrolling page: zoom needs Ctrl or ⌘ with the wheel, and panning needs two fingers, so the page scrolls normally |
 | `dragPan`, `dragRotate`, `scrollZoom`, `boxZoom`, `doubleClickZoom`, `touchZoomRotate`, `touchPitch`, `keyboard` | `true` | Switch off single interactions |
 | `bearingSnap` | 7 | After a rotation that ends this many degrees or less from north, the map turns back to north |
 | `clickTolerance` | 4 | How far in pixels the pointer may move between press and release and still count as a click |
@@ -48,7 +50,7 @@ const map = new maplet.Map({
 | `workerCount` | cores minus one, up to 4 | |
 | `workerUrl` | | URL of `dist/maplet-worker.js`, for sites whose Content Security Policy blocks `blob:` workers |
 | `reducedMotion` | the system setting | `true` turns camera animations into jumps |
-| `locale` | | Your own labels for controls and screen readers: `{ zoomIn, zoomOut, resetNorth, map, marker, popup, closePopup, fullscreen, exitFullscreen, geolocate, locationUnavailable, yourLocation }` |
+| `locale` | | Your own labels for controls, hints and screen readers: `{ zoomIn, zoomOut, resetNorth, map, marker, popup, closePopup, fullscreen, exitFullscreen, geolocate, locationUnavailable, yourLocation, scrollZoomBlocker, scrollZoomBlockerMac, touchPanBlocker }` |
 
 When you're done with a map, call `map.remove()`. It stops drawing and frees the workers and GPU memory.
 
@@ -92,7 +94,7 @@ map.scrollZoom.enable();
 map.touchZoomRotate.disableRotation();
 ```
 
-The switches are `dragPan`, `dragRotate`, `scrollZoom`, `boxZoom`, `doubleClickZoom`, `touchZoomRotate`, `touchPitch` and `keyboard`, and each has `isEnabled()`. `touchZoomRotate.disableRotation()` keeps pinch zoom but stops the twist.
+The switches are `dragPan`, `dragRotate`, `scrollZoom`, `boxZoom`, `doubleClickZoom`, `touchZoomRotate`, `touchPitch`, `keyboard` and `cooperativeGestures`, and each has `isEnabled()`. `touchZoomRotate.disableRotation()` keeps pinch zoom but stops the twist.
 
 ## Changing the style
 
@@ -164,6 +166,8 @@ await map.once("idle");
 - `render` after every frame, `resize` when the map changes size, `remove` when it's removed.
 - `movestart`, `move` and `moveend` whenever the camera changes. There are also `zoom`, `rotate` and `pitch` versions of all three. `originalEvent` is the mouse, touch, wheel or keyboard event when a person caused the move, and `undefined` when your code did.
 - `boxzoomstart`, `boxzoomend` and `boxzoomcancel` around a Shift-drag box zoom.
+- `wheel` before the wheel zooms the map; `event.preventDefault()` stops the zoom. `dragstart`, `drag` and `dragend` around a pan with the mouse or a finger. `touchstart`, `touchmove`, `touchend` and `touchcancel` carry `points` and `lngLats` for every finger, plus `point` and `lngLat` for the middle of them.
+- `styledata` when the style changes, and `data` whenever the style or a source changes, with `dataType` set to `"style"` or `"source"`.
 - `click`, `dblclick`, `contextmenu`, `mousemove`, `mousedown`, `mouseup` and `mouseout` (the pointer left the map) carry `point` (`{ x, y }`) and `lngLat`. Call `event.preventDefault()` in `dblclick` to stop the zoom, or in `mousedown` to keep that press from moving the map.
 - `sourcedata` when a source loads (`kind: "metadata"`), gets new data (`"content"`) or fails (`"error"`).
 - `styleimagemissing` when a layer needs an [image](#images) that hasn't been added.
