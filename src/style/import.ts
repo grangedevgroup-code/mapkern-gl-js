@@ -1,5 +1,5 @@
 import { MapletError } from "../core/errors.ts";
-import { compile } from "./expression.ts";
+import { compile, isOperator } from "./expression.ts";
 import type { PropertyDef } from "./layer.ts";
 import { LAYOUT, PAINT, transitionOf } from "./layer.ts";
 import type { LayerSpec, LayerType, SourceSpec, StyleSpec } from "./types.ts";
@@ -241,13 +241,21 @@ export function importStyle(input: unknown, base?: string): ImportedStyle {
   }
   const layers: LayerSpec[] = [];
   const ids = new Set<string>();
-  for (const raw of Array.isArray(input.layers) ? input.layers : []) {
-    if (!isObject(raw) || typeof raw.id !== "string" || ids.has(raw.id)) continue;
+  const list = Array.isArray(input.layers) ? input.layers : [];
+  const byId = new Map<string, Json>();
+  for (const raw of list) if (isObject(raw) && typeof raw.id === "string" && !byId.has(raw.id)) byId.set(raw.id, raw);
+  for (const original of list) {
+    if (!isObject(original) || typeof original.id !== "string" || ids.has(original.id)) continue;
+    const raw = typeof original.ref === "string" ? withRef(original, byId.get(original.ref)) : original;
+    if (!raw) {
+      skipped.add("layers whose ref names no other layer", original.id);
+      continue;
+    }
     const converted = convertLayer(raw, sources, skipped);
     if (!converted) continue;
-    const checked = settle(converted.layer, converted.origin, raw.id, sources, skipped);
+    const checked = settle(converted.layer, converted.origin, original.id, sources, skipped);
     if (!checked) continue;
-    ids.add(raw.id);
+    ids.add(original.id);
     layers.push(checked);
   }
   style.sources = sources;
@@ -266,6 +274,16 @@ export function importStyle(input: unknown, base?: string): ImportedStyle {
     }
   }
   return { style: style as unknown as StyleSpec, skipped: skipped.list() };
+}
+
+function withRef(layer: Json, parent: Json | undefined): Json | null {
+  if (!parent || typeof parent.ref === "string") return null;
+  const out: Json = { ...layer };
+  delete out.ref;
+  for (const key of ["type", "source", "source-layer", "minzoom", "maxzoom", "filter", "layout"]) {
+    if (parent[key] !== undefined) out[key] = parent[key];
+  }
+  return out;
 }
 
 function convertSource(id: string, raw: unknown, base: string | undefined, skipped: Skipped): SourceSpec | null {
@@ -418,14 +436,17 @@ function convertLayer(
     }
     switch (key) {
       case "text-font": {
-        const font = fontOf(value);
-        if (!font) {
-          skipped.add("text-font from an expression is drawn with the default font", id);
-          continue;
+        const source = isFunction(value) ? functionValue(value, undefined, false, false) : value;
+        const constant = fontOf(source);
+        if (constant) {
+          layoutOut.font = constant.families;
+          if (constant.bold) layoutOut.weight = "bold";
+          if (constant.italic) layoutOut.italic = true;
+        } else {
+          layoutOut.font = fontLeaves(source, (list) => ["literal", fontOf(list)!.families]);
+          layoutOut.weight = fontLeaves(source, (list) => (fontOf(list)!.bold ? "bold" : "normal"));
+          layoutOut.italic = fontLeaves(source, (list) => fontOf(list)!.italic);
         }
-        layoutOut.font = font.families;
-        if (font.bold) layoutOut.weight = "bold";
-        if (font.italic) layoutOut.italic = true;
         for (const name of ["font", "weight", "italic"]) origin.set(`layout.${name}`, key);
         continue;
       }
@@ -756,10 +777,26 @@ function plainFormat(value: unknown): unknown {
 const STYLE_WORDS =
   /\b(regular|normal|book|roman|medium|semi ?bold|demi ?bold|extra ?bold|ultra ?bold|bold|black|heavy|extra ?light|ultra ?light|light|thin|hairline|italic|oblique|condensed|narrow)\b/gi;
 
-export function fontOf(value: unknown): { families: string[]; bold: boolean; italic: boolean } | null {
+function fontLeaves(value: unknown, leaf: (list: string[]) => unknown): unknown {
+  const list = fontList(value);
+  if (list) return leaf(list);
+  if (!Array.isArray(value)) return value;
+  if (value[0] === "match") {
+    return value.map((v, i) => (i >= 2 && i < value.length - 1 && i % 2 === 0 ? v : i === 0 ? v : fontLeaves(v, leaf)));
+  }
+  return value.map((v, i) => (i === 0 ? v : fontLeaves(v, leaf)));
+}
+
+function fontList(value: unknown): string[] | null {
   const list = Array.isArray(value) && value[0] === "literal" && Array.isArray(value[1]) ? value[1] : value;
   if (!Array.isArray(list) || list.length === 0 || !list.every((v) => typeof v === "string")) return null;
-  const first = list[0] as string;
+  return isOperator(list[0]) ? null : (list as string[]);
+}
+
+export function fontOf(value: unknown): { families: string[]; bold: boolean; italic: boolean } | null {
+  const list = fontList(value);
+  if (!list) return null;
+  const first = list[0]!;
   const families = [
     ...new Set(
       (list as string[]).map((name) => name.replace(STYLE_WORDS, " ").replace(/\s+/g, " ").trim()).filter(Boolean),
