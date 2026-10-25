@@ -30,103 +30,185 @@ export function findOutlines(shapes: readonly Shape[], extent: number): Outline[
   const n = shapes.length;
   if (n < 2) return [];
   const box = new Float64Array(n * 4);
-  const area = new Float64Array(n);
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (let i = 0; i < n; i++) {
-    const rings = shapes[i]!.rings;
-    const outer = rings[0];
-    if (!outer || outer.length < 6) {
-      box.set([Infinity, Infinity, -Infinity, -Infinity], i * 4);
-      continue;
-    }
+    const outer = shapes[i]!.rings[0];
     let x0 = Infinity;
     let y0 = Infinity;
     let x1 = -Infinity;
     let y1 = -Infinity;
-    for (let k = 0; k < outer.length; k += 2) {
-      const x = outer[k]!;
-      const y = outer[k + 1]!;
-      if (x < x0) x0 = x;
-      if (x > x1) x1 = x;
-      if (y < y0) y0 = y;
-      if (y > y1) y1 = y;
+    if (outer && outer.length >= 6) {
+      for (let k = 0; k < outer.length; k += 2) {
+        const x = outer[k]!;
+        const y = outer[k + 1]!;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+      if (x0 < minX) minX = x0;
+      if (y0 < minY) minY = y0;
+      if (x1 > maxX) maxX = x1;
+      if (y1 > maxY) maxY = y1;
     }
-    box.set([x0, y0, x1, y1], i * 4);
-    let a = Math.abs(ringArea(outer));
-    for (let r = 1; r < rings.length; r++) a -= Math.abs(ringArea(rings[r]!));
-    area[i] = a;
-    if (x0 < minX) minX = x0;
-    if (y0 < minY) minY = y0;
-    if (x1 > maxX) maxX = x1;
-    if (y1 > maxY) maxY = y1;
+    box[i * 4] = x0;
+    box[i * 4 + 1] = y0;
+    box[i * 4 + 2] = x1;
+    box[i * 4 + 3] = y1;
   }
   if (!(maxX >= minX && maxY >= minY)) return [];
-  const cellWidth = (maxX - minX) / CELLS || 1;
-  const cellHeight = (maxY - minY) / CELLS || 1;
-  const column = (x: number) => Math.min(CELLS - 1, Math.max(0, Math.floor((x - minX) / cellWidth)));
-  const row = (y: number) => Math.min(CELLS - 1, Math.max(0, Math.floor((y - minY) / cellHeight)));
-  const cells: number[][] = Array.from({ length: CELLS * CELLS }, () => []);
-  for (let i = 0; i < n; i++) {
-    if (!(box[i * 4 + 2]! >= box[i * 4]!)) continue;
-    const c0 = column(box[i * 4]!);
-    const c1 = column(box[i * 4 + 2]!);
-    for (let r = row(box[i * 4 + 1]!); r <= row(box[i * 4 + 3]!); r++) {
-      for (let c = c0; c <= c1; c++) cells[r * CELLS + c]!.push(i);
+  const area = new Float64Array(n).fill(Number.NaN);
+  const areaOf = (i: number) => {
+    let a = area[i]!;
+    if (Number.isNaN(a)) {
+      const rings = shapes[i]!.rings;
+      a = Math.abs(ringArea(rings[0]!));
+      for (let r = 1; r < rings.length; r++) a -= Math.abs(ringArea(rings[r]!));
+      area[i] = a;
     }
-  }
-  const slack = extent / 1024;
-  const encloses = (p: number, q: number) => {
-    if (
-      box[p * 4]! - slack > box[q * 4]! ||
-      box[p * 4 + 1]! - slack > box[q * 4 + 1]! ||
-      box[p * 4 + 2]! + slack < box[q * 4 + 2]! ||
-      box[p * 4 + 3]! + slack < box[q * 4 + 3]!
-    )
-      return false;
-    const outer = shapes[p]!;
-    const inner = shapes[q]!;
-    if (outer.base > inner.base || outer.height < inner.height) return false;
-    if (area[p] !== area[q]) return area[p]! > area[q]!;
-    const tallOuter = outer.height - outer.base;
-    const tallInner = inner.height - inner.base;
-    return tallOuter !== tallInner ? tallOuter > tallInner : p < q;
+    return a;
   };
-  const parts = new Map<number, number[]>();
-  for (let q = 0; q < n; q++) {
-    if (!(box[q * 4 + 2]! >= box[q * 4]!)) continue;
-    const cx = (box[q * 4]! + box[q * 4 + 2]!) / 2;
-    const cy = (box[q * 4 + 1]! + box[q * 4 + 3]!) / 2;
-    for (const p of cells[row(cy) * CELLS + column(cx)]!) {
-      if (p === q || !encloses(p, q)) continue;
-      if (!within(shapes[q]!.rings[0]!, shapes[p]!.rings, slack)) continue;
-      const list = parts.get(p);
-      if (list) list.push(q);
-      else parts.set(p, [q]);
+  const scaleX = CELLS / (maxX - minX || 1);
+  const scaleY = CELLS / (maxY - minY || 1);
+  const span = new Int32Array(n * 4);
+  const start = new Int32Array(CELLS * CELLS + 1);
+  for (let i = 0; i < n; i++) {
+    if (!(box[i * 4 + 2]! >= box[i * 4]!)) {
+      span[i * 4] = -1;
+      continue;
+    }
+    const c0 = cellOf((box[i * 4]! - minX) * scaleX);
+    const r0 = cellOf((box[i * 4 + 1]! - minY) * scaleY);
+    const c1 = cellOf((box[i * 4 + 2]! - minX) * scaleX);
+    const r1 = cellOf((box[i * 4 + 3]! - minY) * scaleY);
+    span[i * 4] = c0;
+    span[i * 4 + 1] = r0;
+    span[i * 4 + 2] = c1;
+    span[i * 4 + 3] = r1;
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) start[r * CELLS + c + 1]!++;
+  }
+  for (let c = 0; c < CELLS * CELLS; c++) start[c + 1]! += start[c]!;
+  const members = new Int32Array(start[CELLS * CELLS]!);
+  const cursor = start.slice(0, CELLS * CELLS);
+  for (let i = 0; i < n; i++) {
+    if (span[i * 4]! < 0) continue;
+    for (let r = span[i * 4 + 1]!; r <= span[i * 4 + 3]!; r++) {
+      for (let c = span[i * 4]!; c <= span[i * 4 + 2]!; c++) members[cursor[r * CELLS + c]!++] = i;
     }
   }
-  const found: Outline[] = [];
-  for (const [p, list] of parts) {
-    const outer = shapes[p]!;
-    let differs = false;
-    let top = -Infinity;
-    let sum = 0;
-    for (const q of list) {
-      const inner = shapes[q]!;
-      if (inner.base > outer.base || inner.height < outer.height) differs = true;
-      if (inner.height > top) top = inner.height;
-      sum += area[q]!;
+  const home = (q: number) =>
+    cellOf(((box[q * 4 + 1]! + box[q * 4 + 3]!) / 2 - minY) * scaleY) * CELLS +
+    cellOf(((box[q * 4]! + box[q * 4 + 2]!) / 2 - minX) * scaleX);
+  const slack = extent / 2048;
+  return decide(shapes, box, areaOf, collect(shapes, box, areaOf, start, members, home, slack), slack);
+}
+
+function cellOf(v: number): number {
+  const c = Math.floor(v);
+  return c < 0 ? 0 : c >= CELLS ? CELLS - 1 : c;
+}
+
+function collect(
+  shapes: readonly Shape[],
+  box: Float64Array,
+  areaOf: (i: number) => number,
+  start: Int32Array,
+  members: Int32Array,
+  home: (q: number) => number,
+  slack: number,
+): Map<number, number[]> {
+  const candidates = new Map<number, number[]>();
+  for (let q = 0; q < shapes.length; q++) {
+    const qx0 = box[q * 4]!;
+    const qy0 = box[q * 4 + 1]!;
+    const qx1 = box[q * 4 + 2]!;
+    const qy1 = box[q * 4 + 3]!;
+    if (!(qx1 >= qx0)) continue;
+    const inner = shapes[q]!;
+    const cell = home(q);
+    for (let m = start[cell]!; m < start[cell + 1]!; m++) {
+      const p = members[m]!;
+      if (
+        p === q ||
+        box[p * 4]! - slack > qx0 ||
+        box[p * 4 + 1]! - slack > qy0 ||
+        box[p * 4 + 2]! + slack < qx1 ||
+        box[p * 4 + 3]! + slack < qy1
+      )
+        continue;
+      const outer = shapes[p]!;
+      if (outer.base > inner.base || outer.height < inner.height) continue;
+      const larger = areaOf(p) - areaOf(q);
+      if (larger < 0) continue;
+      if (larger === 0) {
+        const taller = outer.height - outer.base - (inner.height - inner.base);
+        if (taller < 0 || (taller === 0 && p > q)) continue;
+      }
+      const list = candidates.get(p);
+      if (list) list.push(q);
+      else candidates.set(p, [q]);
     }
-    if (!differs) continue;
-    const tall = outer.height - outer.base;
-    const reach = tall > 0 ? (top - outer.base) / tall : 1;
-    const bound = Math.min(1, sum / (area[p]! || 1));
-    const covered = bound < OUTLINE_COVERED || reach < OUTLINE_REACH ? bound : coverage(p, list, shapes, box, bound);
-    found.push({ shape: p, parts: list, covered, reach });
+  }
+  return candidates;
+}
+
+function decide(
+  shapes: readonly Shape[],
+  box: Float64Array,
+  areaOf: (i: number) => number,
+  candidates: Map<number, number[]>,
+  slack: number,
+): Outline[] {
+  const found: Outline[] = [];
+  for (const [p, list] of candidates) {
+    const loose = measure(p, list, shapes, areaOf);
+    if (!loose.differs) continue;
+    if (loose.covered < OUTLINE_COVERED || loose.reach < OUTLINE_REACH) {
+      found.push({ shape: p, parts: list, covered: loose.covered, reach: loose.reach });
+      continue;
+    }
+    const parts = list.filter((q) => within(shapes[q]!.rings[0]!, shapes[p]!.rings, slack));
+    const exact = measure(p, parts, shapes, areaOf);
+    if (!exact.differs) continue;
+    let largest = 0;
+    for (const q of parts) largest = Math.max(largest, areaOf(q) - perimeter(shapes[q]!.rings[0]!) * slack);
+    const single = Math.min(1, largest / (areaOf(p) || 1));
+    const covered =
+      exact.covered < OUTLINE_COVERED || exact.reach < OUTLINE_REACH
+        ? exact.covered
+        : single >= OUTLINE_COVERED
+          ? single
+          : coverage(p, parts, shapes, box, exact.covered);
+    found.push({ shape: p, parts, covered, reach: exact.reach });
   }
   return found;
+}
+
+function measure(
+  p: number,
+  parts: readonly number[],
+  shapes: readonly Shape[],
+  areaOf: (i: number) => number,
+): { differs: boolean; covered: number; reach: number } {
+  const outer = shapes[p]!;
+  let differs = false;
+  let top = -Infinity;
+  let sum = 0;
+  for (const q of parts) {
+    const inner = shapes[q]!;
+    if (inner.base > outer.base || inner.height < outer.height) differs = true;
+    if (inner.height > top) top = inner.height;
+    sum += areaOf(q);
+  }
+  const tall = outer.height - outer.base;
+  return {
+    differs,
+    covered: Math.min(1, sum / (areaOf(p) || 1)),
+    reach: tall > 0 ? (top - outer.base) / tall : 1,
+  };
 }
 
 function coverage(
@@ -159,6 +241,14 @@ function coverage(
     }
   }
   return total > 0 ? covered / total : fallback;
+}
+
+function perimeter(ring: Int32Array): number {
+  let sum = 0;
+  for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
+    sum += Math.hypot(ring[i]! - ring[j]!, ring[i + 1]! - ring[j + 1]!);
+  }
+  return sum;
 }
 
 function within(ring: Int32Array, rings: readonly Int32Array[], slack: number): boolean {
