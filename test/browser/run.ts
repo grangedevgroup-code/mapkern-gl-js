@@ -1639,6 +1639,96 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "line offset and gap width move and split lines",
+    async run({ page, shot }) {
+      const line = (coordinates: number[][], kind: string) => ({
+        type: "Feature",
+        properties: { kind },
+        geometry: { type: "LineString", coordinates },
+      });
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          g: {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: [
+                line(
+                  [
+                    [-20, 1],
+                    [20, 1],
+                  ],
+                  "straight",
+                ),
+                line(
+                  [
+                    [-12, -6],
+                    [-4, -6],
+                    [-4, -14],
+                  ],
+                  "corner",
+                ),
+              ],
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "lines", type: "line", source: "g", paint: { color: "#0000ff", width: 4 } },
+        ],
+      });
+      await createMap(page, style, { zoom: 4, center: [0, -4] });
+      const y = await page.evaluate<number>("Math.round(window.map.project([0, 1]).y)");
+      const column = (x: number) =>
+        page.evaluate<number[]>(`(() => {
+          const out = [];
+          for (let yy = ${y} - 20; yy <= ${y} + 20; yy++) {
+            const c = window.pixel(${x}, yy);
+            if (c[2] > 200 && c[0] < 120) out.push(yy - ${y});
+          }
+          return out;
+        })()`);
+      const centre = (rows: number[]) => (rows.length ? rows.reduce((a, b) => a + b, 0) / rows.length : Number.NaN);
+      const plain = await column(500);
+      if (Math.abs(centre(plain)) > 0.6) fail(`the plain line should sit on its path, got rows ${plain}`);
+      await page.evaluate(`void window.map.setPaintProperty("lines", "offset", 10)`);
+      await idle(page);
+      const right = await column(500);
+      if (Math.abs(centre(right) - 10) > 0.6)
+        fail(`offset 10 should move an eastward line 10 px south, got rows ${right}`);
+      await page.evaluate(`void window.map.setPaintProperty("lines", "offset", -10)`);
+      await idle(page);
+      const left = await column(500);
+      if (Math.abs(centre(left) + 10) > 0.6) fail(`offset -10 should move it 10 px north, got rows ${left}`);
+      await page.evaluate(
+        `void window.map.setPaintProperty("lines", "offset", 0).setPaintProperty("lines", "gapWidth", 10)`,
+      );
+      await idle(page);
+      const split = await column(500);
+      const above = split.filter((r) => r < 0);
+      const below = split.filter((r) => r > 0);
+      if (split.some((r) => Math.abs(r) < 4) || Math.abs(centre(above) + 7) > 0.8 || Math.abs(centre(below) - 7) > 0.8)
+        fail(`gapWidth 10 with width 4 should leave two bands around a 10 px gap, got rows ${split}`);
+      await page.evaluate(
+        `void window.map.setPaintProperty("lines", "gapWidth", 0).setPaintProperty("lines", "offset", 8).setLayoutProperty("lines", "join", "round")`,
+      );
+      await idle(page);
+      await shot("offset-corner");
+      const corner = await page.evaluate<{ x: number; y: number }>("window.map.project([-4, -6])");
+      const probe = await page.evaluate<number>(`(() => {
+        let blue = 0;
+        for (let k = -24; k <= 24; k++) {
+          const c = window.pixel(Math.round(${corner.x} - 8 + (k < 0 ? k : 0)), Math.round(${corner.y} + 8 + (k > 0 ? k : 0)));
+          if (c[2] > 200 && c[0] < 120) blue++;
+        }
+        return blue;
+      })()`);
+      if (probe < 46)
+        fail(`the offset line should run unbroken around the corner, only ${probe} of 49 probes were blue`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
