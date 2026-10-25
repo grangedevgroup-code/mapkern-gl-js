@@ -26,9 +26,9 @@ export class Style {
     assertValid(spec);
     this.factory = factory;
     this.events = events;
-    const { sources, layers, ...meta } = structuredClone(spec);
-    this.meta = meta;
-    for (const [id, source] of Object.entries(sources)) this.createSource(id, source);
+    const { sources, layers, ...meta } = spec;
+    this.meta = structuredClone(meta);
+    for (const [id, source] of Object.entries(sources)) this.createSource(id, cloneSpec(source));
     for (const layer of layers) this.insertLayer(new StyleLayer(layer), undefined);
   }
 
@@ -44,7 +44,7 @@ export class Style {
     if (this.sources.has(id)) throw new MapletError("invalid-option", `A source with id "${id}" already exists`);
     const issues = validateSource(id, spec);
     if (issues.length > 0) throw new MapletError("invalid-style", formatIssues(issues), { issues });
-    this.createSource(id, structuredClone(spec));
+    this.createSource(id, cloneSpec(spec));
     this.events.changed();
   }
 
@@ -104,7 +104,7 @@ export class Style {
 
   serialize(): StyleSpec {
     const sources: Record<string, SourceSpec> = {};
-    for (const [id, source] of this.sources) sources[id] = structuredClone(source.spec);
+    for (const [id, source] of this.sources) sources[id] = cloneSpec(source.spec);
     return { ...structuredClone(this.meta), sources, layers: this.layers.map((l) => l.serialize()) };
   }
 
@@ -157,4 +157,12 @@ export function assertValid(spec: unknown): asserts spec is StyleSpec {
   if (issues.length > 0) {
     throw new MapletError("invalid-style", `The style is not valid:\n${formatIssues(issues)}`, { issues });
   }
+}
+
+function cloneSpec(spec: SourceSpec): SourceSpec {
+  if (spec.type === "canvas" && typeof spec.canvas !== "string") {
+    const { canvas, ...rest } = spec;
+    return { ...structuredClone(rest), canvas };
+  }
+  return structuredClone(spec);
 }
