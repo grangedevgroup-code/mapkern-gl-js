@@ -304,6 +304,7 @@ export class Painter {
       common
         .add(layer.uid)
         .add(layer.revision)
+        .add(layer.motion)
         .add(frame.states?.(layer)?.version ?? 0);
       const overlay = layer.type === "raster" && layer.source ? frame.sources.get(layer.source) : undefined;
       if (overlay instanceof ImageSource && !overlays.includes(overlay)) overlays.push(overlay);
