@@ -37,7 +37,6 @@ export async function resolveFeatures(
   stateOf: StateReader,
 ): Promise<QueriedFeature[]> {
   const out: (QueriedFeature | null)[] = new Array(picked.length).fill(null);
-  const decoded = new Map<Tile<VectorTile>, Promise<Map<string, VectorLayer>>>();
   const geojson = new Map<GeoJSONSource, Pending[]>();
   const seen = new Set<string>();
   for (let slot = 0; slot < picked.length; slot++) {
@@ -58,12 +57,7 @@ export async function resolveFeatures(
     if (source?.type !== "vector") continue;
     const raw = hit.tile.data?.raw;
     if (!raw) continue;
-    let layers = decoded.get(hit.tile);
-    if (!layers) {
-      layers = decodeRaw(raw);
-      decoded.set(hit.tile, layers);
-    }
-    const tileLayers = await layers;
+    const tileLayers = await decodedLayers(raw);
     const name = hit.layer.sourceLayer;
     const layer = name ? tileLayers.get(name) : tileLayers.values().next().value;
     if (!layer || index >= layer.length) continue;
@@ -112,6 +106,23 @@ function promotedKey(promote: unknown, layer: string): string | undefined {
     return typeof key === "string" ? key : undefined;
   }
   return undefined;
+}
+
+const DECODED_TILES = 8;
+const decoded = new Map<ArrayBuffer, Promise<Map<string, VectorLayer>>>();
+
+function decodedLayers(raw: ArrayBuffer): Promise<Map<string, VectorLayer>> {
+  const cached = decoded.get(raw);
+  if (cached) {
+    decoded.delete(raw);
+    decoded.set(raw, cached);
+    return cached;
+  }
+  const layers = decodeRaw(raw);
+  decoded.set(raw, layers);
+  layers.catch(() => decoded.delete(raw));
+  while (decoded.size > DECODED_TILES) decoded.delete(decoded.keys().next().value!);
+  return layers;
 }
 
 async function decodeRaw(raw: ArrayBuffer): Promise<Map<string, VectorLayer>> {
