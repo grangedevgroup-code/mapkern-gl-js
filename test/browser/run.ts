@@ -2149,6 +2149,58 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "debug views draw tile edges, label boxes and padding",
+    async run({ page, base, shot }) {
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          fx: { type: "raster", tiles: [`${base}/fixture/raster/{z}/{x}/{y}.png`], tileSize: 256 },
+          g: {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: [
+                { type: "Feature", properties: { name: "Label" }, geometry: { type: "Point", coordinates: [20, 20] } },
+              ],
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "r", type: "raster", source: "fx", paint: { fadeDuration: 0, opacity: 0.2 } },
+          { id: "t", type: "symbol", source: "g", layout: { text: ["get", "name"], size: 18 } },
+        ],
+      });
+      await createMap(page, style, { zoom: 3, center: [0, 0] });
+      await page.evaluate(
+        "window.map.showTileBoundaries = true; window.map.showCollisionBoxes = true; window.map.showPadding = true",
+      );
+      await page.evaluate("void window.map.setPadding({ left: 200 })");
+      await idle(page);
+      await shot("debug");
+      const colors = await page.evaluate<{ red: number; blue: number; green: number }>(`(() => {
+        const c = document.querySelector(".maplet-debug");
+        const data = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+        let red = 0, blue = 0, green = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i + 3] < 100) continue;
+          if (data[i] > 180 && data[i + 1] < 120) red++;
+          else if (data[i + 2] > 180 && data[i] < 120) blue++;
+          else if (data[i + 1] > 160 && data[i] < 160 && data[i + 2] < 140) green++;
+        }
+        return { red, blue, green };
+      })()`);
+      if (colors.red < 500 || colors.blue < 40 || colors.green < 300)
+        fail(`expected tile edges, a label box and the padding frame, got ${JSON.stringify(colors)}`);
+      await page.evaluate(
+        "window.map.showTileBoundaries = false; window.map.showCollisionBoxes = false; window.map.showPadding = false",
+      );
+      await idle(page);
+      const gone = await page.evaluate<number>("document.querySelectorAll('.maplet-debug').length");
+      if (gone !== 0) fail("turning the debug views off should remove their canvas");
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
