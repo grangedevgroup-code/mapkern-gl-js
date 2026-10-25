@@ -1,4 +1,5 @@
 import { MapletError } from "../core/errors.ts";
+import { compile } from "./expression.ts";
 import type { PropertyDef } from "./layer.ts";
 import { LAYOUT, PAINT, transitionOf } from "./layer.ts";
 import type { LayerSpec, LayerType, SourceSpec, StyleSpec } from "./types.ts";
@@ -40,6 +41,7 @@ const PROPERTIES: Record<LayerType, Record<string, Target>> = {
     "fill-outline-color": paint("outlineColor"),
     "fill-translate": paint("translate"),
     "fill-translate-anchor": paint("translateAnchor"),
+    "fill-pattern": paint("pattern"),
   },
   line: {
     "line-cap": layout("cap"),
@@ -145,7 +147,13 @@ const PROPERTIES: Record<LayerType, Record<string, Target>> = {
   },
 };
 
-const QUIET = new Set(["line-round-limit", "fill-extrusion-vertical-gradient", "symbol-z-order", "icon-keep-upright"]);
+const QUIET = new Set([
+  "line-round-limit",
+  "fill-extrusion-vertical-gradient",
+  "symbol-z-order",
+  "icon-keep-upright",
+  "symbol-avoid-edges",
+]);
 
 const DROPPED_ROOT = ["light", "lights", "sky", "fog", "projection", "imports", "models", "camera", "state", "schema"];
 
@@ -437,6 +445,9 @@ function convertLayer(
         iconOverlap = value;
         continue;
       case "fill-pattern":
+        if (!perFeature(value)) break;
+        pattern = true;
+        continue;
       case "line-pattern":
         pattern = true;
         continue;
@@ -446,6 +457,10 @@ function convertLayer(
         continue;
       case "line-gradient":
         skipped.add("line-gradient isn't drawn yet, the line color is used", id);
+        continue;
+      case "text-pitch-alignment":
+      case "icon-pitch-alignment":
+        if (value === "map") skipped.add(`${key} map isn't supported yet, symbols face the screen`, id);
         continue;
     }
     const target = table[key];
@@ -460,7 +475,7 @@ function convertLayer(
     origin.set(`${target.group}.${target.name}`, key);
   }
   if (pattern) {
-    skipped.add("pattern fills and lines aren't drawn yet", id);
+    skipped.add("line patterns and patterns that change per feature aren't drawn yet", id);
     return null;
   }
   if (overlap !== undefined) {
@@ -592,6 +607,16 @@ function convertValue(value: unknown, def: PropertyDef | undefined, key: string)
   if (key === "text-field") return plainFormat(value);
   if (def && !def.expression && Array.isArray(value) && value[0] === "literal") return value[1];
   return value;
+}
+
+function perFeature(value: unknown): boolean {
+  if (isFunction(value)) return typeof value.property === "string";
+  if (!Array.isArray(value) || typeof value[0] !== "string") return false;
+  try {
+    return compile(value, "string", "", "pattern").featureDependent;
+  } catch {
+    return false;
+  }
 }
 
 function isFunction(value: unknown): value is Json {
