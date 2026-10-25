@@ -10,6 +10,7 @@ import type { RGBA } from "../style/color.ts";
 import { premultiply } from "../style/color.ts";
 import type { StateLookup } from "../style/feature-state.ts";
 import type { StyleLayer } from "../style/layer.ts";
+import type { SkySpec } from "../style/types.ts";
 import { terrainMesh } from "../terrain/mesh.ts";
 import type { Terrain, TerrainSlot } from "../terrain/terrain.ts";
 import type { LabelTerrain, SymbolLayerInput } from "../text/labels.ts";
@@ -27,6 +28,7 @@ import { hillshadeShader } from "./shaders/hillshade.ts";
 import { overlayShader, rasterShader, solidShader } from "./shaders/raster.ts";
 import { terrainShader } from "./shaders/terrain.ts";
 import { circleShader, extrusionShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
+import { SkyPainter, skyInView, skyLook, skyShader } from "./sky.ts";
 import type { PickPass } from "./vector-layers.ts";
 import { VectorPainter, WARM_VARIANTS } from "./vector-layers.ts";
 
@@ -43,6 +45,7 @@ export interface FrameInput {
   readonly pixelRatio: number;
   readonly layers: readonly StyleLayer[];
   readonly sources: ReadonlyMap<string, MapSource>;
+  readonly sky?: SkySpec | null;
   readonly now: number;
   readonly cameraVersion: number;
 }
@@ -132,6 +135,7 @@ export class Painter {
   private readonly matrix = new Float32Array(16);
   private readonly hue = new Float32Array(9);
   private readonly vector: VectorPainter;
+  private readonly sky: SkyPainter;
   readonly labels: LabelRenderer;
 
   get images(): ImageAtlas {
@@ -150,6 +154,7 @@ export class Painter {
     });
     this.pickBuffer = new PickBuffer(gl);
     this.drapes = new DrapeCache(gl);
+    this.sky = new SkyPainter(gl);
     this.init();
   }
 
@@ -173,6 +178,7 @@ export class Painter {
       lineShader,
       circleShader,
       extrusionShader,
+      skyShader,
       textShader,
       ...WARM_VARIANTS,
     ]) {
@@ -225,6 +231,11 @@ export class Painter {
         const layer = layers[i]!;
         if (layer.isVisible(zoom)) this.drawLayer(frame, layer);
       }
+    }
+    const fog = terrain !== null && frame.sky !== undefined && frame.sky !== null && frame.transform.pitch > 0;
+    if (!frame.framebuffer && (fog || skyInView(frame.transform))) {
+      this.sky.draw(frame.transform, skyLook(frame.sky, zoom, clear), fog, this.quadVao);
+      this.stats.drawCalls++;
     }
     const symbols: SymbolLayerInput[] = [];
     for (const layer of layers) {
