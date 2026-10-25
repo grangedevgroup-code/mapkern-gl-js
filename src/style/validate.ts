@@ -236,7 +236,7 @@ function checkSourceType(
   layer: Record<string, unknown>,
   path: string,
 ): StyleIssue[] {
-  const featureLayers: LayerType[] = ["fill", "line", "circle", "symbol", "extrusion"];
+  const featureLayers: LayerType[] = ["fill", "line", "circle", "heatmap", "symbol", "extrusion"];
   if (type === "raster" && source.type !== "raster")
     return [{ path: `${path}.source`, message: "raster layers need a raster source" }];
   if (type === "hillshade" && source.type !== "dem")
