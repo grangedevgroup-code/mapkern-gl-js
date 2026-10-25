@@ -22,6 +22,8 @@ import type { DrapeEntry, RenderView } from "./drape.ts";
 import { DrapeCache, Hash, SlotView } from "./drape.ts";
 import type { GL, Program } from "./gl.ts";
 import type { ImageAtlas } from "./images.ts";
+import type { SunLook } from "./night.ts";
+import { NightPainter, nightInView, nightShader } from "./night.ts";
 import type { PendingRead } from "./pick.ts";
 import { PickBuffer } from "./pick.ts";
 import { hillshadeShader } from "./shaders/hillshade.ts";
@@ -46,6 +48,7 @@ export interface FrameInput {
   readonly layers: readonly StyleLayer[];
   readonly sources: ReadonlyMap<string, MapSource>;
   readonly sky?: SkySpec | null;
+  readonly sun?: SunLook | null;
   readonly now: number;
   readonly cameraVersion: number;
 }
@@ -136,6 +139,7 @@ export class Painter {
   private readonly hue = new Float32Array(9);
   private readonly vector: VectorPainter;
   private readonly sky: SkyPainter;
+  private readonly night: NightPainter;
   readonly labels: LabelRenderer;
 
   get images(): ImageAtlas {
@@ -155,6 +159,7 @@ export class Painter {
     this.pickBuffer = new PickBuffer(gl);
     this.drapes = new DrapeCache(gl);
     this.sky = new SkyPainter(gl);
+    this.night = new NightPainter(gl);
     this.init();
   }
 
@@ -179,6 +184,7 @@ export class Painter {
       circleShader,
       extrusionShader,
       skyShader,
+      nightShader,
       textShader,
       ...WARM_VARIANTS,
     ]) {
@@ -235,6 +241,10 @@ export class Painter {
     const fog = terrain !== null && frame.sky !== undefined && frame.sky !== null && frame.transform.pitch > 0;
     if (!frame.framebuffer && (fog || skyInView(frame.transform))) {
       this.sky.draw(frame.transform, skyLook(frame.sky, zoom, clear), fog, this.quadVao);
+      this.stats.drawCalls++;
+    }
+    if (frame.sun && !frame.framebuffer && nightInView(frame.transform, frame.sun)) {
+      this.night.draw(frame.transform, frame.sun, this.quadVao);
       this.stats.drawCalls++;
     }
     const symbols: SymbolLayerInput[] = [];
@@ -432,6 +442,10 @@ export class Painter {
     gl.uniform1i(uniform(program, "u_dem"), 1);
     gl.uniform1f(uniform(program, "u_world"), t.worldSize);
     gl.uniform1f(uniform(program, "u_exaggeration"), terrain.exaggeration);
+    const sunLight = frame.sun?.light ?? null;
+    gl.uniform3f(uniform(program, "u_sun_light"), sunLight?.[0] ?? 0, sunLight?.[1] ?? 0, sunLight?.[2] ?? 1);
+    gl.uniform1f(uniform(program, "u_sun_gain"), sunLight ? 0.7 : 0);
+    const uMeters = uniform(program, "u_dem_meters");
     const uMatrix = uniform(program, "u_matrix");
     const uRect = uniform(program, "u_dem_rect");
     const uSize = uniform(program, "u_dem_size");
@@ -461,6 +475,7 @@ export class Painter {
       const r = slot.rect;
       gl.uniform4f(uRect, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
       gl.uniform1f(uSize, data ? data.grid.size : 1);
+      gl.uniform1f(uMeters, EARTH_CIRCUMFERENCE / n / (Math.max(1e-9, r.x1 - r.x0) * (data ? data.grid.size : 1)));
       gl.uniform1f(uHas, dem ? 1 : 0);
       gl.uniform2f(uRows, slot.y / n, (slot.y + 1) / n);
       const range = data ? data.grid.max - data.grid.min : 0;
@@ -614,16 +629,22 @@ export class Painter {
     g.use(program);
     g.setBlend("premultiplied");
     g.setDepth(false, false);
-    const anchor = layer.fixed<string>("illuminationAnchor") === "map" ? 0 : frame.view.bearing;
-    const azimuth = (layer.fixed<number>("illuminationDirection") + anchor) * DEG;
-    const level = Math.cos(LIGHT_ALTITUDE);
-    gl.uniform3f(
-      uniform(program, "u_light"),
-      Math.sin(azimuth) * level,
-      -Math.cos(azimuth) * level,
-      Math.sin(LIGHT_ALTITUDE),
-    );
-    gl.uniform1f(uniform(program, "u_flat"), Math.sin(LIGHT_ALTITUDE));
+    const sunLight = frame.sun?.light;
+    if (sunLight) {
+      gl.uniform3f(uniform(program, "u_light"), sunLight[0], sunLight[1], sunLight[2]);
+      gl.uniform1f(uniform(program, "u_flat"), sunLight[2]);
+    } else {
+      const anchor = layer.fixed<string>("illuminationAnchor") === "map" ? 0 : frame.view.bearing;
+      const azimuth = (layer.fixed<number>("illuminationDirection") + anchor) * DEG;
+      const level = Math.cos(LIGHT_ALTITUDE);
+      gl.uniform3f(
+        uniform(program, "u_light"),
+        Math.sin(azimuth) * level,
+        -Math.cos(azimuth) * level,
+        Math.sin(LIGHT_ALTITUDE),
+      );
+      gl.uniform1f(uniform(program, "u_flat"), Math.sin(LIGHT_ALTITUDE));
+    }
     gl.uniform1f(uniform(program, "u_gain"), 1.2 * exaggeration);
     for (const [name, property] of [
       ["u_shadow", "shadowColor"],
