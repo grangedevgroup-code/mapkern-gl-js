@@ -78,14 +78,24 @@ export interface MapOptions {
   locale?: Partial<Record<UiText, string>>;
 }
 
-export type UiText = "zoomIn" | "zoomOut" | "resetNorth" | "map";
+export type UiText = "zoomIn" | "zoomOut" | "resetNorth" | "map" | "marker" | "popup" | "closePopup";
 
 const DEFAULT_TEXT: Record<UiText, string> = {
   zoomIn: "Zoom in",
   zoomOut: "Zoom out",
   resetNorth: "Reset bearing to north",
   map: "Map",
+  marker: "Map marker",
+  popup: "Map popup",
+  closePopup: "Close popup",
 };
+
+export interface ScreenPosition {
+  x: number;
+  y: number;
+  visible: boolean;
+  occluded: boolean;
+}
 
 export interface CameraOptions {
   center?: LngLatLike;
@@ -809,6 +819,24 @@ export class MapletMap extends Emitter<MapEvents> {
     const y = mercatorY(lat);
     const p = this.transform.project(x, y, this.groundAt(x, y) * this.transform.worldSize);
     return { x: p.x, y: p.y };
+  }
+
+  screenPosition(lngLat: LngLatLike): ScreenPosition {
+    const [lng, lat] = toLngLat(lngLat);
+    const t = this.transform;
+    let x = mercatorX(lng);
+    const y = mercatorY(lat);
+    if (t.renderWorldCopies) x += Math.round(t.centerWorld[0] - x);
+    const z = this.groundAt(x, y);
+    const ws = t.worldSize;
+    const p = t.project(x, y, z * ws);
+    const visible = p.w > 0 && p.w <= t.far;
+    let occluded = false;
+    if (visible && this.terrain) {
+      const c = t.cameraPosition;
+      occluded = this.terrain.hidden([c[0] / ws, c[1] / ws, c[2] / ws], x, y, z);
+    }
+    return { x: p.x, y: p.y, visible, occluded };
   }
 
   unproject(point: [number, number] | { x: number; y: number }): LngLat | null {
