@@ -63,7 +63,7 @@ export function isVectorTileSource(source: MapSource | undefined): source is Map
 const DATA_DRIVEN: Record<string, readonly string[]> = {
   fill: ["color", "opacity", "outlineColor"],
   line: ["color", "width", "opacity", "blur"],
-  circle: ["radius", "color", "opacity", "strokeColor", "strokeWidth", "blur"],
+  circle: ["radius", "color", "opacity", "strokeColor", "strokeWidth", "strokeOpacity", "blur"],
   heatmap: ["radius", "weight"],
   extrusion: ["color", "height", "base"],
   symbol: ["color", "haloColor", "haloWidth", "opacity"],
