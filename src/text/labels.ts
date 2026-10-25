@@ -224,6 +224,12 @@ export class LabelRenderer {
     this.labels.clear();
   }
 
+  debugBoxes(): number[][] {
+    const out: number[][] = [];
+    for (const label of this.labels.values()) if (label.target === 1 && label.opacity > 0) out.push(label.boxes);
+    return out;
+  }
+
   takeMissing(): string[] {
     if (this.missing.size === 0) return [];
     const out = [...this.missing];
