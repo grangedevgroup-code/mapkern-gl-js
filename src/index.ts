@@ -25,6 +25,7 @@ export type {
   QueryGeometry,
   QueryOptions,
   ScreenPosition,
+  SetStyleOptions,
   Source,
   SourceDataEvent,
   StyleImageMissingEvent,
