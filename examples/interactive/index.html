@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Click and hover</title>
+    <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      #map {
+        position: absolute;
+        inset: 0;
+      }
+      #panel {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        z-index: 4;
+        width: 260px;
+        padding: 12px 14px;
+        border-radius: 8px;
+        background: #ffffff;
+        box-shadow: 0 2px 12px rgba(16, 25, 29, 0.18);
+      }
+      #panel h1 {
+        margin: 0 0 6px;
+        font-size: 15px;
+      }
+      #panel p {
+        margin: 6px 0 0;
+        color: #3d474b;
+      }
+      #status {
+        font-variant-numeric: tabular-nums;
+      }
+      @media (max-width: 600px) {
+        #panel {
+          right: 12px;
+          width: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <div id="panel">
+      <h1>Click and hover</h1>
+      <p>Hover over a building to light it up, click a park or a place for its name, and drag the red pin.</p>
+      <p id="status">&nbsp;</p>
+    </div>
+    <script type="module">
+      import * as maplet from "../../dist/maplet.js";
+
+      const params = new URLSearchParams(location.search);
+      const tiles = params.get("tiles") ?? "../../data/seattle.pmtiles";
+      const status = document.getElementById("status");
+
+      const map = new maplet.Map({
+        container: "map",
+        style: maplet.lightStyle({ url: tiles }),
+        center: [-122.3405, 47.6085],
+        zoom: 15.5,
+        pitch: 45,
+        bearing: -20,
+      });
+      map.addControl(new maplet.NavigationControl());
+
+      map.on("styleload", () => {
+        for (const id of ["building-3d", "building-3d-tall"]) {
+          if (!map.getLayer(id)) continue;
+          const color = map.getPaintProperty(id, "color") ?? "#e3dfd7";
+          map.setPaintProperty(id, "color", ["case", ["boolean", ["feature-state", "hover"], false], "#f2a541", color]);
+        }
+      });
+
+      let hovered;
+      const setHover = (id, on) => {
+        if (id !== undefined) map.setFeatureState({ source: "osm", sourceLayer: "building", id }, { hover: on });
+      };
+      map.on("mousemove", ["building-3d", "building-3d-tall"], (event) => {
+        const id = event.features[0].id;
+        if (id === hovered) return;
+        setHover(hovered, false);
+        hovered = id;
+        setHover(hovered, true);
+        const height = event.features[0].properties.height;
+        status.textContent = height ? `Building, ${Math.round(height)} m tall` : "Building";
+      });
+      map.on("mouseleave", ["building-3d", "building-3d-tall"], () => {
+        setHover(hovered, false);
+        hovered = undefined;
+        status.textContent = " ";
+      });
+
+      const clickable = ["poi-dot", "park"];
+      map.on("mouseenter", clickable, () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", clickable, () => {
+        map.getCanvas().style.cursor = "";
+      });
+      map.on("click", clickable, (event) => {
+        const feature = event.features[0];
+        const name = feature.properties.name ?? (feature.layer === "park" ? "A park" : "A place");
+        const content = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = name;
+        content.append(title);
+        if (feature.properties.class) {
+          const kind = document.createElement("div");
+          kind.textContent = feature.properties.subclass ?? feature.properties.class;
+          content.append(kind);
+        }
+        new maplet.Popup().setLngLat(event.lngLat).setDOMContent(content).addTo(map);
+      });
+
+      const where = (lngLat) => `${lngLat[1].toFixed(5)}, ${lngLat[0].toFixed(5)}`;
+      const pinPopup = new maplet.Popup({ offset: 4 }).setText("Drag me");
+      const pin = new maplet.Marker({ color: "#d9473f", draggable: true })
+        .setLngLat([-122.3421, 47.6097])
+        .setPopup(pinPopup)
+        .addTo(map);
+      pin.on("dragend", () => {
+        pinPopup.setText(`Dropped at ${where(pin.getLngLat())}`);
+        if (!pinPopup.isOpen()) pin.togglePopup();
+      });
+    </script>
+  </body>
+</html>
