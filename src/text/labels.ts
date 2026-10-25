@@ -104,6 +104,8 @@ interface Label {
   anchorDist: number;
   laid: Laid;
   scale: number;
+  ground: boolean;
+  size: number;
   color: RGBA;
   halo: RGBA;
   haloWidth: number;
@@ -721,6 +723,7 @@ export class LabelRenderer {
       const iconOptional = layer.layoutValue<unknown>("iconOptional", at) === true;
       const alignment = layer.layoutValue<unknown>("iconRotationAlignment", at);
       const textAlignment = layer.layoutValue<unknown>("rotationAlignment", at);
+      const pitchAlignment = layer.layoutValue<unknown>("pitchAlignment", at);
       const ignoreText = layer.layoutValue<unknown>("ignorePlacement", at) === true;
       const ignoreIcon = layer.layoutValue<unknown>("iconIgnorePlacement", at) === true;
       const maxAngle = (numberOr(layer.layoutValue<unknown>("maxAngle", at), 45) * Math.PI) / 180;
@@ -773,6 +776,7 @@ export class LabelRenderer {
         const dedupeKey = `${layer.id}|${text}|${labels.icons?.[i] ?? ""}`;
         const alignMap = alignment === "map" || (alignment !== "viewport" && isLine);
         const followLine = isLine && textAlignment !== "viewport";
+        const ground = followLine && pitchAlignment !== "viewport";
         let featureReady = false;
         let iconId = "";
         let iconStyle: IconStyle | null = null;
@@ -872,7 +876,27 @@ export class LabelRenderer {
               heights = new Float64Array(path.length / 2);
               for (let k = 0; k < heights.length; k++) heights[k] = terrain.height(path[k * 2]!, path[k * 2 + 1]!);
             }
-            if (text && followLine) {
+            if (text && followLine && ground) {
+              const fits = layoutOnGround(
+                transform,
+                path,
+                anchorDist,
+                laid,
+                size,
+                heights,
+                maxAngle,
+                keepUpright,
+                (_g, c) => {
+                  boxes.push(
+                    Math.min(c[0]!, c[2]!, c[4]!, c[6]!) + textShiftX - padding,
+                    Math.min(c[1]!, c[3]!, c[5]!, c[7]!) + textShiftY - padding,
+                    Math.max(c[0]!, c[2]!, c[4]!, c[6]!) + textShiftX + padding,
+                    Math.max(c[1]!, c[3]!, c[5]!, c[7]!) + textShiftY + padding,
+                  );
+                },
+              );
+              if (!fits) continue;
+            } else if (text && followLine) {
               const quads = layoutAlongPath(transform, path, anchorDist, laid, scale, heights, maxAngle, keepUpright);
               if (!quads) continue;
               for (const q of quads) {
@@ -972,6 +996,8 @@ export class LabelRenderer {
             existing.anchorDist = anchors[a + 2]! / extent / n;
             existing.laid = laid;
             existing.scale = scale;
+            existing.ground = ground;
+            existing.size = size;
             existing.color = withOpacity(color, opacity);
             existing.halo = withOpacity(halo, opacity);
             existing.haloWidth = haloWidth;
@@ -1005,6 +1031,8 @@ export class LabelRenderer {
               anchorDist: anchors[a + 2]! / extent / n,
               laid,
               scale,
+              ground,
+              size,
               color: withOpacity(color, opacity),
               halo: withOpacity(halo, opacity),
               haloWidth,
@@ -1049,7 +1077,7 @@ export class LabelRenderer {
     const u8 = new Uint8Array(this.vertexData);
     let v = 0;
     let visible = 0;
-    const put = (x: number, y: number, u: number, w: number, label: Label) => {
+    const put = (x: number, y: number, u: number, w: number, label: Label, scale = label.scale) => {
       const o = v * STRIDE;
       f32[o / 4] = x;
       f32[o / 4 + 1] = y;
@@ -1066,7 +1094,7 @@ export class LabelRenderer {
       u8[o + 18] = h[2] * h[3] * 255;
       u8[o + 19] = h[3] * 255;
       f32[o / 4 + 5] = label.opacity;
-      f32[o / 4 + 6] = label.scale;
+      f32[o / 4 + 6] = scale;
       f32[o / 4 + 7] = label.haloWidth;
       f32[o / 4 + 8] = label.haloBlur;
       v++;
@@ -1074,6 +1102,29 @@ export class LabelRenderer {
     for (const label of this.labels.values()) {
       if (label.opacity <= 0 || !label.showText) continue;
       const s = label.scale;
+      if (label.line && label.path && label.ground) {
+        const mark = v;
+        const fits = layoutOnGround(
+          transform,
+          label.path,
+          label.anchorDist,
+          label.laid,
+          label.size,
+          label.heights,
+          Math.PI / 4,
+          true,
+          (glyph, c, scale) => {
+            const m = glyph.m;
+            put(c[0]!, c[1]!, m.x, m.y, label, scale);
+            put(c[2]!, c[3]!, m.x + m.width, m.y, label, scale);
+            put(c[4]!, c[5]!, m.x + m.width, m.y + m.height, label, scale);
+            put(c[6]!, c[7]!, m.x, m.y + m.height, label, scale);
+          },
+        );
+        if (fits) visible++;
+        else v = mark;
+        continue;
+      }
       if (label.line && label.path) {
         const quads = layoutAlongPath(transform, label.path, label.anchorDist, label.laid, s, label.heights);
         if (!quads) continue;
@@ -1365,6 +1416,123 @@ function iconBounds(
 
 function withOpacity(c: RGBA, opacity: number): RGBA {
   return [c[0], c[1], c[2], c[3] * Math.max(0, Math.min(1, opacity))];
+}
+
+let groundCum = new Float64Array(64);
+let groundGlyphs = new Float64Array(256);
+const groundPoint = new Float64Array(2);
+const groundCorners = new Float64Array(8);
+
+function layoutOnGround(
+  transform: Transform,
+  path: Float64Array,
+  anchorDist: number,
+  laid: Laid,
+  size: number,
+  heights: Float64Array | null,
+  maxAngle: number,
+  keepUpright: boolean,
+  emit: (glyph: Glyph, corners: Float64Array, scale: number) => void,
+): boolean {
+  const n = path.length / 2;
+  if (n < 2) return false;
+  const ws = transform.worldSize;
+  const unit = size / GLYPH_SIZE / ws;
+  const width = laid.width * unit;
+  if (groundCum.length < n) groundCum = new Float64Array(n * 2);
+  const cum = groundCum;
+  cum[0] = 0;
+  for (let i = 1; i < n; i++) {
+    cum[i] = cum[i - 1]! + Math.hypot(path[i * 2]! - path[i * 2 - 2]!, path[i * 2 + 1]! - path[i * 2 - 1]!);
+  }
+  const total = cum[n - 1]!;
+  if (width > total) return false;
+  let start = anchorDist - width / 2;
+  if (start < 0) start = 0;
+  if (start + width > total) start = total - width;
+  let seg = 0;
+  const locate = (d: number) => {
+    while (seg < n - 2 && cum[seg + 1]! < d) seg++;
+    while (seg > 0 && cum[seg]! > d) seg--;
+  };
+  const middle = start + width / 2;
+  locate(middle);
+  const mx = path[seg * 2]!;
+  const my = path[seg * 2 + 1]!;
+  const ma = Math.atan2(path[seg * 2 + 3]! - my, path[seg * 2 + 2]! - mx);
+  const midZ = (heights?.[seg] ?? 0) * ws;
+  if (transform.projectTo(groundPoint, mx, my, midZ) <= 0) return false;
+  const x0s = groundPoint[0]!;
+  if (transform.projectTo(groundPoint, mx + Math.cos(ma) * unit * 8, my + Math.sin(ma) * unit * 8, midZ) <= 0)
+    return false;
+  const flip = keepUpright && groundPoint[0]! < x0s;
+  const glyphs = laid.glyphs;
+  if (groundGlyphs.length < glyphs.length * 4) groundGlyphs = new Float64Array(glyphs.length * 8);
+  const placed = groundGlyphs;
+  let lastAngle = Number.NaN;
+  for (let k = 0; k < glyphs.length; k++) {
+    const g = glyphs[k]!;
+    const along = (g.x + g.m.advance / 2) * unit;
+    const d = flip ? start + width - along : start + along;
+    locate(d);
+    const segLength = cum[seg + 1]! - cum[seg]!;
+    const t = segLength > 0 ? (d - cum[seg]!) / segLength : 0;
+    const ax = path[seg * 2]!;
+    const ay = path[seg * 2 + 1]!;
+    const bx = path[seg * 2 + 2]!;
+    const by = path[seg * 2 + 3]!;
+    const za = heights?.[seg] ?? 0;
+    const zb = heights?.[seg + 1] ?? 0;
+    const a = Math.atan2(by - ay, bx - ax);
+    const angle = flip ? a + Math.PI : a;
+    if (!Number.isNaN(lastAngle)) {
+      let diff = Math.abs(angle - lastAngle);
+      if (diff > Math.PI) diff = 2 * Math.PI - diff;
+      if (diff > maxAngle) return false;
+    }
+    lastAngle = angle;
+    placed[k * 4] = ax + (bx - ax) * t;
+    placed[k * 4 + 1] = ay + (by - ay) * t;
+    placed[k * 4 + 2] = (za + (zb - za) * t) * ws;
+    placed[k * 4 + 3] = angle;
+  }
+  const u = transform.unitMatrix;
+  const hw = transform.width / 2;
+  const hh = transform.height / 2;
+  for (let k = 0; k < glyphs.length; k++) {
+    const g = glyphs[k]!;
+    const m = g.m;
+    const cx = placed[k * 4]!;
+    const cy = placed[k * 4 + 1]!;
+    const cz = placed[k * 4 + 2]!;
+    const cos = Math.cos(placed[k * 4 + 3]!);
+    const sin = Math.sin(placed[k * 4 + 3]!);
+    const w = u[3]! * cx + u[7]! * cy + u[11]! * cz + u[15]!;
+    if (w <= 0) return false;
+    const xn = (u[0]! * cx + u[4]! * cy + u[8]! * cz + u[12]!) / w;
+    const yn = (u[1]! * cx + u[5]! * cy + u[9]! * cz + u[13]!) / w;
+    const sx = (xn + 1) * hw;
+    const sy = (1 - yn) * hh;
+    const jxx = (hw * (u[0]! - xn * u[3]!)) / w;
+    const jxy = (hw * (u[4]! - xn * u[7]!)) / w;
+    const jyx = (-hh * (u[1]! - yn * u[3]!)) / w;
+    const jyy = (-hh * (u[5]! - yn * u[7]!)) / w;
+    const x0 = (m.left - m.advance / 2) * unit;
+    const x1 = x0 + m.width * unit;
+    const y0 = (m.top + GLYPH_SIZE * 0.32) * unit;
+    const y1 = y0 + m.height * unit;
+    for (let c = 0; c < 4; c++) {
+      const dx = c === 0 || c === 3 ? x0 : x1;
+      const dy = c < 2 ? y0 : y1;
+      const ox = dx * cos - dy * sin;
+      const oy = dx * sin + dy * cos;
+      groundCorners[c * 2] = sx + jxx * ox + jxy * oy;
+      groundCorners[c * 2 + 1] = sy + jyx * ox + jyy * oy;
+    }
+    const tall = Math.hypot(groundCorners[6]! - groundCorners[0]!, groundCorners[7]! - groundCorners[1]!);
+    emit(g, groundCorners, m.height > 0 ? tall / m.height : size / GLYPH_SIZE);
+  }
+  return true;
 }
 
 interface PathGlyph {
