@@ -48,6 +48,24 @@ const numberList = (v: unknown) =>
 const stringList = (v: unknown) =>
   Array.isArray(v) && v.length > 0 && v.every((s) => typeof s === "string") ? null : "must be a list of strings";
 
+const DEFAULT_HEAT = [
+  "interpolate",
+  ["linear"],
+  ["heatmap-density"],
+  0,
+  "rgba(47, 111, 219, 0)",
+  0.15,
+  "#2f6fdb",
+  0.35,
+  "#2db3c4",
+  0.55,
+  "#7ccf6b",
+  0.75,
+  "#f2d544",
+  1,
+  "#e4572e",
+];
+
 export const PAINT: Record<LayerType, Record<string, PropertyDef>> = {
   background: { color: p("color", "#000000", false), opacity: p("number", 1, false) },
   raster: {
@@ -98,6 +116,13 @@ export const PAINT: Record<LayerType, Record<string, PropertyDef>> = {
     base: p("number", 0),
     opacity: p("number", 1, false),
   },
+  heatmap: {
+    radius: p("number", 30),
+    weight: p("number", 1),
+    intensity: p("number", 1, false),
+    color: p("color", DEFAULT_HEAT, false),
+    opacity: p("number", 1, false),
+  },
   hillshade: {
     exaggeration: p("number", 0.5, false),
     shadowColor: p("color", "#000000", false),
@@ -118,6 +143,7 @@ export const LAYOUT: Record<LayerType, Record<string, PropertyDef>> = {
     miterLimit: fixed(2, numberAtLeast(1)),
   },
   circle: {},
+  heatmap: {},
   symbol: {
     text: p("string", ""),
     font: fixed(["sans-serif"], stringList),
