@@ -4,6 +4,7 @@ import { basename, dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { gzipSync } from "node:zlib";
 import { convertMbtiles } from "./convert.ts";
+import { buildDem } from "./dem.ts";
 import { extractRegion } from "./extract.ts";
 import { buildFeatures, regionRect } from "./features.ts";
 import { Compression, PMTilesWriter, TileType } from "./pmtiles-writer.ts";
@@ -53,10 +54,11 @@ const FIELDS: Record<string, Record<string, string>> = {
 };
 
 const HELP = `Build a vector tile archive (.pmtiles) from an OpenStreetMap .osm.pbf file,
-or convert an MBTiles file to PMTiles.
+turn elevation GeoTIFFs into elevation tiles, or convert an MBTiles file to PMTiles.
 
 Usage:
   maplet-tiles --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.pmtiles>
+  maplet-tiles dem <file.tif>... --output <file.pmtiles>
   maplet-tiles convert <file.mbtiles> <file.pmtiles>
 
 Options:
@@ -64,12 +66,50 @@ Options:
   --bbox      Area to build, in degrees: west,south,east,north.
               Write it as --bbox=-123.4,46.8,-121.7,48.1 when it starts with a minus sign.
   --output    Output .pmtiles file
-  --maxzoom   Highest zoom level to build (default 14)
+  --maxzoom   Highest zoom level to build (default 14, or the detail of the files for dem)
+  --minzoom   Lowest zoom level for dem (default 0)
   --name      Name stored in the archive metadata
   --threads   Worker threads for reading the PBF (default: all cores)
 `;
 
 async function main(): Promise<void> {
+  if (process.argv[2] === "dem") {
+    const { values, positionals } = parseArgs({
+      args: process.argv.slice(3),
+      allowPositionals: true,
+      options: {
+        output: { type: "string" },
+        minzoom: { type: "string" },
+        maxzoom: { type: "string" },
+        name: { type: "string" },
+        help: { type: "boolean", default: false },
+      },
+    });
+    if (values.help || positionals.length === 0 || !values.output) {
+      console.log(HELP);
+      process.exit(values.help ? 0 : 1);
+    }
+    const zoom = (value: string | undefined, flag: string) => {
+      if (value === undefined) return undefined;
+      const z = Number(value);
+      if (!Number.isInteger(z) || z < 0 || z > 18) throw new Error(`${flag} must be an integer from 0 to 18`);
+      return z;
+    };
+    const started = performance.now();
+    const log = (m: string) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}`);
+    const output = resolve(values.output);
+    mkdirSync(dirname(output), { recursive: true });
+    await buildDem({
+      inputs: positionals.map((p) => resolve(p)),
+      output,
+      minZoom: zoom(values.minzoom, "--minzoom"),
+      maxZoom: zoom(values.maxzoom, "--maxzoom"),
+      name: values.name,
+      log,
+    });
+    log(`done in ${((performance.now() - started) / 1000).toFixed(1)} s`);
+    return;
+  }
   if (process.argv[2] === "convert") {
     const [input, output] = process.argv.slice(3);
     if (!input || !output) {
