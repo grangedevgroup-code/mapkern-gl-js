@@ -1,5 +1,7 @@
 import { bytesToGeoJSON, objectToGeoJSON } from "../formats/convert.ts";
 import type { FeatureFormat } from "../formats/feature-format.ts";
+import type { GeometryType } from "../style/expression.ts";
+import { compile } from "../style/expression.ts";
 import type { GeoJSONOptions, GeoJSONSummary, QueriedSourceFeature, SourceGeoJSONFeature } from "./geojson.ts";
 import { GeoJSONIndex } from "./geojson.ts";
 import type { LayerProgram, VectorTileResult } from "./vector-task.ts";
@@ -53,6 +55,46 @@ export async function geojsonFeatures(request: {
 }): Promise<{ result: QueriedSourceFeature[] | null }> {
   const index = indexes.get(request.source);
   return { result: index ? index.features(request.indices) : null };
+}
+
+export interface GeoJSONSourceQuery {
+  source: string;
+  tiles: [number, number, number][];
+  filter: unknown;
+}
+
+const TYPES: Record<number, GeometryType> = { 1: "Point", 2: "LineString", 3: "Polygon" };
+
+export async function geojsonSourceQuery(
+  request: GeoJSONSourceQuery,
+): Promise<{ result: QueriedSourceFeature[] | null }> {
+  const index = indexes.get(request.source);
+  if (!index) return { result: null };
+  const filter =
+    request.filter === undefined || request.filter === null
+      ? null
+      : compile<boolean>(request.filter, "boolean", false, "filter");
+  const found = new Set<number>();
+  const order: number[] = [];
+  for (const [z, x, y] of request.tiles) {
+    const layer = index.tile(z, x, y);
+    for (let i = 0; i < layer.length; i++) {
+      const feature = layer.feature(i);
+      const at = feature.source ?? -1;
+      if (at < 0 || found.has(at)) continue;
+      if (filter) {
+        const context = {
+          properties: feature.properties(),
+          id: feature.textId ?? feature.id,
+          geometryType: TYPES[feature.type] ?? "Unknown",
+        };
+        if (filter.evaluate({ zoom: z, feature: context }) !== true) continue;
+      }
+      found.add(at);
+      order.push(at);
+    }
+  }
+  return { result: index.features(order) };
 }
 
 export interface GeoJSONClusterRequest {
