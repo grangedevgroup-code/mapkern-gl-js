@@ -1276,7 +1276,7 @@ export class MapletMap extends Emitter<MapEvents> {
     let filter: Compiled<boolean> | null = null;
     if (options.filter !== undefined && options.filter !== null) {
       try {
-        filter = compile<boolean>(options.filter, "boolean", false, "filter");
+        filter = compile<boolean>(options.filter, "boolean", false, "filter", { geometry: true });
       } catch (error) {
         throw new MapletError("invalid-option", errorMessage(error), { sourceId }, error);
       }
