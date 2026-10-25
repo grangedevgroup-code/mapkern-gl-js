@@ -141,8 +141,13 @@ export class Painter {
 
   constructor(gl: GL) {
     this.gl = gl;
-    this.vector = new VectorPainter(gl);
     this.labels = new LabelRenderer(gl);
+    const labels = this.labels;
+    this.vector = new VectorPainter(gl, {
+      atlas: labels.images,
+      texture: () => labels.imageTexture(),
+      missing: (id) => labels.markMissing(id),
+    });
     this.pickBuffer = new PickBuffer(gl);
     this.drapes = new DrapeCache(gl);
     this.init();
