@@ -3,6 +3,7 @@ import type { GL } from "../render/gl.ts";
 import type { VectorBucket, VectorTile } from "../sources/vector.ts";
 import type { RGBA } from "../style/color.ts";
 import type { EvalContext, GeometryType } from "../style/expression.ts";
+import type { StateLookup } from "../style/feature-state.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { RenderPiece, TileManager } from "../tiles/manager.ts";
 import type { Tile } from "../tiles/tile.ts";
@@ -13,6 +14,7 @@ import { textShader } from "./shader.ts";
 export interface SymbolLayerInput {
   layer: StyleLayer;
   manager: TileManager<VectorTile>;
+  states: StateLookup | null;
 }
 
 interface Glyph {
@@ -164,8 +166,8 @@ export class LabelRenderer {
     terrain: LabelTerrain | null = null,
   ): boolean {
     const parts: string[] = [];
-    for (const { layer, manager } of inputs) {
-      parts.push(`${layer.id}:${layer.revision}`);
+    for (const { layer, manager, states } of inputs) {
+      parts.push(`${layer.id}:${layer.revision}:${states?.version ?? 0}`);
       for (const piece of manager.pieces) {
         if (piece.tile.data?.buckets.has(layer.id))
           parts.push(`${piece.tile.key}/${piece.tile.revision}/${piece.wrap}`);
@@ -390,7 +392,7 @@ export class LabelRenderer {
     const shown = new Set<string>();
     for (const label of this.labels.values()) if (label.target === 1) shown.add(label.dedupe);
     for (let li = inputs.length - 1; li >= 0; li--) {
-      const { layer, manager } = inputs[li]!;
+      const { layer, manager, states } = inputs[li]!;
       if (!layer.isVisible(zoom)) continue;
       const allowOverlap = layer.fixed<boolean>("allowOverlap");
       const padding = layer.fixed<number>("padding");
@@ -451,6 +453,7 @@ export class LabelRenderer {
               id: featureId,
               geometryType: GEOMETRY[bucket.features.type(fi)] ?? "Unknown",
             };
+            ctx.state = featureId !== undefined ? states?.get(featureId) : undefined;
             featureReady = true;
           }
           const size = layer.layoutValue<number>("size", ctx);
