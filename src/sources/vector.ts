@@ -3,6 +3,7 @@ import type { TileCoord } from "../geo/tile.ts";
 import type { GL } from "../render/gl.ts";
 import { PaintTable } from "../render/paint-table.ts";
 import type { StyleLayer } from "../style/layer.ts";
+import { LAYOUT, PAINT } from "../style/layer.ts";
 import type { VectorSourceSpec } from "../style/types.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileLoader, TileStats } from "../tiles/manager.ts";
@@ -85,8 +86,14 @@ export function layerProgram(layer: StyleLayer): LayerProgram | null {
   )
     return null;
   const keys = new Set<string>();
-  for (const name of DATA_DRIVEN[type] ?? []) {
+  for (const [name, def] of Object.entries(PAINT[type])) {
+    if (!def.expression) continue;
     const c = layer.paintProperty<unknown>(name);
+    if (c.featureDependent) for (const k of c.properties) keys.add(k);
+  }
+  for (const [name, def] of Object.entries(LAYOUT[type])) {
+    if (!def.expression) continue;
+    const c = layer.layoutProperty<unknown>(name);
     if (c.featureDependent) for (const k of c.properties) keys.add(k);
   }
   const layout: Record<string, unknown> = {};
@@ -101,17 +108,9 @@ export function layerProgram(layer: StyleLayer): LayerProgram | null {
     layout.icon = raw.icon ?? "";
     layout.size = raw.size ?? 14;
     layout.priority = raw.priority ?? 0;
-    layout.placement = layer.fixed<string>("placement");
-    layout.spacing = layer.fixed<number>("spacing");
-    layout.transform = layer.fixed<string>("transform");
-    for (const name of ["text", "size", "priority", "icon", "iconSize", "iconRotate", "rotate"]) {
-      const c = layer.layoutProperty<unknown>(name);
-      if (c.featureDependent) for (const k of c.properties) keys.add(k);
-    }
-    for (const name of ["iconColor", "iconHaloColor", "iconHaloWidth", "iconOpacity", "haloBlur"]) {
-      const c = layer.paintProperty<unknown>(name);
-      if (c.featureDependent) for (const k of c.properties) keys.add(k);
-    }
+    layout.placement = raw.placement ?? "point";
+    layout.spacing = raw.spacing ?? 250;
+    layout.transform = raw.transform ?? "none";
   }
   const spec = layer.spec as { filter?: unknown; sortKey?: unknown };
   return {
