@@ -220,8 +220,11 @@ function build(value: unknown, scope: Scope): Node {
     if (typeof value === "object") return constant(value);
     throw new ExpressionError(`${scope.path}: unsupported value ${String(value)}`);
   }
-  if (value.length === 0 || typeof value[0] !== "string" || !OPS.has(value[0])) {
-    return constant(value);
+  if (value.length === 0 || typeof value[0] !== "string") return constant(value);
+  if (!OPS.has(value[0])) {
+    throw new ExpressionError(
+      `${scope.path}: unknown expression "${value[0]}". To use a list of values as it is, write ["literal", [...]]`,
+    );
   }
   const op = value[0] as string;
   const args = value.slice(1) as unknown[];
