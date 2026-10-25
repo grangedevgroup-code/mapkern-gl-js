@@ -236,9 +236,9 @@ export class InputHandlers {
       startTime: e.timeStamp,
     };
     this.pointers.set(e.pointerId, pointer);
-    try {
-      this.host.element.setPointerCapture(e.pointerId);
-    } catch {
+    const target = e.target as Element | null;
+    const onMarker = typeof target?.closest === "function" && target.closest(".maplet-marker") !== null;
+    if (!onMarker && !this.capture(e.pointerId)) {
       this.pointers.delete(e.pointerId);
       return;
     }
@@ -271,6 +271,10 @@ export class InputHandlers {
       if (mode.hold.waiting || mode.hold.prevented) return;
       if (mode.rotate) {
         if (!this.options.dragRotate) return;
+        if (!this.capture(e.pointerId)) {
+          this.cancel();
+          return;
+        }
         this.mode = {
           kind: "rotate",
           pointer: e.pointerId,
@@ -283,6 +287,10 @@ export class InputHandlers {
         if (!this.options.dragPan) return;
         const anchor = this.host.anchor(pointer.startX, pointer.startY);
         if (!anchor) return;
+        if (!this.capture(e.pointerId)) {
+          this.cancel();
+          return;
+        }
         this.mode = { kind: "pan", pointer: e.pointerId, anchor };
         this.host.gesture(true);
       }
@@ -395,7 +403,19 @@ export class InputHandlers {
     };
   }
 
+  private capture(id: number): boolean {
+    const el = this.host.element;
+    try {
+      if (!el.hasPointerCapture(id)) el.setPointerCapture(id);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private beginTwoFinger(a: Pointer, b: Pointer): void {
+    this.capture(a.id);
+    this.capture(b.id);
     const prior = this.mode;
     if (prior.kind === "pan" || prior.kind === "rotate") this.host.gesture(false);
     const transform = this.host.transform;
