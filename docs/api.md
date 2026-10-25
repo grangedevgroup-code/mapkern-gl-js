@@ -24,10 +24,13 @@ const map = new maplet.Map({
 | Option | Default | |
 | --- | --- | --- |
 | `center`, `zoom`, `bearing`, `pitch` | from the style, else 0 | Where the map starts. Bearing turns the map clockwise from north; pitch tilts it, 0 looks straight down |
+| `bounds` | | Start with this area in view instead, as `[[west, south], [east, north]]`. `fitBoundsOptions` takes the same options as `fitBounds` |
+| `maxBounds` | | Keep the view inside this area |
+| `padding` | 0 | Space in pixels the map keeps free at its edges, as a number or `{ top, right, bottom, left }` |
 | `minZoom`, `maxZoom` | 0, 22 | |
 | `minPitch`, `maxPitch` | 0, 60 | |
 | `interactive` | `true` | `false` ignores mouse, touch and keyboard |
-| `dragPan`, `dragRotate`, `scrollZoom`, `doubleClickZoom`, `touchZoomRotate`, `touchPitch`, `keyboard` | `true` | Switch off single interactions |
+| `dragPan`, `dragRotate`, `scrollZoom`, `boxZoom`, `doubleClickZoom`, `touchZoomRotate`, `touchPitch`, `keyboard` | `true` | Switch off single interactions |
 | `bearingSnap` | 7 | After a rotation that ends this many degrees or less from north, the map turns back to north |
 | `clickTolerance` | 4 | How far in pixels the pointer may move between press and release and still count as a click |
 | `renderWorldCopies` | `true` | Repeat the world sideways when zoomed far out |
@@ -60,7 +63,18 @@ map.fitBounds([[-122.45, 47.48], [-122.22, 47.74]], { padding: 40 });
 
 `jumpTo` moves at once, `easeTo` animates (500 ms unless you pass `duration`), and `flyTo` zooms out, travels and zooms back in. All three take `center`, `zoom`, `bearing` and `pitch`, plus `around` to zoom around a fixed point. `flyTo` also takes `speed`, `curve` and `maxDuration`. `fitBounds` accepts `[[west, south], [east, north]]` or `[west, south, east, north]`, with `padding`, `maxZoom` and `linear` if you'd rather ease than fly. `cameraForBounds()` tells you where `fitBounds` would go without moving.
 
-There are shortcuts too: `panBy([x, y])`, `panTo(lngLat)`, `zoomTo(zoom)`, `zoomIn()`, `zoomOut()`, `rotateTo(bearing)` and `resetNorth()`. They take the same animation options: `duration`, `easing` (a function from 0..1 to 0..1) and `animate: false`.
+There are shortcuts too: `panBy([x, y])`, `panTo(lngLat)`, `zoomTo(zoom)`, `zoomIn()`, `zoomOut()`, `rotateTo(bearing)` and `resetNorth()`. They take the same animation options: `duration`, `easing` (a function from 0..1 to 0..1) and `animate: false`. `fitScreenCoordinates([x1, y1], [x2, y2], bearing)` zooms to a box drawn on the screen, which is what Shift-drag does.
+
+Padding keeps part of the map free, for example under a side panel:
+
+```js
+map.setPadding({ left: 360 });
+map.easeTo({ center: [-122.33, 47.6], padding: { left: 0 }, duration: 600 });
+```
+
+The center of the map then sits in the middle of what's left, so `getCenter()`, `easeTo` and `fitBounds` all work around the panel. `jumpTo`, `easeTo` and `flyTo` take `padding` and animate it along with everything else, and `getPadding()` reads it back.
+
+`setMaxBounds([[west, south], [east, north]])` keeps the whole view inside an area: you can't pan out of it, and zooming out stops once the area fills the screen. `setMaxBounds(null)` lifts the limit and `getMaxBounds()` reads it.
 
 To read the camera, use `getCenter()`, `getZoom()`, `getBearing()`, `getPitch()` and `getBounds()`, which returns `[[west, south], [east, north]]`. `setCenter()`, `setZoom()`, `setBearing()` and `setPitch()` move without animation. `isMoving()` is true during animations and gestures, `isZooming()` and `isRotating()` narrow that down, and `stop()` ends an animation. `resetNorthPitch()` turns the map north and flat in one go, and `snapToNorth()` does it only when the map is already within `bearingSnap` degrees of north.
 
@@ -68,7 +82,7 @@ The limits have getters and setters of their own: `getMinZoom()`, `setMinZoom()`
 
 `project(lngLat)` gives the screen position of a place in CSS pixels, and `unproject([x, y])` does the opposite. It returns `null` for points above the horizon on a tilted map. `screenPosition(lngLat)` is `project` with two extras for your own overlays: `visible` says whether the place is in front of the camera and close enough to be drawn, and `occluded` whether a hill is in the way.
 
-People can drag to pan, scroll or pinch to zoom, and double-click to zoom in. Dragging with the right mouse button, or with Ctrl held, rotates and tilts. On touch screens, twisting two fingers rotates and sliding two fingers up or down tilts. With keyboard focus, the arrow keys pan, Shift with the arrows rotates and tilts, and `+` and `-` zoom.
+People can drag to pan, scroll or pinch to zoom, and double-click to zoom in. Dragging with Shift held draws a box to zoom into, and Escape cancels it. Dragging with the right mouse button, or with Ctrl held, rotates and tilts. On touch screens, twisting two fingers rotates and sliding two fingers up or down tilts. With keyboard focus, the arrow keys pan, Shift with the arrows rotates and tilts, and `+` and `-` zoom.
 
 Each of these can be switched off and on again while the map runs, for example while someone draws on the map:
 
@@ -78,7 +92,7 @@ map.scrollZoom.enable();
 map.touchZoomRotate.disableRotation();
 ```
 
-The switches are `dragPan`, `dragRotate`, `scrollZoom`, `doubleClickZoom`, `touchZoomRotate`, `touchPitch` and `keyboard`, and each has `isEnabled()`. `touchZoomRotate.disableRotation()` keeps pinch zoom but stops the twist.
+The switches are `dragPan`, `dragRotate`, `scrollZoom`, `boxZoom`, `doubleClickZoom`, `touchZoomRotate`, `touchPitch` and `keyboard`, and each has `isEnabled()`. `touchZoomRotate.disableRotation()` keeps pinch zoom but stops the twist.
 
 ## Changing the style
 
@@ -137,6 +151,7 @@ await map.once("idle");
 - `idle`: everything on screen has loaded and nothing is moving.
 - `render` after every frame, `resize` when the map changes size, `remove` when it's removed.
 - `movestart`, `move` and `moveend` whenever the camera changes. There are also `zoom`, `rotate` and `pitch` versions of all three. `originalEvent` is set when a person caused the move.
+- `boxzoomstart`, `boxzoomend` and `boxzoomcancel` around a Shift-drag box zoom.
 - `click`, `dblclick`, `contextmenu`, `mousemove`, `mousedown`, `mouseup` and `mouseout` (the pointer left the map) carry `point` (`{ x, y }`) and `lngLat`. Call `event.preventDefault()` in `dblclick` to stop the zoom, or in `mousedown` to keep that press from moving the map.
 - `sourcedata` when a source loads (`kind: "metadata"`), gets new data (`"content"`) or fails (`"error"`).
 - `error` with a `MapletError` in `event.error`.
