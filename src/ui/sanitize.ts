@@ -1,6 +1,6 @@
 export function safeLinkFragment(doc: Document, html: string): DocumentFragment {
   const fragment = doc.createDocumentFragment();
-  const parsed = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  const parsed = new DOMParser().parseFromString(html, "text/html");
   appendSafe(doc, fragment, parsed.body, 0);
   return fragment;
 }
@@ -99,7 +99,7 @@ const DATA_IMAGE = /^data:image\/(png|jpeg|gif|webp|avif);base64,[a-z0-9+/=\s]+$
 
 export function safeHtmlFragment(doc: Document, html: string): DocumentFragment {
   const fragment = doc.createDocumentFragment();
-  const parsed = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  const parsed = new DOMParser().parseFromString(html, "text/html");
   copySafe(doc, fragment, parsed.body, 0);
   return fragment;
 }
@@ -153,6 +153,6 @@ function safeUrl(doc: Document, value: string | null, protocols: ReadonlySet<str
 }
 
 export function textOnly(html: string): string {
-  const parsed = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  const parsed = new DOMParser().parseFromString(html, "text/html");
   return parsed.body.textContent ?? "";
 }
