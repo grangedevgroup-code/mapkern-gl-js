@@ -45,7 +45,10 @@ export async function buildGeoJSONTile(
   if (!index) return { result: { missing: true } };
   const started = performance.now();
   const layer = index.tile(request.z, request.x, request.y);
-  const built = buildBuckets(new Map([[layer.name, layer]]), request.z, request.layers, request.overzoom, started);
+  const built = buildBuckets(new Map([[layer.name, layer]]), request.z, request.layers, request.overzoom, started, {
+    x: request.x,
+    y: request.y,
+  });
   return { result: { missing: false, tile: built.result }, transfer: built.transfer };
 }
 
@@ -73,7 +76,7 @@ export async function geojsonSourceQuery(
   const filter =
     request.filter === undefined || request.filter === null
       ? null
-      : compile<boolean>(request.filter, "boolean", false, "filter");
+      : compile<boolean>(request.filter, "boolean", false, "filter", { geometry: true });
   const found = new Set<number>();
   const order: number[] = [];
   for (const [z, x, y] of request.tiles) {
@@ -83,10 +86,22 @@ export async function geojsonSourceQuery(
       const at = feature.source ?? -1;
       if (at < 0 || found.has(at)) continue;
       if (filter) {
+        const n = 2 ** z;
         const context = {
           properties: feature.properties(),
           id: feature.textId ?? feature.id,
           geometryType: TYPES[feature.type] ?? "Unknown",
+          geometry: () => ({
+            type: feature.type as 1 | 2 | 3,
+            parts: feature.geometry().map((part) => {
+              const out = new Float64Array(part.length);
+              for (let k = 0; k < part.length; k += 2) {
+                out[k] = (x + part[k]! / feature.extent) / n;
+                out[k + 1] = (y + part[k + 1]! / feature.extent) / n;
+              }
+              return out;
+            }),
+          }),
         };
         if (filter.evaluate({ zoom: z, feature: context }) !== true) continue;
       }
