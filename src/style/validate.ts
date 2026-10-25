@@ -1,7 +1,7 @@
 import type { FeatureFormat } from "../formats/feature-format.ts";
 import { FEATURE_FORMATS } from "../formats/feature-format.ts";
 import { compile, ExpressionError } from "./expression.ts";
-import { isPlainValue, LAYOUT, PAINT, transitionOf } from "./layer.ts";
+import { isPlainValue, LAYOUT, literalList, PAINT, transitionOf } from "./layer.ts";
 import { checkTransition } from "./transition.ts";
 import type { LayerType, SourceSpec, StyleSpec } from "./types.ts";
 
@@ -314,9 +314,9 @@ function checkGroup(
       continue;
     }
     if (def.expression) {
-      const problem = def.check && isPlainValue(value) ? def.check(value) : null;
+      const problem = def.check && isPlainValue(value, def) ? def.check(value) : null;
       if (problem) issues.push({ path: `${path}.${key}`, message: problem });
-      else issues.push(...checkExpression(value, `${path}.${key}`, allowState));
+      else issues.push(...checkExpression(literalList(value), `${path}.${key}`, allowState));
     } else if (def.check) {
       const problem = def.check(value);
       if (problem) issues.push({ path: `${path}.${key}`, message: problem });
