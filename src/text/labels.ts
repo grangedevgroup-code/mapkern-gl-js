@@ -1,5 +1,6 @@
 import type { Transform } from "../camera/transform.ts";
 import type { GL } from "../render/gl.ts";
+import type { ImageRect } from "../render/images.ts";
 import { ImageAtlas } from "../render/images.ts";
 import type { VectorBucket, VectorTile } from "../sources/vector.ts";
 import type { RGBA } from "../style/color.ts";
@@ -70,6 +71,19 @@ interface IconPart {
   opacity: number;
   sdf: boolean;
   pixelRatio: number;
+  slices: IconSlice[] | null;
+  box: [number, number, number, number] | null;
+}
+
+interface IconSlice {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  u0: number;
+  v0: number;
+  u1: number;
+  v1: number;
 }
 
 interface IconStyle {
@@ -447,6 +461,8 @@ export class LabelRenderer {
       opacity: style.opacity,
       sdf: image.sdf,
       pixelRatio: image.pixelRatio,
+      slices: null,
+      box: null,
     };
   }
 
@@ -723,6 +739,8 @@ export class LabelRenderer {
       const iconOptional = layer.layoutValue<unknown>("iconOptional", at) === true;
       const alignment = layer.layoutValue<unknown>("iconRotationAlignment", at);
       const textAlignment = layer.layoutValue<unknown>("rotationAlignment", at);
+      const textFit = layer.layoutValue<unknown>("iconTextFit", at);
+      const fitPadding = layer.layoutValue<unknown>("iconTextFitPadding", at);
       const pitchAlignment = layer.layoutValue<unknown>("pitchAlignment", at);
       const ignoreText = layer.layoutValue<unknown>("ignorePlacement", at) === true;
       const ignoreIcon = layer.layoutValue<unknown>("iconIgnorePlacement", at) === true;
@@ -947,6 +965,25 @@ export class LabelRenderer {
           } else if (text) {
             textHit = !allowOverlap && gridHits(grid, boxes);
           }
+          if (icon && text && !followLine && (textFit === "width" || textFit === "height" || textFit === "both")) {
+            const at = chosen ?? { offsetX: 0, offsetY: 0 };
+            const rect = this.images.get(icon.id);
+            if (rect) {
+              fitIcon(
+                icon,
+                rect,
+                textFit,
+                quadOr(fitPadding),
+                [
+                  at.offsetX * scale,
+                  at.offsetY * scale,
+                  (at.offsetX + laid.width) * scale,
+                  (at.offsetY + laid.height) * scale,
+                ],
+                [iconOffset[0] * icon.size, iconOffset[1] * icon.size],
+              );
+            }
+          }
           const iconBox = icon
             ? iconBounds(transform, icon, p.x + iconShiftX, p.y + iconShiftY, path, heights, iconPadding)
             : null;
@@ -1081,8 +1118,8 @@ export class LabelRenderer {
       const o = v * STRIDE;
       f32[o / 4] = x;
       f32[o / 4 + 1] = y;
-      u16[o / 2 + 4] = u;
-      u16[o / 2 + 5] = w;
+      u16[o / 2 + 4] = Math.round(u * 4);
+      u16[o / 2 + 5] = Math.round(w * 4);
       const c = label.color;
       const h = label.halo;
       u8[o + 12] = c[0] * c[3] * 255;
@@ -1200,7 +1237,9 @@ export class LabelRenderer {
 
   private buildIcons(transform: Transform, pixelRatio: number): void {
     let count = 0;
-    for (const label of this.labels.values()) if (label.opacity > 0 && label.icon) count++;
+    for (const label of this.labels.values()) {
+      if (label.opacity > 0 && label.icon) count += label.icon.slices?.length ?? 1;
+    }
     const needed = count * 4 * STRIDE;
     if (this.iconData.byteLength < needed)
       this.iconData = new ArrayBuffer(Math.max(needed, this.iconData.byteLength * 2));
@@ -1237,17 +1276,25 @@ export class LabelRenderer {
       const c = icon.color;
       const h = icon.halo;
       const opacity = label.opacity * Math.max(0, Math.min(1, icon.opacity));
-      for (const [dx, dy, u, w] of [
-        [x0, y0, u0, v0],
-        [x1, y0, u1, v0],
-        [x1, y1, u1, v1],
-        [x0, y1, u0, v1],
-      ] as const) {
+      const corners: (readonly [number, number, number, number])[] = icon.slices
+        ? icon.slices.flatMap((q) => [
+            [q.x0, q.y0, q.u0, q.v0] as const,
+            [q.x1, q.y0, q.u1, q.v0] as const,
+            [q.x1, q.y1, q.u1, q.v1] as const,
+            [q.x0, q.y1, q.u0, q.v1] as const,
+          ])
+        : [
+            [x0, y0, u0, v0],
+            [x1, y0, u1, v0],
+            [x1, y1, u1, v1],
+            [x0, y1, u0, v1],
+          ];
+      for (const [dx, dy, u, w] of corners) {
         const o = v * STRIDE;
         f32[o / 4] = px + dx * cos - dy * sin;
         f32[o / 4 + 1] = py + dx * sin + dy * cos;
-        u16[o / 2 + 4] = u;
-        u16[o / 2 + 5] = w;
+        u16[o / 2 + 4] = Math.round(u * 4);
+        u16[o / 2 + 5] = Math.round(w * 4);
         u8[o + 12] = c[0] * c[3] * 255;
         u8[o + 13] = c[1] * c[3] * 255;
         u8[o + 14] = c[2] * c[3] * 255;
@@ -1391,7 +1438,8 @@ function iconBounds(
   padding: number,
 ): number[] {
   const angle = iconAngle(transform, icon, path, heights);
-  const s = icon.size;
+  const s = icon.box ? 1 : icon.size;
+  const [bx0, by0, bx1, by1] = icon.box ?? [icon.left, icon.top, icon.left + icon.width, icon.top + icon.height];
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   let x0 = Infinity;
@@ -1399,10 +1447,10 @@ function iconBounds(
   let x1 = -Infinity;
   let y1 = -Infinity;
   for (const [dx, dy] of [
-    [icon.left, icon.top],
-    [icon.left + icon.width, icon.top],
-    [icon.left + icon.width, icon.top + icon.height],
-    [icon.left, icon.top + icon.height],
+    [bx0, by0],
+    [bx1, by0],
+    [bx1, by1],
+    [bx0, by1],
   ] as const) {
     const px = x + (dx * cos - dy * sin) * s;
     const py = y + (dx * sin + dy * cos) * s;
@@ -1412,6 +1460,104 @@ function iconBounds(
     y1 = Math.max(y1, py);
   }
   return [x0 - padding, y0 - padding, x1 + padding, y1 + padding];
+}
+
+function fitIcon(
+  icon: IconPart,
+  rect: ImageRect,
+  mode: string,
+  padding: [number, number, number, number],
+  text: [number, number, number, number],
+  offset: [number, number],
+): void {
+  const image = rect.image;
+  const ratio = image.pixelRatio;
+  const content = image.content ?? [0, 0, image.width, image.height];
+  const width = (image.width / ratio) * icon.size;
+  const height = (image.height / ratio) * icon.size;
+  const [tx0, ty0, tx1, ty1] = text;
+  const fitX = mode === "width" || mode === "both";
+  const fitY = mode === "height" || mode === "both";
+  const xs = fitX
+    ? fitAxis(
+        image.width,
+        ratio,
+        icon.size,
+        image.stretchX ?? [[0, image.width]],
+        content[0],
+        content[2],
+        offset[0] + tx0 - padding[3],
+        offset[0] + tx1 + padding[1],
+      )
+    : fitAxis(image.width, ratio, icon.size, [], 0, image.width, offset[0] + (tx0 + tx1 - width) / 2, 0);
+  const ys = fitY
+    ? fitAxis(
+        image.height,
+        ratio,
+        icon.size,
+        image.stretchY ?? [[0, image.height]],
+        content[1],
+        content[3],
+        offset[1] + ty0 - padding[0],
+        offset[1] + ty1 + padding[2],
+      )
+    : fitAxis(image.height, ratio, icon.size, [], 0, image.height, offset[1] + (ty0 + ty1 - height) / 2, 0);
+  const slices: IconSlice[] = [];
+  for (let i = 0; i + 1 < xs.pos.length; i++) {
+    if (xs.tex[i + 1]! <= xs.tex[i]!) continue;
+    for (let j = 0; j + 1 < ys.pos.length; j++) {
+      if (ys.tex[j + 1]! <= ys.tex[j]!) continue;
+      const insetX = xs.stretch[i] && xs.tex[i + 1]! - xs.tex[i]! > 1 ? 0.5 : 0;
+      const insetY = ys.stretch[j] && ys.tex[j + 1]! - ys.tex[j]! > 1 ? 0.5 : 0;
+      slices.push({
+        x0: xs.pos[i]!,
+        y0: ys.pos[j]!,
+        x1: xs.pos[i + 1]!,
+        y1: ys.pos[j + 1]!,
+        u0: rect.x + xs.tex[i]! + insetX,
+        v0: rect.y + ys.tex[j]! + insetY,
+        u1: rect.x + xs.tex[i + 1]! - insetX,
+        v1: rect.y + ys.tex[j + 1]! - insetY,
+      });
+    }
+  }
+  icon.slices = slices;
+  icon.box = [xs.pos[0]!, ys.pos[0]!, xs.pos[xs.pos.length - 1]!, ys.pos[ys.pos.length - 1]!];
+}
+
+export function fitAxis(
+  size: number,
+  ratio: number,
+  scale: number,
+  zones: readonly (readonly [number, number])[],
+  from: number,
+  to: number,
+  start: number,
+  end: number,
+): { pos: number[]; tex: number[]; stretch: boolean[] } {
+  const natural = scale / ratio;
+  if (zones.length === 0) {
+    return { pos: [start, start + size * natural], tex: [0, size], stretch: [false] };
+  }
+  const stretched = (x: number) => {
+    let sum = 0;
+    for (const [a, b] of zones) sum += Math.max(0, Math.min(b, x) - a);
+    return sum;
+  };
+  const inside = stretched(to) - stretched(from);
+  const fixed = to - from - inside;
+  const k = inside > 0 ? Math.max(0, (end - start - fixed * natural) / inside) : natural;
+  const out = (x: number) => (x - stretched(x)) * natural + stretched(x) * k;
+  const origin = start - out(from);
+  const tex = [...new Set([0, size, ...zones.flat()])].sort((a, b) => a - b);
+  const stretch = tex.slice(1).map((t, i) => zones.some(([a, b]) => a <= tex[i]! && t <= b) && k !== natural);
+  return { pos: tex.map((t) => origin + out(t)), tex, stretch };
+}
+
+function quadOr(value: unknown): [number, number, number, number] {
+  if (!Array.isArray(value) || value.length !== 4 || !value.every((n) => typeof n === "number")) return [0, 0, 0, 0];
+  const [a, b, c, d] = value as [number, number, number, number];
+  return [a, b, c, d];
 }
 
 function withOpacity(c: RGBA, opacity: number): RGBA {
