@@ -15,6 +15,7 @@ export interface EvalContext {
   state?: Readonly<Record<string, unknown>> | undefined;
   images?: ((id: string) => boolean) | undefined;
   accumulated?: unknown;
+  density?: number;
 }
 
 export type OutputKind = "number" | "color" | "string" | "boolean" | "any";
@@ -204,6 +205,7 @@ const OPS = new Set([
   "is-supported-script",
   "image",
   "accumulated",
+  "heatmap-density",
 ]);
 
 function constant(v: unknown): Node {
@@ -586,6 +588,9 @@ function build(value: unknown, scope: Scope): Node {
       const a = sub(args[0]);
       return combine([a], () => true);
     }
+    case "heatmap-density":
+      need(0, 0);
+      return { fn: (ctx) => ctx.density ?? 0, zoom: false, feature: true };
     case "accumulated":
       need(0, 0);
       return { fn: (ctx) => ctx.accumulated ?? null, zoom: false, feature: true };
