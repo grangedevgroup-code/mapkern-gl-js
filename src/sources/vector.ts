@@ -102,6 +102,13 @@ export function layerProgram(layer: StyleLayer): LayerProgram | null {
     layout.join = layer.fixed<string>("join");
     layout.miterLimit = layer.fixed<number>("miterLimit");
   }
+  if (type === "extrusion") {
+    const hide = layer.fixed<boolean | null>("hideOutlines") ?? /^buildings?$/i.test(layer.sourceLayer ?? "");
+    if (hide) {
+      const paint = (layer.spec as { paint?: Record<string, unknown> }).paint ?? {};
+      layout.outlines = { height: paint.height ?? 0, base: paint.base ?? 0 };
+    }
+  }
   if (type === "symbol") {
     const raw = (layer.spec as { layout?: Record<string, unknown> }).layout ?? {};
     layout.text = raw.text ?? "";
@@ -144,13 +151,17 @@ export class LayerPrograms {
     if (!changed) return false;
     this.revisions = new Map(layers.map((l) => [l.id, l.revision]));
     const programs = layers.map(layerProgram).filter((p): p is LayerProgram => p !== null);
-    const signature = JSON.stringify(programs);
+    this.programs = programs;
+    const signature = JSON.stringify(programs.map(withoutHeights));
     if (signature === this.signature) return false;
     const first = this.signature === "";
     this.signature = signature;
-    this.programs = programs;
     return !first;
   }
+}
+
+function withoutHeights(program: LayerProgram): LayerProgram {
+  return program.layout.outlines ? { ...program, layout: { ...program.layout, outlines: true } } : program;
 }
 
 export function vectorTile(decoded: VectorTileResult, signature: string, raw: ArrayBuffer | null): VectorTile {
