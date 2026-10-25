@@ -9,7 +9,7 @@ export interface HashPosition {
 
 export function formatHash(position: HashPosition): string {
   const { zoom, center, bearing, pitch } = position;
-  const digits = Math.max(0, Math.ceil(Math.log10((512 * 2 ** zoom) / 360)));
+  const digits = Math.max(0, Math.ceil(Math.log10((512 * 2 ** zoom) / 360) + 0.3));
   const round = (v: number, d: number) => {
     const text = v.toFixed(d);
     return text.includes(".") ? text.replace(/0+$/, "").replace(/\.$/, "") : text;
