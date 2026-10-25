@@ -35,6 +35,8 @@ import { WorkerPool } from "../worker/pool.ts";
 import { errorMessage, MapletError } from "./errors.ts";
 import type { Listener } from "./events.ts";
 import { Emitter } from "./events.ts";
+import type { ImageInput, ImageOptions } from "./images.ts";
+import { pixelsOf, spriteImages, spriteSheets, spriteUrl, styleImage } from "./images.ts";
 import type { LayerEventType, PointerInput, PointerType } from "./layer-events.ts";
 import { LAYER_EVENT_TYPES, LayerEvents } from "./layer-events.ts";
 import type { QueriedFeature, StateReader } from "./query.ts";
@@ -183,6 +185,10 @@ export interface MapLayerEvent extends MapPointerEvent {
 
 export type MapLayerEvents = { [K in LayerEventType]: MapLayerEvent };
 
+export interface StyleImageMissingEvent extends MapEvent {
+  readonly id: string;
+}
+
 export interface MapErrorEvent extends MapEvent {
   readonly error: MapletError;
   readonly sourceId?: string | undefined;
@@ -217,6 +223,7 @@ export interface MapEvents {
   boxzoomcancel: MapMoveEvent;
   error: MapErrorEvent;
   sourcedata: SourceDataEvent;
+  styleimagemissing: StyleImageMissingEvent;
   click: MapPointerEvent;
   dblclick: MapPointerEvent;
   contextmenu: MapPointerEvent;
@@ -277,6 +284,10 @@ export class MapletMap extends Emitter<MapEvents> {
   private workers: WorkerPool | null = null;
   private style: Style | null = null;
   private styleRequest: AbortController | null = null;
+  private spriteRequest: AbortController | null = null;
+  private spritesLoading = 0;
+  private readonly reportedImages = new Set<string>();
+  private reportedVersion = -1;
   private frameHandle = 0;
   private wakeTimer: ReturnType<typeof setTimeout> | undefined;
   private wakeAtTime = Number.POSITIVE_INFINITY;
@@ -1046,6 +1057,55 @@ export class MapletMap extends Emitter<MapEvents> {
     return this.style?.serialize() ?? null;
   }
 
+  addImage(id: string, image: ImageInput, options: ImageOptions = {}): this {
+    if (this.painter.images.has(id)) {
+      throw new MapletError("invalid-option", `There is already an image named "${id}"; use updateImage to change it`, {
+        image: id,
+      });
+    }
+    this.painter.images.add(styleImage(id, image, options, false));
+    this.triggerRepaint();
+    return this;
+  }
+
+  updateImage(id: string, image: ImageInput): this {
+    const current = this.painter.images.image(id);
+    if (!current) throw new MapletError("invalid-option", `There is no image named "${id}"`, { image: id });
+    this.painter.images.add(
+      styleImage(id, image, { pixelRatio: current.pixelRatio, sdf: current.sdf }, current.sprite),
+    );
+    this.triggerRepaint();
+    return this;
+  }
+
+  hasImage(id: string): boolean {
+    return this.painter.images.has(id);
+  }
+
+  removeImage(id: string): this {
+    if (this.painter.images.remove(id)) this.triggerRepaint();
+    return this;
+  }
+
+  listImages(): string[] {
+    return this.painter.images.list();
+  }
+
+  async loadImage(url: string): Promise<ImageBitmap> {
+    const params = resolveRequest(url, "image", this.options.transformRequest);
+    const result = await fetchBytes(params, new AbortController().signal, this.requestTimeout(), "image").catch(
+      (error: unknown) => {
+        throw resourceError(error, `Could not load the image ${url}`);
+      },
+    );
+    if (result.kind === "empty") throw new MapletError("http", `There is no image at ${url}`, { url });
+    try {
+      return await createImageBitmap(new Blob([result.data], { type: result.contentType || "image/png" }));
+    } catch (error) {
+      throw new MapletError("decode", `The file at ${url} is not an image the browser can read`, { url }, error);
+    }
+  }
+
   isStyleLoaded(): boolean {
     return this.style?.loaded ?? false;
   }
@@ -1492,6 +1552,7 @@ export class MapletMap extends Emitter<MapEvents> {
     this.frameHandle = 0;
     if (this.wakeTimer !== undefined) clearTimeout(this.wakeTimer);
     this.styleRequest?.abort();
+    this.spriteRequest?.abort();
     this.resizeObserver?.disconnect();
     this.dprQuery?.removeEventListener("change", this.onDprChange);
     this.handlers?.destroy();
@@ -1557,6 +1618,7 @@ export class MapletMap extends Emitter<MapEvents> {
     this.style?.destroy();
     this.style = style;
     this.featureStates = new FeatureStates();
+    this.loadSprites(spec.sprite);
     if (first) {
       const o = this.options;
       const t = this.transform;
@@ -1570,6 +1632,78 @@ export class MapletMap extends Emitter<MapEvents> {
       if (this.style === style && !this.removed) this.emit("styleload", this.event("styleload"));
     });
     this.triggerRepaint();
+  }
+
+  private loadSprites(sprite: unknown): void {
+    this.spriteRequest?.abort();
+    this.spriteRequest = null;
+    this.spritesLoading = 0;
+    this.painter.images.clearSprites();
+    const sheets = spriteSheets(sprite);
+    if (sheets.length === 0) return;
+    const controller = new AbortController();
+    this.spriteRequest = controller;
+    const ratio = this.pixelRatioValue > 1 ? 2 : 1;
+    for (const sheet of sheets) {
+      this.spritesLoading++;
+      this.loadSprite(sheet.id, sheet.url, ratio, controller.signal)
+        .catch((error: unknown) => {
+          if (!controller.signal.aborted && !this.removed)
+            this.fail(resourceError(error, `Could not load the sprite ${sheet.url}`));
+        })
+        .finally(() => {
+          if (controller.signal.aborted) return;
+          this.spritesLoading--;
+          this.triggerRepaint();
+        });
+    }
+  }
+
+  private async loadSprite(prefix: string, url: string, ratio: number, signal: AbortSignal): Promise<void> {
+    const get = async (suffix: string, extension: string) => {
+      const params = resolveRequest(spriteUrl(url, suffix, extension), "image", this.options.transformRequest);
+      return fetchBytes(params, signal, this.requestTimeout(), "image");
+    };
+    let suffix = ratio > 1 ? "@2x" : "";
+    let [index, sheet] = await Promise.all([get(suffix, ".json"), get(suffix, ".png")]);
+    if (suffix && (index.kind === "empty" || sheet.kind === "empty")) {
+      suffix = "";
+      [index, sheet] = await Promise.all([get("", ".json"), get("", ".png")]);
+    }
+    if (index.kind === "empty" || sheet.kind === "empty") {
+      throw new MapletError("http", `The sprite ${url} is missing its .json or .png file`, { url });
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(new TextDecoder().decode(index.data));
+    } catch (error) {
+      throw new MapletError(
+        "decode",
+        `The sprite index ${spriteUrl(url, suffix, ".json")} is not valid JSON`,
+        {},
+        error,
+      );
+    }
+    const bitmap = await createImageBitmap(new Blob([sheet.data], { type: "image/png" }));
+    const pixels = pixelsOf(bitmap, url);
+    bitmap.close();
+    if (signal.aborted) return;
+    for (const image of spriteImages(prefix, parsed, pixels)) this.painter.images.add(image);
+  }
+
+  private reportMissingImages(): void {
+    const missing = this.painter.labels.takeMissing();
+    if (this.spritesLoading > 0) return;
+    const images = this.painter.images;
+    if (images.version !== this.reportedVersion) {
+      this.reportedVersion = images.version;
+      this.reportedImages.clear();
+    }
+    for (const id of missing) {
+      if (this.reportedImages.has(id) || images.has(id)) continue;
+      this.reportedImages.add(id);
+      this.emit("styleimagemissing", { target: this, type: "styleimagemissing", id });
+    }
   }
 
   private createSource(id: string, spec: SourceSpec): MapSource {
@@ -1811,6 +1945,7 @@ export class MapletMap extends Emitter<MapEvents> {
         states: this.stateScope,
       });
       if (labelsBusy) animating = true;
+      this.reportMissingImages();
       for (const source of style.sources.values()) {
         if (source.isFading()) animating = true;
       }
@@ -1838,7 +1973,7 @@ export class MapletMap extends Emitter<MapEvents> {
     if (this.frameTimes.length > FRAME_SAMPLES) this.frameTimes.shift();
     if (animating || this.moving || this.gestureDepth > 0) {
       this.triggerRepaint();
-    } else if (!this.idleFired && this.loadedFired && this.sourcesIdle()) {
+    } else if (!this.idleFired && this.frameHandle === 0 && this.loadedFired && this.sourcesIdle()) {
       this.idleFired = true;
       this.emit("idle", this.event("idle"));
     }
@@ -1987,6 +2122,16 @@ export class MapletMap extends Emitter<MapEvents> {
     this.emit("contextrestored", this.event("contextrestored"));
     this.triggerRepaint();
   };
+}
+
+function resourceError(error: unknown, message: string): MapletError {
+  if (error instanceof MapletError) return error;
+  const failure = (error as { failure?: { kind?: string; message?: string } })?.failure;
+  if (failure) {
+    const code = failure.kind === "auth" ? "auth" : failure.kind === "network" ? "network" : "http";
+    return new MapletError(code, `${message}: ${failure.message ?? "request failed"}`, { failure }, error);
+  }
+  return new MapletError("network", `${message}: ${errorMessage(error)}`, {}, error);
 }
 
 function layerEventType(type: string): LayerEventType {
