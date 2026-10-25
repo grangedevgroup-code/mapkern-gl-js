@@ -95,6 +95,34 @@ A few notes on what comes through:
 - CSV files need a header row and either latitude and longitude columns (`lat`/`latitude`/`y` and `lon`/`lng`/`longitude`/`x`) or a WKT column. Numbers come through as numbers, unless they have leading zeros.
 - Shapefiles and FlatGeobuf files in UTM, a Transverse Mercator or Lambert state plane zone, or Web Mercator are converted to longitude and latitude using the `.prj` file or the EPSG code. Other projections are reported as errors. Datum shifts aren't applied, which can move data in older datums such as NAD27 by up to about 100 m.
 
+### Images, video and canvases
+
+```js
+floorplan: {
+  type: "image",
+  url: "floor-2.png",
+  coordinates: [[-122.3364, 47.608], [-122.3349, 47.608], [-122.3349, 47.6071], [-122.3364, 47.6071]],
+}
+```
+
+An image source pins one picture to the map by its corners, given as `[lng, lat]` in the order top left, top right, bottom right, bottom left. You show it with a [raster](#raster) layer, which also gives you opacity, the color adjustments and `resampling`. The corners don't have to make a rectangle. If they make a trapezoid, the picture is mapped with true perspective, so a photo taken at an angle lines up the way it looks. A picture too big for the device to draw in one piece is scaled down to fit.
+
+Video works the same way. Give `urls` a list of files and the browser plays the first one it can, muted and on a loop:
+
+```js
+radar: { type: "video", urls: ["radar.webm", "radar.mp4"], coordinates: corners }
+```
+
+Some browsers hold back autoplay, for example in power saving mode. Calling `play()` on the source from a click or tap starts it then.
+
+For pictures you draw yourself, point a canvas source at a `<canvas>` element or its id. With `animate: true`, the default, the map copies the canvas every frame. With `animate: false` it copies it once, which saves work when the canvas doesn't change.
+
+```js
+weather: { type: "canvas", canvas: "weather-canvas", coordinates: corners, animate: false }
+```
+
+Pictures and videos from another site need CORS headers, like any other image on the map, and so does anything you draw onto a canvas source.
+
 ## Layers
 
 Every layer has an `id` and a `type`: `background`, `raster`, `hillshade`, `fill`, `line`, `circle`, `heatmap`, `extrusion` or `symbol`. Layers that draw data also name a `source`, and for vector tiles a `sourceLayer`, which is the layer inside the tiles. Layers are drawn in order, so later ones end up on top.
