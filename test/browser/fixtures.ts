@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { Route } from "../../scripts/server.ts";
 import { EARTH_CIRCUMFERENCE, mercatorX, mercatorY } from "../../src/geo/mercator.ts";
 import { encodeTile } from "../../tools/tiles/mvt-writer.ts";
+import { BLOCK_FONT, glyphRange } from "./glyph-pbf.ts";
 import { encodePng, fixtureTile } from "./png.ts";
 
 const cache = new Map<string, Buffer>();
@@ -81,6 +82,21 @@ export const fixtureRoute: Route = async (req, res, url) => {
     hits.clear();
     res.writeHead(204);
     res.end();
+    return true;
+  }
+  const glyphs = /^\/fixture\/glyphs\/([^/]+)\/(\d+)-(\d+)\.pbf$/.exec(path);
+  if (glyphs) {
+    const stack = decodeURIComponent(glyphs[1]!);
+    const start = Number(glyphs[2]);
+    hits.set(`glyphs:${stack}/${start}`, (hits.get(`glyphs:${stack}/${start}`) ?? 0) + 1);
+    await new Promise((r) => setTimeout(r, 250));
+    if (!stack.startsWith("Block") || start !== 0) {
+      res.writeHead(404);
+      res.end();
+      return true;
+    }
+    res.writeHead(200, { "content-type": "application/x-protobuf", "cache-control": "no-store" });
+    res.end(Buffer.from(glyphRange(stack, start, BLOCK_FONT)));
     return true;
   }
   const vector = /^\/fixture\/vector\/(\d+)\/(\d+)\/(\d+)\.pbf$/.exec(path);
