@@ -1,6 +1,6 @@
 # Tiles
 
-`maplet-tiles` turns an OpenStreetMap download into a single `.pmtiles` file with vector tiles for zoom 0 to 14. The built-in `lightStyle` is made to draw these tiles, but you can style them any way you like.
+`maplet-tiles` turns an OpenStreetMap download into a single `.pmtiles` file with vector tiles for zoom 0 to 14. The built-in `lightStyle` is made to draw these tiles, but you can style them any way you like. It also makes [elevation tiles](#elevation) from GeoTIFF files.
 
 ## Making a file
 
@@ -57,6 +57,24 @@ Anything with a name has `name`, the local name, and `name_en` when the English 
 Roads have the most fields. `class` is `motorway`, `trunk`, `primary`, `secondary`, `tertiary`, `minor`, `service`, `track` or `path`, and paths and service roads get a `subclass` such as `footway`, `cycleway`, `steps` or `driveway`. `ramp` is 1 on links and slip roads, `oneway` is 1 or -1, `layer` runs from -5 to 5, `surface` is `paved` or `unpaved`, and `name` and `ref` carry the street name and route number. Motorways show up from zoom 4, residential streets from 12 and footpaths from 14.
 
 Lines and shapes are simplified to what each zoom level can show, and below zoom 14 the pieces of a road that share the same fields are joined into one line. To keep zoomed-out tiles small, roads and railways leave out `oneway`, `surface` and `layer` below zoom 13, and their names below zoom 12. Zoom 14 keeps everything at full detail, so the map stays sharp when you zoom in further.
+
+## Elevation
+
+`maplet-tiles dem` turns elevation GeoTIFFs into a file for hillshading and 3D terrain:
+
+```sh
+npx maplet-tiles dem rainier.tif --output terrain.pmtiles
+```
+
+Give it one file or several. Where they overlap, the first one wins. The files can be in longitude and latitude, UTM or Web Mercator, and compressed with deflate, LZW or PackBits, or not compressed. Heights in feet are converted to meters, and pixels marked as no-data stay empty, so the map knows there's nothing there.
+
+The top zoom level is picked to match the detail in your files, and each level below it is averaged from the one above, down to zoom 0. `--maxzoom` and `--minzoom` set the range yourself, and `--name` labels the file. The tiles are 512 pixel Terrarium PNGs, which is what an elevation source reads by default:
+
+```js
+dem: { type: "dem", url: "terrain.pmtiles" }
+```
+
+A 1536 by 1536 pixel file at about 13 m per pixel takes six seconds and comes out at 3 MB.
 
 ## Credit
 
