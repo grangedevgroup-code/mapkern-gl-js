@@ -863,6 +863,133 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "markers follow the map and open their popups",
+    async run({ page, shot }) {
+      await createMap(page, geojsonStyle({ type: "FeatureCollection", features: [] }));
+      await page.evaluate(`(() => {
+        window.popupLog = [];
+        const html = '<b>Hello</b> <img src="x" onerror="window.hacked = 1"><script>window.hacked = 2</script>' +
+          '<a href="javascript:window.hacked = 3">bad</a> <a href="https://example.com/" target="_blank">good</a>';
+        const popup = new maplet.Popup().setHTML(html);
+        popup.on("open", () => window.popupLog.push("open"));
+        popup.on("close", () => window.popupLog.push("close"));
+        window.popup = popup;
+        window.marker = new maplet.Marker().setLngLat([10, 0]).setPopup(popup).addTo(window.map);
+      })()`);
+      await idle(page);
+      const tipAt = () =>
+        page.evaluate<[number, number]>(`(() => {
+          const r = window.marker.getElement().getBoundingClientRect();
+          const c = window.map.getContainer().getBoundingClientRect();
+          return [r.left + r.width / 2 - c.left, r.bottom - c.top];
+        })()`);
+      const where = await page.evaluate<{ x: number; y: number }>("window.map.project([10, 0])");
+      let tip = await tipAt();
+      if (Math.hypot(tip[0] - where.x, tip[1] - where.y) > 1)
+        fail(`expected the pin tip at ${where.x},${where.y}, got ${tip}`);
+      await page.evaluate("void window.map.jumpTo({ center: [5, 0] })");
+      await idle(page);
+      const moved = await page.evaluate<{ x: number; y: number }>("window.map.project([10, 0])");
+      tip = await tipAt();
+      if (Math.hypot(tip[0] - moved.x, tip[1] - moved.y) > 1 || Math.abs(moved.x - where.x + 56.9) > 1)
+        fail(`the marker did not follow the map: tip ${tip}, expected ${moved.x},${moved.y}`);
+
+      const clickAt = async (x: number, y: number) => {
+        await page.mouse("mouseMoved", x, y);
+        await page.mouse("mousePressed", x, y, { buttons: 1 });
+        await page.mouse("mouseReleased", x, y, { buttons: 0 });
+      };
+      await clickAt(tip[0], tip[1] - 26);
+      await page.waitFor("document.querySelector('.maplet-popup') !== null", 3000);
+      await idle(page);
+      await shot("marker-popup");
+      const popup = await page.evaluate<{
+        anchor: boolean;
+        above: boolean;
+        bold: number;
+        scripts: number;
+        handlers: number;
+        bad: string | null;
+        good: string | null;
+        rel: string | null;
+        expanded: string | null;
+        focused: boolean;
+      }>(`(() => {
+        const el = document.querySelector(".maplet-popup");
+        const content = el.querySelector(".maplet-popup-content");
+        const pin = window.marker.getElement().getBoundingClientRect();
+        const links = content.querySelectorAll("a");
+        return {
+          anchor: el.classList.contains("maplet-popup-anchor-bottom"),
+          above: el.getBoundingClientRect().bottom <= pin.top + 2,
+          bold: content.querySelectorAll("b").length,
+          scripts: content.querySelectorAll("script").length,
+          handlers: [...content.querySelectorAll("*")].filter((n) => [...n.attributes].some((a) => a.name.startsWith("on"))).length,
+          bad: links[0].getAttribute("href"),
+          good: links[1].getAttribute("href"),
+          rel: links[1].getAttribute("rel"),
+          expanded: window.marker.getElement().getAttribute("aria-expanded"),
+          focused: el.contains(document.activeElement),
+        };
+      })()`);
+      if (!popup.anchor || !popup.above) fail(`expected the popup above the pin, got ${JSON.stringify(popup)}`);
+      if (popup.bold !== 1 || popup.scripts !== 0 || popup.handlers !== 0 || popup.bad !== null)
+        fail(`setHTML let unsafe markup through: ${JSON.stringify(popup)}`);
+      if (popup.good !== "https://example.com/" || popup.rel !== "noopener noreferrer")
+        fail(`setHTML should keep safe links: ${JSON.stringify(popup)}`);
+      if (popup.expanded !== "true") fail(`the marker should report its popup as expanded, got ${popup.expanded}`);
+      if (!popup.focused) fail("expected focus to move into the popup when it opens");
+      const hacked = await page.evaluate<unknown>("window.hacked ?? null");
+      if (hacked !== null) fail(`popup markup ran code: ${hacked}`);
+
+      await clickAt(tip[0], tip[1] - 26);
+      await page.waitFor("document.querySelector('.maplet-popup') === null", 3000);
+      await clickAt(tip[0], tip[1] - 26);
+      await page.waitFor("document.querySelector('.maplet-popup') !== null", 3000);
+      await clickAt(150, 500);
+      await page.waitFor("document.querySelector('.maplet-popup') === null", 3000);
+      await clickAt(tip[0], tip[1] - 26);
+      await page.waitFor("document.querySelector('.maplet-popup') !== null", 3000);
+      await page.evaluate(
+        `document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`,
+      );
+      await page.waitFor("document.querySelector('.maplet-popup') === null", 3000);
+      const log = await page.evaluate<string[]>("window.popupLog");
+      if (JSON.stringify(log) !== JSON.stringify(["open", "close", "open", "close", "open", "close"]))
+        fail(`unexpected popup events ${JSON.stringify(log)}`);
+      const focusBack = await page.evaluate<boolean>("document.activeElement === window.marker.getElement()");
+      if (!focusBack) fail("closing the popup with Escape should return focus to the marker");
+
+      await page.evaluate(`(() => {
+        window.dragLog = [];
+        window.dragged = new maplet.Marker({ draggable: true, color: "#d33" }).setLngLat([-10, 0]).addTo(window.map);
+        for (const type of ["dragstart", "drag", "dragend"]) window.dragged.on(type, () => window.dragLog.push(type));
+      })()`);
+      await idle(page);
+      const before = await page.evaluate<[number, number]>("window.map.getCenter()");
+      const start = await page.evaluate<{ x: number; y: number }>("window.map.project([-10, 0])");
+      await page.mouse("mouseMoved", start.x, start.y - 26);
+      await page.mouse("mousePressed", start.x, start.y - 26, { buttons: 1 });
+      for (let i = 1; i <= 10; i++) {
+        await page.mouse("mouseMoved", start.x + i * 5, start.y - 26, { buttons: 1 });
+        await new Promise((r) => setTimeout(r, 15));
+      }
+      await page.mouse("mouseReleased", start.x + 50, start.y - 26, { buttons: 0 });
+      await idle(page);
+      const after = await page.evaluate<[number, number]>("window.dragged.getLngLat()");
+      const center = await page.evaluate<[number, number]>("window.map.getCenter()");
+      if (Math.abs(after[0] - (-10 + 50 / 11.378)) > 0.1 || Math.abs(after[1]) > 0.1)
+        fail(`expected the dragged marker near ${-10 + 50 / 11.378},0, got ${after}`);
+      if (Math.hypot(center[0] - before[0], center[1] - before[1]) > 1e-9) fail("dragging a marker moved the map");
+      const drags = await page.evaluate<string[]>("window.dragLog");
+      if (drags[0] !== "dragstart" || drags[drags.length - 1] !== "dragend" || !drags.includes("drag"))
+        fail(`unexpected drag events ${JSON.stringify(drags)}`);
+      await page.evaluate("window.marker.remove(); window.dragged.remove()");
+      const left = await page.evaluate<number>("document.querySelectorAll('.maplet-marker').length");
+      if (left !== 0) fail(`remove() left ${left} marker elements`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
