@@ -21,49 +21,49 @@ The built files end up in `node_modules/maplet-gl/dist`. If you don't use a bund
 
 ## A first map
 
-This one shows two places and needs no tile server or API key.
-
 ```html
 <div id="map" style="position: absolute; inset: 0"></div>
 <script type="module">
   import * as maplet from "maplet-gl";
 
-  const places = {
-    type: "FeatureCollection",
-    features: [
-      { type: "Feature", properties: { name: "Pike Place Market" }, geometry: { type: "Point", coordinates: [-122.3422, 47.6097] } },
-      { type: "Feature", properties: { name: "Space Needle" }, geometry: { type: "Point", coordinates: [-122.3493, 47.6205] } },
-    ],
-  };
-
-  const map = new maplet.Map({
-    container: "map",
-    center: [-122.335, 47.608],
-    zoom: 13,
-    style: {
-      version: 1,
-      sources: { places: { type: "geojson", data: places } },
-      layers: [
-        { id: "background", type: "background", paint: { color: "#eef1ef" } },
-        { id: "dots", type: "circle", source: "places", paint: { radius: 7, color: "#246a50" } },
-        {
-          id: "names",
-          type: "symbol",
-          source: "places",
-          layout: { text: ["get", "name"], anchor: "top", offset: [0, 0.8] },
-          paint: { color: "#10191d", haloColor: "#ffffff", haloWidth: 1.5 },
-        },
-      ],
-    },
-  });
-
+  const map = new maplet.Map({ container: "map" });
   map.addControl(new maplet.NavigationControl());
 </script>
 ```
 
-Open the page through a local web server. Browsers won't load modules from a `file://` address.
+That's the whole world, drawn with the free [OpenFreeMap](https://openfreemap.org/) Liberty style, so there's no tile server to run and no API key to get. Open the page through a local web server, because browsers won't load modules from a `file://` address. The credit for OpenFreeMap, OpenMapTiles and OpenStreetMap shows in the corner, and their licenses ask you to leave it there.
 
-## A real basemap
+## Your own data
+
+Add sources and layers once the map has loaded:
+
+```js
+const places = {
+  type: "FeatureCollection",
+  features: [
+    { type: "Feature", properties: { name: "Pike Place Market" }, geometry: { type: "Point", coordinates: [-122.3422, 47.6097] } },
+    { type: "Feature", properties: { name: "Space Needle" }, geometry: { type: "Point", coordinates: [-122.3493, 47.6205] } },
+  ],
+};
+
+map.on("load", () => {
+  map.addSource("places", { type: "geojson", data: places });
+  map.addLayer({ id: "dots", type: "circle", source: "places", paint: { radius: 7, color: "#246a50" } });
+  map.flyTo({ center: [-122.345, 47.615], zoom: 13 });
+});
+```
+
+## Other styles
+
+Any style written for MapLibre or Mapbox works as it is. Give the map its URL, or the style object itself:
+
+```js
+const map = new maplet.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/positron" });
+```
+
+OpenFreeMap also has `bright`, `dark` and `fiord`. If a style uses something Maplet can't draw yet, that part is left out and the rest still shows; the `styleload` event lists what was left out in `event.skipped`. Pass `style: null` for a blank map you fill yourself.
+
+## Your own tiles
 
 Maplet can make its own street map tiles from OpenStreetMap data, so you don't need a map provider. Download an extract for your region from [Geofabrik](https://download.geofabrik.de/), then cut out the area you want:
 
