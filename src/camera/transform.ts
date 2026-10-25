@@ -14,6 +14,8 @@ import {
 import type { TileSlot } from "../geo/tile.ts";
 import { MAX_TILE_ZOOM } from "../geo/tile.ts";
 
+export const MIN_ZOOM = -2;
+
 export interface CoverOptions {
   tileSize: number;
   minZoom: number;
@@ -344,7 +346,7 @@ export class Transform {
   }
 
   setZoomRange(minZoom: number, maxZoom: number): void {
-    this.minZoom = Math.max(0, Math.min(minZoom, maxZoom));
+    this.minZoom = Math.max(MIN_ZOOM, Math.min(minZoom, maxZoom));
     this.maxZoom = Math.min(MAX_TILE_ZOOM, Math.max(minZoom, maxZoom));
     this.setZoom(this.z);
   }
