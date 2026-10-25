@@ -15,7 +15,7 @@ out vec4 v_color;
 out vec4 v_halo;
 out vec4 v_params;
 void main() {
-  v_uv = a_uv / u_atlas_size;
+  v_uv = a_uv * 0.25 / u_atlas_size;
   v_color = a_color;
   v_halo = a_halo;
   v_params = a_params;
