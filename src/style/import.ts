@@ -804,19 +804,7 @@ function fontList(value: unknown): string[] | null {
 
 export function fontOf(value: unknown): { families: string[]; bold: boolean; italic: boolean } | null {
   const list = fontList(value);
-  if (!list) return null;
-  const first = list[0]!;
-  const families = [
-    ...new Set(
-      (list as string[]).map((name) => name.replace(STYLE_WORDS, " ").replace(/\s+/g, " ").trim()).filter(Boolean),
-    ),
-  ];
-  if (!families.includes("sans-serif")) families.push("sans-serif");
-  return {
-    families,
-    bold: /\b(semi ?bold|demi ?bold|extra ?bold|ultra ?bold|bold|black|heavy)\b/i.test(first),
-    italic: /\b(italic|oblique)\b/i.test(first),
-  };
+  return list ? fontFromNames(list) : null;
 }
 
 function spriteOf(sprite: unknown, base: string | undefined): unknown {
