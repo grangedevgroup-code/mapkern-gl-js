@@ -444,16 +444,16 @@ export class MapletMap extends Emitter<MapEvents> {
       checkNumber(options.maxZoom, "maxZoom", 22),
     );
     const world = worldView(container);
+    this.transform.setZoom(checkNumber(options.zoom, "zoom", world.zoom));
+    this.transform.setBearing(checkNumber(options.bearing, "bearing", 0));
+    this.transform.setPitch(checkNumber(options.pitch, "pitch", 0));
+    if (options.padding !== undefined) this.transform.setPadding(normalizePadding(options.padding));
     if (options.center !== undefined) {
       const [lng, lat] = toLngLat(options.center);
       this.transform.setCenter(lng, lat);
     } else if (options.zoom === undefined) {
       this.transform.setCenter(world.center[0], world.center[1]);
     }
-    this.transform.setZoom(checkNumber(options.zoom, "zoom", world.zoom));
-    this.transform.setBearing(checkNumber(options.bearing, "bearing", 0));
-    this.transform.setPitch(checkNumber(options.pitch, "pitch", 0));
-    if (options.padding !== undefined) this.transform.setPadding(normalizePadding(options.padding));
     if (options.maxBounds !== undefined) this.transform.setMaxBounds(worldBounds(options.maxBounds));
     this.lastState = readState(this.transform);
 
@@ -1499,6 +1499,7 @@ export class MapletMap extends Emitter<MapEvents> {
     }
     if (points.length === 0) return null;
     const flat = t.clone();
+    flat.keepInWorld = false;
     flat.setMaxBounds(null);
     flat.setPadding({ top: 0, right: 0, bottom: 0, left: 0 });
     flat.setPitchRange(0, 85);
@@ -2132,13 +2133,13 @@ export class MapletMap extends Emitter<MapEvents> {
   private targetState(options: CameraOptions): CameraState {
     const t = this.transform.clone();
     if (options.padding !== undefined) t.setPadding(normalizePadding(options.padding));
+    if (options.zoom !== undefined) t.setZoom(checkNumber(options.zoom, "zoom", t.zoom));
+    if (options.bearing !== undefined) t.setBearing(checkNumber(options.bearing, "bearing", t.bearing));
+    if (options.pitch !== undefined) t.setPitch(checkNumber(options.pitch, "pitch", t.pitch));
     if (options.center !== undefined) {
       const [lng, lat] = toLngLat(options.center);
       t.setCenter(lng, lat);
     }
-    if (options.zoom !== undefined) t.setZoom(checkNumber(options.zoom, "zoom", t.zoom));
-    if (options.bearing !== undefined) t.setBearing(checkNumber(options.bearing, "bearing", t.bearing));
-    if (options.pitch !== undefined) t.setPitch(checkNumber(options.pitch, "pitch", t.pitch));
     const state = readState(t);
     if (options.center !== undefined) {
       const [lng] = toLngLat(options.center);
