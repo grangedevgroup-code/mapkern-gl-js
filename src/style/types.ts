@@ -53,7 +53,36 @@ export interface GeoJSONSourceSpec {
   clusterProperties?: Record<string, unknown>;
 }
 
-export type SourceSpec = RasterSourceSpec | VectorSourceSpec | DemSourceSpec | GeoJSONSourceSpec;
+export interface ImageSourceSpec {
+  type: "image";
+  url: string;
+  coordinates: [number, number][];
+  attribution?: string;
+}
+
+export interface VideoSourceSpec {
+  type: "video";
+  urls: string[];
+  coordinates: [number, number][];
+  attribution?: string;
+}
+
+export interface CanvasSourceSpec {
+  type: "canvas";
+  canvas: string | HTMLCanvasElement;
+  coordinates: [number, number][];
+  animate?: boolean;
+  attribution?: string;
+}
+
+export type SourceSpec =
+  | RasterSourceSpec
+  | VectorSourceSpec
+  | DemSourceSpec
+  | GeoJSONSourceSpec
+  | ImageSourceSpec
+  | VideoSourceSpec
+  | CanvasSourceSpec;
 
 interface LayerBase {
   id: string;
