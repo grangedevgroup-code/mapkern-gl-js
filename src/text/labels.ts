@@ -450,7 +450,7 @@ export class LabelRenderer {
           if (!featureReady) {
             ctx.feature = {
               properties: bucket.features.fill(fi, scratch),
-              id: featureId,
+              id: bucket.features.idValue(fi),
               geometryType: GEOMETRY[bucket.features.type(fi)] ?? "Unknown",
             };
             ctx.state = featureId !== undefined ? states?.get(featureId) : undefined;
