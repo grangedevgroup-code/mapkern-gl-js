@@ -28,6 +28,8 @@ const map = new maplet.Map({
 | `minPitch`, `maxPitch` | 0, 60 | |
 | `interactive` | `true` | `false` ignores mouse, touch and keyboard |
 | `dragPan`, `dragRotate`, `scrollZoom`, `doubleClickZoom`, `touchZoomRotate`, `touchPitch`, `keyboard` | `true` | Switch off single interactions |
+| `bearingSnap` | 7 | After a rotation that ends this many degrees or less from north, the map turns back to north |
+| `clickTolerance` | 4 | How far in pixels the pointer may move between press and release and still count as a click |
 | `renderWorldCopies` | `true` | Repeat the world sideways when zoomed far out |
 | `pixelRatio` | the screen's, up to `maxPixelRatio` | A lower value saves battery |
 | `maxPixelRatio` | 2 | |
@@ -60,11 +62,23 @@ map.fitBounds([[-122.45, 47.48], [-122.22, 47.74]], { padding: 40 });
 
 There are shortcuts too: `panBy([x, y])`, `panTo(lngLat)`, `zoomTo(zoom)`, `zoomIn()`, `zoomOut()`, `rotateTo(bearing)` and `resetNorth()`. They take the same animation options: `duration`, `easing` (a function from 0..1 to 0..1) and `animate: false`.
 
-To read the camera, use `getCenter()`, `getZoom()`, `getBearing()`, `getPitch()` and `getBounds()`, which returns `[[west, south], [east, north]]`. `setCenter()`, `setZoom()`, `setBearing()` and `setPitch()` move without animation. `isMoving()` is true during animations and gestures, and `stop()` ends an animation.
+To read the camera, use `getCenter()`, `getZoom()`, `getBearing()`, `getPitch()` and `getBounds()`, which returns `[[west, south], [east, north]]`. `setCenter()`, `setZoom()`, `setBearing()` and `setPitch()` move without animation. `isMoving()` is true during animations and gestures, `isZooming()` and `isRotating()` narrow that down, and `stop()` ends an animation. `resetNorthPitch()` turns the map north and flat in one go, and `snapToNorth()` does it only when the map is already within `bearingSnap` degrees of north.
+
+The limits have getters and setters of their own: `getMinZoom()`, `setMinZoom()`, `getMaxZoom()`, `setMaxZoom()`, `getMinPitch()`, `setMinPitch()`, `getMaxPitch()`, `setMaxPitch()`, and `getRenderWorldCopies()` with `setRenderWorldCopies()`.
 
 `project(lngLat)` gives the screen position of a place in CSS pixels, and `unproject([x, y])` does the opposite. It returns `null` for points above the horizon on a tilted map.
 
 People can drag to pan, scroll or pinch to zoom, and double-click to zoom in. Dragging with the right mouse button, or with Ctrl held, rotates and tilts. On touch screens, twisting two fingers rotates and sliding two fingers up or down tilts. With keyboard focus, the arrow keys pan, Shift with the arrows rotates and tilts, and `+` and `-` zoom.
+
+Each of these can be switched off and on again while the map runs, for example while someone draws on the map:
+
+```js
+map.dragPan.disable();
+map.scrollZoom.enable();
+map.touchZoomRotate.disableRotation();
+```
+
+The switches are `dragPan`, `dragRotate`, `scrollZoom`, `doubleClickZoom`, `touchZoomRotate`, `touchPitch` and `keyboard`, and each has `isEnabled()`. `touchZoomRotate.disableRotation()` keeps pinch zoom but stops the twist.
 
 ## Changing the style
 
@@ -76,6 +90,8 @@ map.setFilter("route", ["==", ["get", "kind"], "bike"]);
 ```
 
 `addLayer(layer, beforeId)` puts the layer on top, or under `beforeId` if you give one. The rest work as you'd expect: `removeLayer`, `moveLayer`, `getLayer`, `getLayerIds`, `setLayoutProperty`, `setLayerVisibility`, `setLayerZoomRange`, `removeSource` (only once no layer uses it) and `getSource`. `setFilter(id, null)` removes a filter.
+
+To read a layer back, use `getFilter(id)`, `getPaintProperty(id, name)` and `getLayoutProperty(id, name)`. They return what the style says, or `undefined` for anything left at its default. `isSourceLoaded(id)` tells you whether a source has everything it needs for the current view, and `areTilesLoaded()` asks the same of all sources.
 
 `setStyle()` swaps the whole style and `getStyle()` returns the current one as a plain object.
 
@@ -137,9 +153,38 @@ map.on("click", async (event) => {
 
 `queryRenderedFeatures(point)` returns the features drawn under a point, top layer first. It sees exactly what's on screen, including line widths, circle sizes, labels and 3D buildings. Give it two points, `[[x1, y1], [x2, y2]]`, to search a box, or nothing to search the whole view, and pass `{ layers: ["roads"] }` to look at certain layers only. It returns a promise because some of the data lives in a worker.
 
-Each result has `id`, `properties`, `geometry` in longitude and latitude, `layer`, `source` and `sourceLayer`. Features from vector tiles come back cut at the tile edge; GeoJSON features come back whole.
+Each result has `id`, `properties`, `geometry` in longitude and latitude, `layer`, `source`, `sourceLayer` and `state`, the feature's [state](#highlighting-features). Features from vector tiles come back cut at the tile edge; GeoJSON features come back whole.
 
 For the height of the ground, ask an elevation source: `map.getSource("dem").elevationAt(event.lngLat)` returns meters, or `null` where no elevation tile is loaded.
+
+## Highlighting features
+
+Feature state is a small set of values your code attaches to a feature, such as `hover` or `selected`. Paint properties read it with `["feature-state", "hover"]`, and changing it repaints the map without rebuilding any tiles, so it's the quick way to highlight things as the pointer moves.
+
+```js
+map.addSource("parks", { type: "geojson", data: "parks.geojson", generateId: true });
+map.addLayer({
+  id: "parks",
+  type: "fill",
+  source: "parks",
+  paint: { color: ["case", ["boolean", ["feature-state", "hover"], false], "#2e8b57", "#9fd5a8"] },
+});
+
+let hovered;
+map.on("mousemove", async (event) => {
+  const [park] = await map.queryRenderedFeatures(event.point, { layers: ["parks"] });
+  if (park?.id === hovered) return;
+  if (hovered !== undefined) map.setFeatureState({ source: "parks", id: hovered }, { hover: false });
+  hovered = park?.id;
+  if (hovered !== undefined) map.setFeatureState({ source: "parks", id: hovered }, { hover: true });
+});
+```
+
+A feature needs an id for this. Vector tiles usually come with one. In GeoJSON, give each feature an `id`, name a property to use with `promoteId`, or set `generateId: true` to number the features in order. Ids can be numbers or strings. For vector sources, also pass the `sourceLayer`.
+
+`getFeatureState(feature)` returns a copy of a feature's state. `removeFeatureState(feature, "hover")` removes one value, `removeFeatureState(feature)` removes them all, and `removeFeatureState({ source: "parks" })` clears the whole source. State stays until you remove it, even while the feature is off screen, and goes away with its source or when the style changes.
+
+Only paint properties can use `feature-state`. Filters and layout properties decide how tiles are built, so the style check rejects it there.
 
 ## Terrain
 
@@ -218,4 +263,4 @@ Return an `ArrayBuffer` or `Uint8Array`, or `null` when there's no tile. `maplet
 
 `lightStyle(options)` is the built-in street style, described at the end of the [style guide](style.md#the-built-in-style). `validateStyle(style)` returns a list of `{ path, message }` problems. `distanceMeters(a, b)` measures between two positions, `metersPerPixel(latitude, zoom)` tells you how much ground one pixel covers, and `lngLatToWorld` and `worldToLngLat` convert to and from Web Mercator coordinates between 0 and 1. `version` is the library version.
 
-A few smaller methods round things out: `getContainer()`, `getCanvas()`, `resize()` (rarely needed, since the map watches its own size), `getPixelRatio()`, `setPixelRatio()`, `triggerRepaint()`, `loaded()`, `getAttributions()`, `setMinZoom()`, `setMaxZoom()` and `setMaxPitch()`.
+A few smaller methods round things out: `getContainer()`, `getCanvas()`, `resize()` (rarely needed, since the map watches its own size), `getPixelRatio()`, `setPixelRatio()`, `triggerRepaint()`, `loaded()` and `getAttributions()`.
