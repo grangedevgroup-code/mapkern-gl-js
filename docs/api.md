@@ -149,6 +149,22 @@ map.on("click", "clusters", async (event) => {
 
 `getClusterExpansionZoom(id)` is the zoom at which the cluster comes apart. `getClusterChildren(id)` returns the clusters and points one level down, and `getClusterLeaves(id, limit, offset)` the original points inside it, 10 at a time unless you pass another `limit` (`Infinity` for all).
 
+## Images, video and canvases
+
+[Image, video and canvas sources](style.md#images-video-and-canvases) can be moved and changed while the map runs:
+
+```js
+const plan = map.getSource("floorplan");
+plan.setCoordinates(nextCorners);
+plan.updateImage({ url: "floor-3.png" });
+```
+
+`getCoordinates()` gives you the corners back. `updateImage({ url, coordinates })` swaps the picture of an image source and keeps the old one on screen until the new one has loaded.
+
+Video sources have `play()`, `pause()` and `getVideo()`, which hands you the `<video>` element for anything else, such as seeking. Canvas sources have `play()` and `pause()` as well, to turn the copying every frame on and off, and `getCanvas()`. Pausing copies the canvas one last time, so it's also how you show a change on a canvas with `animate: false`.
+
+While a video plays or a canvas animates, the map keeps drawing, so it won't fire `idle` until you pause them. With terrain on, only the parts of the ground under them are redrawn each frame.
+
 ## Events
 
 ```js
