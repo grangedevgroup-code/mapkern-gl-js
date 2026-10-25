@@ -114,6 +114,7 @@ const PROPERTIES: Record<LayerType, Record<string, Target>> = {
     "icon-offset": layout("iconOffset"),
     "icon-anchor": layout("iconAnchor"),
     "text-rotation-alignment": layout("rotationAlignment"),
+    "text-pitch-alignment": layout("pitchAlignment"),
     "text-field": layout("text"),
     "text-size": layout("size"),
     "text-max-width": layout("maxWidth"),
@@ -492,9 +493,8 @@ function convertLayer(
       case "line-gradient":
         skipped.add("line-gradient isn't drawn yet, the line color is used", id);
         continue;
-      case "text-pitch-alignment":
       case "icon-pitch-alignment":
-        if (value === "map") skipped.add(`${key} map isn't supported yet, symbols face the screen`, id);
+        if (value === "map") skipped.add(`${key} map isn't supported yet, icons face the screen`, id);
         continue;
     }
     const target = table[key];
