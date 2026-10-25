@@ -1869,6 +1869,7 @@ export class MapletMap extends Emitter<MapEvents> {
       if (update) {
         for (const id of update.dropped) this.featureStates.dropSource(id);
         if (update.sprite) this.loadSprites(spec.sprite);
+        this.updateGlyphs(spec.glyphs);
         queueMicrotask(() => {
           if (this.style !== current || this.removed) return;
           this.emit("styleload", { ...this.event("styleload"), skipped });
@@ -1903,6 +1904,7 @@ export class MapletMap extends Emitter<MapEvents> {
     this.style = style;
     this.featureStates = new FeatureStates();
     this.loadSprites(spec.sprite);
+    this.updateGlyphs(spec.glyphs);
     if (first && !this.hashPlaced) {
       const o = this.options;
       const t = this.transform;
@@ -1918,6 +1920,24 @@ export class MapletMap extends Emitter<MapEvents> {
       this.styleChanged();
     });
     this.triggerRepaint();
+  }
+
+  private updateGlyphs(template: string | undefined): void {
+    this.painter.labels.setGlyphs(
+      template ?? null,
+      (url, signal) => this.loadGlyphs(url, signal),
+      () => this.triggerRepaint(),
+    );
+  }
+
+  private async loadGlyphs(url: string, signal: AbortSignal): Promise<Uint8Array | null> {
+    const params = resolveRequest(url, "glyphs", this.options.transformRequest);
+    const result = await fetchBytes(params, signal, this.requestTimeout(), "glyphs");
+    if (result.kind === "empty") return null;
+    const bytes = new Uint8Array(result.data);
+    if (bytes.length < 2 || bytes[0] !== 0x1f || bytes[1] !== 0x8b) return bytes;
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
   }
 
   private loadSprites(sprite: unknown): void {
@@ -2279,7 +2299,13 @@ export class MapletMap extends Emitter<MapEvents> {
     if (this.frameTimes.length > FRAME_SAMPLES) this.frameTimes.shift();
     if (animating || this.moving || this.gestureDepth > 0) {
       this.triggerRepaint();
-    } else if (!this.idleFired && this.frameHandle === 0 && this.loadedFired && this.sourcesIdle()) {
+    } else if (
+      !this.idleFired &&
+      this.frameHandle === 0 &&
+      this.loadedFired &&
+      this.sourcesIdle() &&
+      !this.painter.labels.glyphsLoading
+    ) {
       this.idleFired = true;
       this.emit("idle", this.event("idle"));
     }
