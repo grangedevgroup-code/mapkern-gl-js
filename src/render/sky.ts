@@ -1,6 +1,6 @@
 import type { Transform } from "../camera/transform.ts";
 import type { RGBA } from "../style/color.ts";
-import { premultiply } from "../style/color.ts";
+import { parseColor, premultiply } from "../style/color.ts";
 import type { Compiled } from "../style/expression.ts";
 import { compile } from "../style/expression.ts";
 import type { SkySpec } from "../style/types.ts";
@@ -42,16 +42,17 @@ void main() {
   vec2 hit = u_camera + dir.xy * t;
   float edge = min(hit.y, 1.0 - hit.y);
   if (u_wraps < 0.5) edge = min(edge, min(hit.x, 1.0 - hit.x));
+  vec4 haze = mix(u_horizon, u_haze, smoothstep(0.0, 0.5, down));
   if (edge <= 0.0) {
-    fragColor = mix(u_horizon, u_haze, smoothstep(0.0, 0.05, down));
+    fragColor = haze;
     return;
   }
   float toward = 1.0 - asin(min(down, 1.0)) / u_center;
   float fog = u_blend.y * smoothstep(u_blend.x, 1.0, toward);
-  float fade = 1.0 - smoothstep(0.0, 0.25 * t * (1.0 - down), edge);
-  float a = max(fog, fade);
+  float fade = 1.0 - smoothstep(0.0, 0.25 * t * (1.0 - smoothstep(0.1, 0.6, down)), edge);
+  float a = max(max(fog, fade), 1.0 - smoothstep(0.0, 0.12, down));
   if (a <= 0.0) discard;
-  fragColor = u_haze * a;
+  fragColor = haze * a;
 }
 `,
 };
@@ -64,8 +65,8 @@ export interface SkyLook {
   horizonBlend: number;
 }
 
-const LIGHT = { color: "#bfd9f2", horizonColor: "#ffffff" };
-const DARK = { color: "#0b1220", horizonColor: "#2a3445" };
+const LIGHT = { color: "#a7c9ec", horizonColor: "#dbe9f6", fogColor: "#f4f8fc" };
+const DARK = { color: "#0b1220", horizonColor: "#1e2a3a", fogColor: "#2c3848" };
 const NAMES = ["color", "horizonColor", "fogColor", "fogBlend", "horizonFogBlend", "horizonBlend"] as const;
 const compiled = new WeakMap<SkySpec, Partial<Record<(typeof NAMES)[number], Compiled<unknown>>>>();
 
@@ -87,7 +88,7 @@ export function skyLook(spec: SkySpec | null | undefined, zoom: number, backgrou
   const ctx = { zoom };
   const color = (name: (typeof NAMES)[number], fallback: string): RGBA => {
     const v = fns[name]?.evaluate(ctx);
-    return isColor(v) ? v : (compile(fallback, "color", null, "sky").evaluate(ctx) as RGBA);
+    return isColor(v) ? v : (parseColor(fallback) ?? [1, 1, 1, 1]);
   };
   const number = (name: (typeof NAMES)[number], fallback: number): number => {
     const v = fns[name]?.evaluate(ctx);
@@ -95,7 +96,7 @@ export function skyLook(spec: SkySpec | null | undefined, zoom: number, backgrou
   };
   const sky = color("color", base.color);
   const horizon = color("horizonColor", base.horizonColor);
-  const fog = fns.fogColor ? color("fogColor", base.horizonColor) : horizon;
+  const fog = fns.fogColor ? color("fogColor", base.fogColor) : spec ? horizon : color("fogColor", base.fogColor);
   const mix = number("horizonFogBlend", 0.8);
   const haze: RGBA = [
     horizon[0] + (fog[0] - horizon[0]) * mix,
@@ -121,16 +122,16 @@ export function skyInView(transform: Transform): boolean {
   const camera = transform.cameraPosition;
   const height = (camera[2] - transform.centerElevationPixels) / ws;
   for (const x of [0, transform.width / 2, transform.width]) {
-    const { origin, dir } = transform.screenRay(x, 0);
+    const { dir } = transform.screenRay(x, 0);
     const length = Math.hypot(dir[0], dir[1], dir[2]);
     const down = -dir[2] / length;
-    if (down <= 0) return true;
+    if (down < 0.12) return true;
     const hit = transform.unproject(x, 0);
     if (!hit) return true;
     const t = height / down;
     const edge = Math.min(hit[1], 1 - hit[1], transform.renderWorldCopies ? Infinity : Math.min(hit[0], 1 - hit[0]));
-    if (edge <= 0.25 * t * (1 - down)) return true;
-    void origin;
+    const grazing = 1 - Math.min(1, Math.max(0, (down - 0.1) / 0.5));
+    if (edge <= 0.25 * t * grazing * grazing * (3 - 2 * grazing)) return true;
   }
   return false;
 }
