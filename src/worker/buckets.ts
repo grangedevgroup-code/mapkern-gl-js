@@ -1,8 +1,9 @@
 import { ringArea } from "../formats/mvt.ts";
 import { triangulate } from "../render/tessellate.ts";
 
-export const LINE_STRIDE = 24;
+export const LINE_STRIDE = 20;
 const MAX_JOINT_SCALE = 4;
+const SHIFT_STEPS = 126;
 export const FILL_STRIDE = 8;
 export const CIRCLE_STRIDE = 12;
 export const EXTRUDE_SCALE = 2048;
@@ -184,14 +185,15 @@ export class LineBuilder {
     v.setInt16(o + 2, clamp16(y), true);
     v.setInt16(o + 4, clamp16(Math.round(ex * EXTRUDE_SCALE)), true);
     v.setInt16(o + 6, clamp16(Math.round(ey * EXTRUDE_SCALE)), true);
+    const length = Math.min(MAX_JOINT_SCALE, Math.hypot(this.shiftX, this.shiftY));
+    const steps = Math.round((length / MAX_JOINT_SCALE) * SHIFT_STEPS);
+    const turn = Math.round((Math.atan2(this.shiftY, this.shiftX) / Math.PI) * 128);
     v.setInt8(o + 8, clamp8(Math.round(sx * 63.5)));
     v.setInt8(o + 9, clamp8(Math.round(sy * 63.5)));
-    v.setInt8(o + 10, square ? 127 : 0);
-    v.setInt8(o + 11, 0);
+    v.setInt8(o + 10, square ? -steps - 1 : steps);
+    v.setInt8(o + 11, turn >= 128 ? -128 : turn);
     v.setFloat32(o + 12, dist, true);
     v.setUint32(o + 16, feature, true);
-    v.setInt16(o + 20, clamp16(Math.round(this.shiftX * EXTRUDE_SCALE)), true);
-    v.setInt16(o + 22, clamp16(Math.round(this.shiftY * EXTRUDE_SCALE)), true);
     this.vertices.length = o + LINE_STRIDE;
     return this.vertexCount++;
   }
