@@ -6,15 +6,29 @@ export interface Shape {
   readonly height: number;
 }
 
+export interface Outline {
+  readonly shape: number;
+  readonly parts: readonly number[];
+  readonly covered: number;
+  readonly reach: number;
+}
+
 const CELLS = 32;
-const SAMPLES = 16;
-const COVERED = 0.5;
-const HEIGHT_SLACK = 1;
+const SAMPLES = 12;
+export const OUTLINE_COVERED = 0.5;
+export const OUTLINE_REACH = 0.75;
 
 export function hiddenOutlines(shapes: readonly Shape[], extent: number): Uint8Array {
+  const hidden = new Uint8Array(shapes.length);
+  for (const outline of findOutlines(shapes, extent)) {
+    if (outline.covered >= OUTLINE_COVERED && outline.reach >= OUTLINE_REACH) hidden[outline.shape] = 1;
+  }
+  return hidden;
+}
+
+export function findOutlines(shapes: readonly Shape[], extent: number): Outline[] {
   const n = shapes.length;
-  const hidden = new Uint8Array(n);
-  if (n < 2) return hidden;
+  if (n < 2) return [];
   const box = new Float64Array(n * 4);
   const area = new Float64Array(n);
   let minX = Infinity;
@@ -49,7 +63,7 @@ export function hiddenOutlines(shapes: readonly Shape[], extent: number): Uint8A
     if (x1 > maxX) maxX = x1;
     if (y1 > maxY) maxY = y1;
   }
-  if (!(maxX >= minX && maxY >= minY)) return hidden;
+  if (!(maxX >= minX && maxY >= minY)) return [];
   const cellWidth = (maxX - minX) / CELLS || 1;
   const cellHeight = (maxY - minY) / CELLS || 1;
   const column = (x: number) => Math.min(CELLS - 1, Math.max(0, Math.floor((x - minX) / cellWidth)));
@@ -74,7 +88,7 @@ export function hiddenOutlines(shapes: readonly Shape[], extent: number): Uint8A
       return false;
     const outer = shapes[p]!;
     const inner = shapes[q]!;
-    if (outer.base > inner.base + HEIGHT_SLACK || outer.height < inner.height - HEIGHT_SLACK) return false;
+    if (outer.base > inner.base || outer.height < inner.height) return false;
     if (area[p] !== area[q]) return area[p]! > area[q]!;
     const tallOuter = outer.height - outer.base;
     const tallInner = inner.height - inner.base;
@@ -93,33 +107,58 @@ export function hiddenOutlines(shapes: readonly Shape[], extent: number): Uint8A
       else parts.set(p, [q]);
     }
   }
+  const found: Outline[] = [];
   for (const [p, list] of parts) {
-    const rings = shapes[p]!.rings;
-    const x0 = box[p * 4]!;
-    const y0 = box[p * 4 + 1]!;
-    const width = box[p * 4 + 2]! - x0;
-    const height = box[p * 4 + 3]! - y0;
-    let total = 0;
-    let covered = 0;
-    for (let j = 0; j < SAMPLES; j++) {
-      const y = y0 + ((j + 0.5) / SAMPLES) * height;
-      for (let i = 0; i < SAMPLES; i++) {
-        const x = x0 + ((i + 0.5) / SAMPLES) * width;
-        if (!inside(rings, x, y)) continue;
-        total++;
-        for (const q of list) {
-          if (x < box[q * 4]! || x > box[q * 4 + 2]! || y < box[q * 4 + 1]! || y > box[q * 4 + 3]!) continue;
-          if (inside(shapes[q]!.rings, x, y)) {
-            covered++;
-            break;
-          }
+    const outer = shapes[p]!;
+    let differs = false;
+    let top = -Infinity;
+    let sum = 0;
+    for (const q of list) {
+      const inner = shapes[q]!;
+      if (inner.base > outer.base || inner.height < outer.height) differs = true;
+      if (inner.height > top) top = inner.height;
+      sum += area[q]!;
+    }
+    if (!differs) continue;
+    const tall = outer.height - outer.base;
+    const reach = tall > 0 ? (top - outer.base) / tall : 1;
+    const bound = Math.min(1, sum / (area[p]! || 1));
+    const covered = bound < OUTLINE_COVERED || reach < OUTLINE_REACH ? bound : coverage(p, list, shapes, box, bound);
+    found.push({ shape: p, parts: list, covered, reach });
+  }
+  return found;
+}
+
+function coverage(
+  p: number,
+  list: readonly number[],
+  shapes: readonly Shape[],
+  box: Float64Array,
+  fallback: number,
+): number {
+  const rings = shapes[p]!.rings;
+  const x0 = box[p * 4]!;
+  const y0 = box[p * 4 + 1]!;
+  const width = box[p * 4 + 2]! - x0;
+  const height = box[p * 4 + 3]! - y0;
+  let total = 0;
+  let covered = 0;
+  for (let j = 0; j < SAMPLES; j++) {
+    const y = y0 + ((j + 0.5) / SAMPLES) * height;
+    for (let i = 0; i < SAMPLES; i++) {
+      const x = x0 + ((i + 0.5) / SAMPLES) * width;
+      if (!inside(rings, x, y)) continue;
+      total++;
+      for (const q of list) {
+        if (x < box[q * 4]! || x > box[q * 4 + 2]! || y < box[q * 4 + 1]! || y > box[q * 4 + 3]!) continue;
+        if (inside(shapes[q]!.rings, x, y)) {
+          covered++;
+          break;
         }
       }
     }
-    const share = total > 0 ? covered / total : list.reduce((sum, q) => sum + area[q]!, 0) / (area[p]! || 1);
-    if (share >= COVERED) hidden[p] = 1;
   }
-  return hidden;
+  return total > 0 ? covered / total : fallback;
 }
 
 function within(ring: Int32Array, rings: readonly Int32Array[], slack: number): boolean {
