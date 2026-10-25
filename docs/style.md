@@ -268,6 +268,14 @@ Raises polygons into 3D shapes, usually buildings. Walls are shaded by the direc
 | `base` | 0 | per feature. Where the shape starts, in meters, for things like overhangs and building parts |
 | `opacity` | 1 | For the whole layer. Below 1 you see the map through the buildings, but not their inside walls |
 
+| Layout | Default | |
+| --- | --- | --- |
+| `hideOutlines` | see below | Leaves out a shape that holds other shapes of the layer, so a detailed building shows its parts |
+
+OpenStreetMap maps a detailed building, like the Space Needle, as an outline with parts inside it: legs, floors, a roof. The outline carries the height of the whole building, so drawn as well, it wraps the parts in one plain block. Tiles usually keep both. With `hideOutlines`, Maplet leaves out a shape when other shapes of the layer fit inside it, both in footprint and in height, cover at least half of it and reach most of its height. A low podium with a separate tower on top stays, because the tower is taller than the podium, and so does a building where only the ground floor is mapped as a part.
+
+It's on for tile layers named `building` or `buildings` and off for everything else, such as your own GeoJSON. Set it to `true` or `false` to choose yourself.
+
 Put extrusion layers after your roads and point layers, so buildings hide what's behind them. Labels drawn later stay on top.
 
 ### symbol
