@@ -3582,6 +3582,102 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "day and night shade any map from the sun, and the sun lights buildings",
+    async run({ page, shot, base }) {
+      const world = {
+        type: "Feature",
+        properties: {},
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [-180, -85.06],
+              [180, -85.06],
+              [180, 85.06],
+              [-180, 85.06],
+              [-180, -85.06],
+            ],
+          ],
+        },
+      };
+      const green = JSON.stringify({
+        version: 1,
+        sources: { w: { type: "geojson", data: world } },
+        layers: [{ id: "w", type: "fill", source: "w", paint: { color: "#00aa00" } }],
+      });
+      const at = async (lng: number, lat: number) => {
+        const p = await page.evaluate<{ x: number; y: number }>(`window.map.project([${lng}, ${lat}])`);
+        return pixel(page, Math.round(p.x), Math.round(p.y));
+      };
+      const sun = async (spec: unknown) => {
+        await page.evaluate(`void window.map.setSun(${JSON.stringify(spec)})`);
+        await idle(page);
+      };
+      await createMap(page, green, { zoom: 1.2, center: [10, 25] });
+      await sun({ time: "2026-06-21T20:00:00Z" });
+      await shot("world");
+      const day = await at(-100, 40);
+      if (!near(day, [0, 170, 0, 255], 6)) fail(`daytime America should be untouched, got ${day}`);
+      const night = await at(80, 20);
+      if (!near(night, [0, 34, 0, 255], 6)) fail(`night in India should be tinted to the night color, got ${night}`);
+      const dusk = await at(-25, 0);
+      if (!(dusk[1]! > 50 && dusk[1]! < 168))
+        fail(`the Atlantic in twilight should be between day and night, got ${dusk}`);
+      await sun(null);
+      const off = await at(80, 20);
+      if (!near(off, [0, 170, 0, 255], 6)) fail(`without the sun the night side is back to its own color, got ${off}`);
+      await page.evaluate("window.map.remove()");
+
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { zoom: 2, center: [80, 20] });
+      const plain = await at(80, 20);
+      await sun({ time: "2026-06-21T20:00:00Z", night: "#808080" });
+      await shot("raster");
+      const shaded = await at(80, 20);
+      for (let i = 0; i < 3; i++) {
+        if (Math.abs(shaded[i]! - plain[i]! * 0.502) > 6)
+          fail(`raster tiles should be dimmed by the night color, got ${shaded} from ${plain}`);
+      }
+      await page.evaluate("window.map.remove()");
+
+      const block = square(0.001, "#cccccc");
+      const box = JSON.stringify({
+        version: 1,
+        sources: { g: { type: "geojson", data: block } },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "box", type: "extrusion", source: "g", paint: { color: ["get", "color"], height: 300 } },
+        ],
+      });
+      await createMap(page, box, { zoom: 16, pitch: 60, bearing: 90 });
+      const wall = async () => {
+        const column: RGBA[] = [];
+        for (let y = 250; y < 560; y += 6) column.push(await pixel(page, 400, y));
+        const walls = column.filter((c) => c[0]! < 240 && c[0]! > 40);
+        return walls.length > 0 ? walls[Math.floor(walls.length / 2)]![0]! : 0;
+      };
+      await sun({ time: "2026-03-20T08:00:00Z" });
+      const morning = await wall();
+      await shot("box-morning");
+      await sun({ time: "2026-03-20T16:00:00Z" });
+      const evening = await wall();
+      await shot("box-evening");
+      if (!(evening > morning + 10))
+        fail(
+          `the west wall should be lit by the evening sun, got ${morning} in the morning and ${evening} in the evening`,
+        );
+      await page.evaluate("window.map.remove()");
+
+      await createMap(page, green, { zoom: 2, center: [80, 80], pitch: 60 });
+      await page.evaluate(`void window.map.setSky({ color: "#ffffff", horizonColor: "#ffffff", fogColor: "#ffffff" })`);
+      await sun({ time: "2026-12-21T20:00:00Z" });
+      await shot("polar-night");
+      const sky = await pixel(page, 400, 3);
+      if (!near(sky, [41, 51, 92, 255], 8)) fail(`the sky over the polar night should be dark, got ${sky}`);
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
