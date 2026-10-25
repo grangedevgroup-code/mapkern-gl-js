@@ -1,6 +1,7 @@
 import type { Transform } from "../camera/transform.ts";
 import { EARTH_CIRCUMFERENCE } from "../geo/mercator.ts";
 import type { DemSource } from "../sources/dem.ts";
+import { ImageSource, overlayWraps } from "../sources/image.ts";
 import type { RasterSource } from "../sources/raster.ts";
 import type { MapSource } from "../sources/source.ts";
 import type { VectorBucket, VectorTile } from "../sources/vector.ts";
@@ -23,7 +24,7 @@ import type { ImageAtlas } from "./images.ts";
 import type { PendingRead } from "./pick.ts";
 import { PickBuffer } from "./pick.ts";
 import { hillshadeShader } from "./shaders/hillshade.ts";
-import { rasterShader, solidShader } from "./shaders/raster.ts";
+import { overlayShader, rasterShader, solidShader } from "./shaders/raster.ts";
 import { terrainShader } from "./shaders/terrain.ts";
 import { circleShader, extrusionShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
 import type { PickPass } from "./vector-layers.ts";
@@ -37,6 +38,7 @@ export interface FrameInput {
   readonly terrain?: Terrain | null;
   readonly accept?: (piece: RenderPiece<unknown>) => boolean;
   readonly acceptNear?: (piece: RenderPiece<unknown>) => boolean;
+  readonly region?: readonly [number, number, number, number];
   readonly states?: ((layer: StyleLayer) => StateLookup | null) | undefined;
   readonly pixelRatio: number;
   readonly layers: readonly StyleLayer[];
@@ -260,6 +262,7 @@ export class Painter {
       case "raster": {
         const source = layer.source ? frame.sources.get(layer.source) : undefined;
         if (source?.type === "raster") this.drawRaster(frame, layer, source as RasterSource);
+        else if (source instanceof ImageSource) this.drawOverlay(frame, layer, source);
         break;
       }
       case "hillshade": {
@@ -296,11 +299,14 @@ export class Painter {
     const common = this.hash.reset().add(bearing).add(frame.pixelRatio);
     const sources: (readonly RenderPiece<unknown>[])[] = [];
     const pointSources = new Set<readonly RenderPiece<unknown>[]>();
+    const overlays: ImageSource[] = [];
     for (const layer of layers) {
       common
         .add(layer.uid)
         .add(layer.revision)
         .add(frame.states?.(layer)?.version ?? 0);
+      const overlay = layer.type === "raster" && layer.source ? frame.sources.get(layer.source) : undefined;
+      if (overlay instanceof ImageSource && !overlays.includes(overlay)) overlays.push(overlay);
       const pieces = this.piecesOf(frame, layer);
       if (pieces && !sources.includes(pieces)) sources.push(pieces);
       if (pieces && (layer.type === "circle" || layer.type === "heatmap")) pointSources.add(pieces);
@@ -309,7 +315,7 @@ export class Painter {
     for (const slot of terrain.slots) {
       const size = drapeSize(t, slot, frame.pixelRatio);
       const view = new SlotView(slot, zoom, bearing, 512 * 2 ** (zoom - slot.z));
-      const signature = this.drapeSignature(shared, sources, pointSources, view, size);
+      const signature = this.drapeSignature(shared, sources, pointSources, overlays, view, size);
       const current = this.drapes.lookup(slot.key);
       const drawn = current !== undefined && !Number.isNaN(current.signature);
       if (drawn && current.size === size && current.signature === signature && Math.abs(current.zoom - zoom) < 0.05)
@@ -333,6 +339,7 @@ export class Painter {
         terrain: null,
         accept: (piece) => view.overlaps(piece.tile.z, piece.tile.x, piece.tile.y, piece.wrap),
         acceptNear: (piece) => view.overlaps(piece.tile.z, piece.tile.x, piece.tile.y, piece.wrap, POINT_MARGIN),
+        region: view.rect,
       };
       for (const layer of layers) this.drawLayer(sub, layer);
       gl.bindTexture(gl.TEXTURE_2D, entry.texture);
@@ -362,10 +369,15 @@ export class Painter {
     shared: number,
     sources: readonly (readonly RenderPiece<unknown>[])[],
     pointSources: ReadonlySet<readonly RenderPiece<unknown>[]>,
+    overlays: readonly ImageSource[],
     view: SlotView,
     size: number,
   ): number {
     const h = this.hash.reset().add(shared).add(size);
+    for (let i = 0; i < overlays.length; i++) {
+      const overlay = overlays[i]!;
+      if (overlayWraps(overlay.worldBounds, view.rect, true).length > 0) h.add(i).add(overlay.version);
+    }
     for (const pieces of sources) {
       const margin = pointSources.has(pieces) ? POINT_MARGIN : 0;
       for (const p of pieces) {
@@ -637,18 +649,9 @@ export class Painter {
     gl.activeTexture(gl.TEXTURE0);
   }
 
-  private drawRaster(frame: FrameInput, layer: StyleLayer, source: RasterSource): void {
-    const manager = source.manager;
-    if (!manager || manager.pieces.length === 0) return;
-    const g = this.gl;
-    const gl = g.gl;
-    const ctx = { zoom: frame.view.zoom };
-    const opacity = layer.paintValue<number>("opacity", ctx);
-    if (opacity <= 0) return;
-    const program = g.program(rasterShader);
-    g.use(program);
-    g.setBlend("premultiplied");
-    g.setDepth(false, false);
+  private rasterColors(program: Program, layer: StyleLayer, zoom: number): void {
+    const gl = this.gl.gl;
+    const ctx = { zoom };
     const contrast = Math.max(-1, Math.min(0.99, layer.paintValue<number>("contrast", ctx)));
     gl.uniform1f(
       uniform(program, "u_saturation"),
@@ -663,6 +666,56 @@ export class Painter {
     hueMatrix(layer.paintValue<number>("hueRotate", ctx), this.hue);
     gl.uniformMatrix3fv(uniform(program, "u_hue"), false, this.hue);
     gl.uniform1i(uniform(program, "u_image"), 0);
+  }
+
+  private drawOverlay(frame: FrameInput, layer: StyleLayer, source: ImageSource): void {
+    const texture = source.textureFor();
+    const mesh = source.meshFor();
+    if (!texture || !mesh) return;
+    const zoom = frame.view.zoom;
+    const opacity = layer.paintValue<number>("opacity", { zoom });
+    if (opacity <= 0) return;
+    const wraps = overlayWraps(
+      source.worldBounds,
+      frame.region ?? footprintRect(frame.transform),
+      frame.transform.renderWorldCopies,
+    );
+    if (wraps.length === 0) return;
+    const g = this.gl;
+    const gl = g.gl;
+    const program = g.program(overlayShader);
+    g.use(program);
+    g.setBlend("premultiplied");
+    g.setDepth(false, false);
+    this.rasterColors(program, layer, zoom);
+    gl.uniform1f(uniform(program, "u_opacity"), opacity);
+    g.bindTexture(0, texture);
+    const nearest = layer.fixed<string>("resampling") === "nearest";
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, nearest ? gl.NEAREST : gl.LINEAR);
+    gl.bindVertexArray(mesh.vao);
+    const uMatrix = uniform(program, "u_matrix");
+    for (const wrap of wraps) {
+      frame.view.tileMatrix(mesh.z, mesh.x, mesh.y, wrap, 1, this.matrix);
+      gl.uniformMatrix4fv(uMatrix, false, this.matrix);
+      gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
+      this.stats.drawCalls++;
+    }
+    gl.bindVertexArray(null);
+  }
+
+  private drawRaster(frame: FrameInput, layer: StyleLayer, source: RasterSource): void {
+    const manager = source.manager;
+    if (!manager || manager.pieces.length === 0) return;
+    const g = this.gl;
+    const gl = g.gl;
+    const ctx = { zoom: frame.view.zoom };
+    const opacity = layer.paintValue<number>("opacity", ctx);
+    if (opacity <= 0) return;
+    const program = g.program(rasterShader);
+    g.use(program);
+    g.setBlend("premultiplied");
+    g.setDepth(false, false);
+    this.rasterColors(program, layer, frame.view.zoom);
     const nearest = layer.fixed<string>("resampling") === "nearest";
     gl.bindVertexArray(this.quadVao);
     const uMatrix = uniform(program, "u_matrix");
@@ -714,4 +767,18 @@ export function hueMatrix(degrees: number, out: Float32Array): Float32Array {
 
 function vectorManager(source: MapSource | undefined): TileManager<VectorTile> | null {
   return isVectorTileSource(source) ? source.manager : null;
+}
+
+function footprintRect(transform: Transform): [number, number, number, number] {
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const [x, y] of transform.footprint()) {
+    x0 = Math.min(x0, x);
+    y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x);
+    y1 = Math.max(y1, y);
+  }
+  return [x0, y0, x1, y1];
 }
