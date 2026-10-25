@@ -13,6 +13,9 @@ export type ImageInput =
 export interface ImageOptions {
   pixelRatio?: number;
   sdf?: boolean;
+  stretchX?: [number, number][];
+  stretchY?: [number, number][];
+  content?: [number, number, number, number];
 }
 
 export interface SpriteSheet {
@@ -27,6 +30,16 @@ export function styleImage(id: string, input: ImageInput, options: ImageOptions,
     throw new MapletError("invalid-option", "pixelRatio must be a number greater than 0", { image: id });
   }
   const raw = pixelsOf(input, id);
+  const stretchX = zonesOf(options.stretchX, raw.width);
+  const stretchY = zonesOf(options.stretchY, raw.height);
+  const content = contentOf(options.content, raw.width, raw.height);
+  if (stretchX === null || stretchY === null || content === null) {
+    throw new MapletError(
+      "invalid-option",
+      `Image "${id}": stretchX and stretchY need [from, to] pixel ranges and content needs [left, top, right, bottom] inside the image`,
+      { image: id },
+    );
+  }
   return {
     id,
     width: raw.width,
@@ -35,7 +48,32 @@ export function styleImage(id: string, input: ImageInput, options: ImageOptions,
     pixelRatio,
     sdf: options.sdf === true,
     sprite,
+    ...(stretchX ? { stretchX } : {}),
+    ...(stretchY ? { stretchY } : {}),
+    ...(content ? { content } : {}),
   };
+}
+
+function zonesOf(value: unknown, size: number): [number, number][] | undefined | null {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return null;
+  const out: [number, number][] = [];
+  for (const zone of value) {
+    if (!Array.isArray(zone) || zone.length !== 2) return null;
+    const [a, b] = zone as [unknown, unknown];
+    if (typeof a !== "number" || typeof b !== "number" || !(a >= 0 && b > a && b <= size)) return null;
+    out.push([a, b]);
+  }
+  out.sort((p, q) => p[0] - q[0]);
+  for (let i = 1; i < out.length; i++) if (out[i]![0] < out[i - 1]![1]) return null;
+  return out.length > 0 ? out : undefined;
+}
+
+function contentOf(value: unknown, width: number, height: number): [number, number, number, number] | undefined | null {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length !== 4 || !value.every((v) => typeof v === "number")) return null;
+  const [x0, y0, x1, y1] = value as [number, number, number, number];
+  return x0 >= 0 && y0 >= 0 && x1 > x0 && y1 > y0 && x1 <= width && y1 <= height ? [x0, y0, x1, y1] : null;
 }
 
 export function pixelsOf(input: ImageInput, id: string): RawImage {
@@ -90,7 +128,7 @@ export function spriteImages(prefix: string, index: unknown, sheet: RawImage): S
   const out: StyleImage[] = [];
   for (const [name, entry] of Object.entries(index as Record<string, unknown>)) {
     if (typeof entry !== "object" || entry === null) continue;
-    const { x, y, width, height, pixelRatio, sdf } = entry as Record<string, unknown>;
+    const { x, y, width, height, pixelRatio, sdf, stretchX, stretchY, content } = entry as Record<string, unknown>;
     if (![x, y, width, height].every((v) => Number.isInteger(v) && (v as number) >= 0)) continue;
     const w = width as number;
     const h = height as number;
@@ -103,6 +141,9 @@ export function spriteImages(prefix: string, index: unknown, sheet: RawImage): S
       data.set(sheet.data.subarray(from, from + w * 4), row * w * 4);
     }
     const ratio = typeof pixelRatio === "number" && pixelRatio > 0 ? pixelRatio : 1;
+    const zonesX = zonesOf(stretchX, w) ?? undefined;
+    const zonesY = zonesOf(stretchY, h) ?? undefined;
+    const box = contentOf(content, w, h) ?? undefined;
     out.push({
       id: prefix ? `${prefix}:${name}` : name,
       width: w,
@@ -111,6 +152,9 @@ export function spriteImages(prefix: string, index: unknown, sheet: RawImage): S
       pixelRatio: ratio,
       sdf: sdf === true,
       sprite: true,
+      ...(zonesX ? { stretchX: zonesX } : {}),
+      ...(zonesY ? { stretchY: zonesY } : {}),
+      ...(box ? { content: box } : {}),
     });
   }
   return out;
