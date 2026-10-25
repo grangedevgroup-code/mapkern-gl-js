@@ -2068,6 +2068,87 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "the URL hash, cooperative gestures and the remaining events",
+    async run({ page, base }) {
+      await page.evaluate(`history.replaceState(null, "", "#5/10/20/30/40")`);
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { hash: true });
+      const start = await page.evaluate<number[]>(
+        "[window.map.getZoom(), ...window.map.getCenter(), window.map.getBearing(), window.map.getPitch()]",
+      );
+      if (start.some((v, i) => Math.abs(v - [5, 20, 10, 30, 40][i]!) > 1e-6))
+        fail(`the map should start where the hash says, got ${start}`);
+      await page.evaluate("void window.map.jumpTo({ center: [-122.5, 47.25], zoom: 9, bearing: 0, pitch: 0 })");
+      await page.waitFor("location.hash.startsWith('#9/')", 3000);
+      const written = await page.evaluate<string>("location.hash");
+      if (written !== "#9/47.25/-122.5") fail(`the hash should follow the map, got ${written}`);
+      await page.evaluate(`location.hash = "#7/1/2"`);
+      await page.waitFor("Math.abs(window.map.getZoom() - 7) < 1e-9", 3000);
+      await page.evaluate("window.map.remove()");
+
+      await page.evaluate(`history.replaceState(null, "", "#map=4/1/2&foo=bar")`);
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { hash: "map" });
+      const named = await page.evaluate<number[]>("[window.map.getZoom(), ...window.map.getCenter()]");
+      if (Math.abs(named[0]! - 4) > 1e-9 || Math.abs(named[1]! - 2) > 1e-9 || Math.abs(named[2]! - 1) > 1e-9)
+        fail(`a named hash should be read too, got ${named}`);
+      await page.evaluate("void window.map.jumpTo({ zoom: 6 })");
+      await page.waitFor("location.hash.startsWith('#map=6/')", 3000);
+      const kept = await page.evaluate<string>("location.hash");
+      if (!kept.endsWith("&foo=bar")) fail(`other hash parameters should be kept, got ${kept}`);
+      await page.evaluate(`window.map.remove(); history.replaceState(null, "", location.pathname)`);
+
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { cooperativeGestures: true, zoom: 3 });
+      await page.mouse("mouseWheel", 400, 300, { deltaX: 0, deltaY: -100 });
+      await page.waitFor("document.querySelector('.maplet-cooperative.maplet-visible') !== null", 3000);
+      const notice = await page.evaluate<string>("document.querySelector('.maplet-cooperative').textContent");
+      const still = await page.evaluate<number>("window.map.getZoom()");
+      if (Math.abs(still - 3) > 1e-9 || !notice.includes("scroll to zoom"))
+        fail(`a plain wheel should not zoom a cooperative map, got zoom ${still} and "${notice}"`);
+      await page.mouse("mouseWheel", 400, 300, { deltaX: 0, deltaY: -100, modifiers: 2 });
+      await idle(page);
+      const zoomed = await page.evaluate<number>("window.map.getZoom()");
+      if (!(zoomed > 3.2)) fail(`Ctrl + wheel should zoom a cooperative map, got ${zoomed}`);
+      await page.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+      const before = await page.evaluate<number[]>("window.map.getCenter()");
+      await page.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 400, y: 300 }] });
+      for (let i = 1; i <= 6; i++) {
+        await page.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 400 + i * 12, y: 300 }] });
+      }
+      await page.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await idle(page);
+      const after = await page.evaluate<number[]>("window.map.getCenter()");
+      const touchNotice = await page.evaluate<string>("document.querySelector('.maplet-cooperative').textContent");
+      if (Math.hypot(after[0]! - before[0]!, after[1]! - before[1]!) > 1e-9 || !touchNotice.includes("two fingers"))
+        fail(`one finger should not pan a cooperative map, moved to ${after} with "${touchNotice}"`);
+      await page.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+      await page.evaluate("window.map.remove()");
+
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { zoom: 3 });
+      await page.evaluate(`(() => {
+        window.events = [];
+        const map = window.map;
+        for (const type of ["dragstart", "drag", "dragend", "styledata"]) map.on(type, () => window.events.push(type));
+        map.on("data", (e) => window.events.push("data:" + e.dataType));
+        map.on("wheel", (e) => { window.events.push("wheel"); e.preventDefault(); });
+      })()`);
+      await page.mouse("mouseWheel", 400, 300, { deltaX: 0, deltaY: -100 });
+      await idle(page);
+      const wheelZoom = await page.evaluate<number>("window.map.getZoom()");
+      if (Math.abs(wheelZoom - 3) > 1e-9)
+        fail(`preventDefault in a wheel listener should stop the zoom, got ${wheelZoom}`);
+      await page.mouse("mouseMoved", 400, 300);
+      await page.mouse("mousePressed", 400, 300, { buttons: 1 });
+      for (let i = 1; i <= 4; i++) await page.mouse("mouseMoved", 400 + i * 10, 300, { buttons: 1 });
+      await page.mouse("mouseReleased", 440, 300, { buttons: 0 });
+      await page.evaluate(`void window.map.setPaintProperty("r", "opacity", 0.5)`);
+      await page.evaluate("new Promise((r) => setTimeout(r, 50))");
+      const events = await page.evaluate<string[]>("window.events");
+      const expect = ["wheel", "dragstart", "drag", "dragend", "styledata", "data:style"];
+      for (const e of expect) if (!events.includes(e)) fail(`expected a ${e} event, got ${JSON.stringify(events)}`);
+      if (events.indexOf("dragstart") > events.indexOf("drag") || events.indexOf("drag") > events.indexOf("dragend"))
+        fail(`drag events came out of order: ${JSON.stringify(events)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
