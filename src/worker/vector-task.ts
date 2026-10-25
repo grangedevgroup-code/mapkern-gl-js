@@ -289,7 +289,7 @@ function buildBucket(
       icon: cachedCompile(`${program.id}.icon`, layout.icon ?? "", "string"),
       size: cachedCompile(`${program.id}.size`, layout.size ?? 14, "number"),
       priority: cachedCompile(`${program.id}.priority`, layout.priority ?? 0, "number"),
-      placement: layout.placement === "line" ? "line" : "point",
+      placement: layout.placement === "line" || layout.placement === "line-center" ? layout.placement : "point",
       spacing: typeof layout.spacing === "number" ? layout.spacing : 250,
       transform: layout.transform === "uppercase" || layout.transform === "lowercase" ? layout.transform : "none",
     };
@@ -297,7 +297,7 @@ function buildBucket(
     const streets = new Map<string, { info: LabelInfo; index: number; parts: Int32Array[] }>();
     for (const f of selected) {
       const index = features.count;
-      if (symbol.placement === "line" && f.feature.type === 2) {
+      if (symbol.placement !== "point" && f.feature.type === 2) {
         const info = labelInfo({ zoom, feature: f }, symbol);
         const parts = info ? f.feature.geometry() : [];
         if (!info || parts.length === 0) continue;
