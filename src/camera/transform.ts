@@ -416,6 +416,17 @@ export class Transform {
     return { x: ((p[0] / w + 1) / 2) * this.width, y: ((1 - p[1] / w) / 2) * this.height, w };
   }
 
+  projectTo(out: Float64Array, x: number, y: number, zPixels = 0): number {
+    this.update();
+    const m = this.unitMatrix;
+    const cx = m[0]! * x + m[4]! * y + m[8]! * zPixels + m[12]!;
+    const cy = m[1]! * x + m[5]! * y + m[9]! * zPixels + m[13]!;
+    const w = m[3]! * x + m[7]! * y + m[11]! * zPixels + m[15]!;
+    out[0] = ((cx / w + 1) / 2) * this.width;
+    out[1] = ((1 - cy / w) / 2) * this.height;
+    return w;
+  }
+
   projectLngLat(lng: number, lat: number): Point {
     const p = this.project(mercatorX(lng), mercatorY(lat));
     return { x: p.x, y: p.y };
