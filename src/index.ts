@@ -16,6 +16,7 @@ export type {
   MapMoveEvent,
   MapOptions,
   MapPointerEvent,
+  PaddingOptions,
   PointLike,
   QueryGeometry,
   QueryOptions,
