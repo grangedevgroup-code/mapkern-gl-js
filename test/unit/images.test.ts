@@ -29,10 +29,10 @@ test("images are packed without overlapping and keep a clear gutter", () => {
     for (let b = a + 1; b < rects.length; b++) {
       const s = rects[b]!;
       const apart =
-        r.x + r.image.width + 1 <= s.x - 1 + 1 ||
-        s.x + s.image.width + 1 <= r.x - 1 + 1 ||
-        r.y + r.image.height + 1 <= s.y - 1 + 1 ||
-        s.y + s.image.height + 1 <= r.y - 1 + 1;
+        r.x + r.image.width + 2 <= s.x ||
+        s.x + s.image.width + 2 <= r.x ||
+        r.y + r.image.height + 2 <= s.y ||
+        s.y + s.image.height + 2 <= r.y;
       assert.ok(apart, `${r.image.id} overlaps ${s.image.id}`);
     }
   }
@@ -65,7 +65,8 @@ test("an update of the same size is written in place", () => {
   assert.equal(after.y, before.y);
   assert.equal(atlas.generation, generation);
   assert.ok(atlas.version > version);
-  assert.ok(atlas.dirty && atlas.dirty.y0 <= after.y && atlas.dirty.y1 >= after.y + 8);
+  const dirty = atlas.dirty as { y0: number; y1: number } | null;
+  assert.ok(dirty && dirty.y0 <= after.y && dirty.y1 >= after.y + 8);
   assert.deepEqual(pixel(atlas, after.x + 3, after.y + 3), [9, 9, 9, 9]);
 });
 
