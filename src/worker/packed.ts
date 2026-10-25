@@ -141,6 +141,7 @@ export class FeatureTable {
 export interface PackedLabels {
   count: number;
   texts: string[];
+  icons: string[];
   feature: Uint32Array;
   size: Float32Array;
   priority: Float32Array;
@@ -153,6 +154,7 @@ export interface PackedLabels {
 
 export class LabelBuilder {
   private readonly texts: string[] = [];
+  private readonly icons: string[] = [];
   private readonly feature: number[] = [];
   private readonly size: number[] = [];
   private readonly priority: number[] = [];
@@ -169,6 +171,7 @@ export class LabelBuilder {
 
   add(
     text: string,
+    icon: string,
     feature: number,
     size: number,
     priority: number,
@@ -177,6 +180,7 @@ export class LabelBuilder {
     path: Int32Array | null,
   ): void {
     this.texts.push(text);
+    this.icons.push(icon);
     this.feature.push(feature);
     this.size.push(size);
     this.priority.push(priority);
@@ -201,6 +205,7 @@ export class LabelBuilder {
     return {
       count: this.texts.length,
       texts: this.texts,
+      icons: this.icons,
       feature: Uint32Array.from(this.feature),
       size: Float32Array.from(this.size),
       priority: Float32Array.from(this.priority),
