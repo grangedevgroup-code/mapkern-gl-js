@@ -7,6 +7,7 @@ import type { VectorBucket, VectorTile } from "../sources/vector.ts";
 import { isVectorTileSource } from "../sources/vector.ts";
 import type { RGBA } from "../style/color.ts";
 import { premultiply } from "../style/color.ts";
+import type { StateLookup } from "../style/feature-state.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import { terrainMesh } from "../terrain/mesh.ts";
 import type { Terrain, TerrainSlot } from "../terrain/terrain.ts";
@@ -33,6 +34,7 @@ export interface FrameInput {
   readonly target?: readonly [number, number];
   readonly terrain?: Terrain | null;
   readonly accept?: (piece: RenderPiece<unknown>) => boolean;
+  readonly states?: ((layer: StyleLayer) => StateLookup | null) | undefined;
   readonly pixelRatio: number;
   readonly layers: readonly StyleLayer[];
   readonly sources: ReadonlyMap<string, MapSource>;
@@ -212,7 +214,7 @@ export class Painter {
     for (const layer of layers) {
       if (layer.type !== "symbol" || !layer.source) continue;
       const manager = vectorManager(frame.sources.get(layer.source));
-      if (manager) symbols.push({ layer, manager });
+      if (manager) symbols.push({ layer, manager, states: frame.states?.(layer) ?? null });
     }
     let animating = false;
     if (symbols.length > 0 || this.labels.visibleCount > 0) {
@@ -284,7 +286,10 @@ export class Painter {
     const common = this.hash.reset().add(bearing).add(frame.pixelRatio);
     const sources: (readonly RenderPiece<unknown>[])[] = [];
     for (const layer of layers) {
-      common.add(layer.uid).add(layer.revision);
+      common
+        .add(layer.uid)
+        .add(layer.revision)
+        .add(frame.states?.(layer)?.version ?? 0);
       const pieces = this.piecesOf(frame, layer);
       if (pieces && !sources.includes(pieces)) sources.push(pieces);
     }
