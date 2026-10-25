@@ -3,8 +3,8 @@ import { fontFromNames } from "../text/glyphs.ts";
 import { compile, isOperator } from "./expression.ts";
 import type { PropertyDef } from "./layer.ts";
 import { LAYOUT, PAINT, transitionOf } from "./layer.ts";
-import type { LayerSpec, LayerType, SourceSpec, StyleSpec } from "./types.ts";
-import { validateLayer, validateSource, validateStyle } from "./validate.ts";
+import type { LayerSpec, LayerType, SkySpec, SourceSpec, StyleSpec } from "./types.ts";
+import { validateLayer, validateSky, validateSource, validateStyle } from "./validate.ts";
 
 export interface ImportedStyle {
   style: StyleSpec;
@@ -159,7 +159,54 @@ const QUIET = new Set([
   "symbol-avoid-edges",
 ]);
 
-const DROPPED_ROOT = ["light", "lights", "sky", "fog", "projection", "imports", "models", "camera", "state", "schema"];
+const DROPPED_ROOT = ["light", "lights", "projection", "imports", "models", "camera", "state", "schema"];
+
+const SKY_NAMES: Record<string, keyof SkySpec> = {
+  "sky-color": "color",
+  "horizon-color": "horizonColor",
+  "fog-color": "fogColor",
+  "fog-ground-blend": "fogBlend",
+  "horizon-fog-blend": "horizonFogBlend",
+  "sky-horizon-blend": "horizonBlend",
+};
+
+const FOG_NAMES: Record<string, (keyof SkySpec)[]> = {
+  color: ["horizonColor", "fogColor"],
+  "high-color": ["color"],
+  "horizon-blend": ["horizonBlend"],
+};
+
+function convertSky(input: Record<string, unknown>, skipped: Skipped): SkySpec | undefined {
+  const sky: SkySpec = {};
+  const set = (name: keyof SkySpec, value: unknown) => {
+    const kind = name.endsWith("olor") ? "color" : "number";
+    (sky as Record<string, unknown>)[name] = convertValue(
+      value,
+      { kind, default: null, expression: true, feature: false },
+      name,
+    );
+  };
+  if (isObject(input.sky)) {
+    for (const [key, value] of Object.entries(input.sky)) {
+      const name = SKY_NAMES[key];
+      if (name) set(name, value);
+      else if (key !== "atmosphere-blend") skipped.add(`sky ${key} isn't supported yet`);
+    }
+  } else if (isObject(input.fog)) {
+    for (const [key, value] of Object.entries(input.fog)) {
+      const names = FOG_NAMES[key];
+      if (names) for (const name of names) set(name, value);
+      else skipped.add(`fog ${key} isn't supported yet, the fog colors are used for the sky`);
+    }
+  }
+  if (Object.keys(sky).length === 0) return undefined;
+  const issues = validateSky(sky);
+  if (issues.length > 0) {
+    skipped.add(`sky couldn't be read: ${issues[0]!.message}`);
+    return undefined;
+  }
+  return sky;
+}
 
 const V8_HEAT = [
   "interpolate",
@@ -229,6 +276,8 @@ export function importStyle(input: unknown, base?: string): ImportedStyle {
     else style.sprite = sprite;
   }
   for (const key of DROPPED_ROOT) if (input[key] !== undefined) skipped.add(`${key} isn't supported yet`);
+  const sky = convertSky(input, skipped);
+  if (sky) style.sky = sky;
   const sources: Record<string, SourceSpec> = {};
   for (const [id, raw] of Object.entries(isObject(input.sources) ? input.sources : {})) {
     const source = convertSource(id, raw, base, skipped);
