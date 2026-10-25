@@ -272,9 +272,17 @@ uniform int u_stroke_color_comp;
 uniform float u_stroke_width;
 uniform int u_stroke_width_slot;
 uniform int u_stroke_width_comp;
+uniform float u_stroke_opacity;
+uniform int u_stroke_opacity_slot;
+uniform int u_stroke_opacity_comp;
 uniform float u_blur;
 uniform int u_blur_slot;
 uniform int u_blur_comp;
+uniform vec2 u_translate;
+uniform float u_units_per_px;
+uniform float u_camera_distance;
+uniform int u_pitch_align;
+uniform int u_pitch_scale;
 ${paintChunk}
 out vec2 v_offset;
 out float v_radius;
@@ -296,6 +304,7 @@ void main() {
   float radius = max(paintValue(a_feature, u_radius_slot, u_radius_comp, vec4(u_radius)).x, 0.0);
   float strokeWidth = max(paintValue(a_feature, u_stroke_width_slot, u_stroke_width_comp, vec4(u_stroke_width)).x, 0.0);
   float blur = max(paintValue(a_feature, u_blur_slot, u_blur_comp, vec4(u_blur)).x, 0.0);
+  float strokeOpacity = paintValue(a_feature, u_stroke_opacity_slot, u_stroke_opacity_comp, vec4(u_stroke_opacity)).x;
   float edge = blur + 1.0 / u_pixel_ratio;
   float extent = radius + strokeWidth + edge;
   v_offset = a_corner.xy * extent;
@@ -303,10 +312,16 @@ void main() {
   v_stroke = strokeWidth;
   v_edge = edge;
   v_fill = vec4(color.rgb * color.a, color.a) * opacity;
-  v_strokeColor = vec4(stroke.rgb * stroke.a, stroke.a) * opacity;
+  v_strokeColor = vec4(stroke.rgb * stroke.a, stroke.a) * strokeOpacity;
   v_pos = a_pos;
-  vec4 center = u_matrix * vec4(a_pos, 0.0, 1.0);
-  gl_Position = center + vec4(a_corner.xy * extent * 2.0 / u_viewport * center.w, 0.0, 0.0);
+  vec2 base = a_pos + u_translate;
+  if (u_pitch_align == 1) {
+    gl_Position = u_matrix * vec4(base + a_corner.xy * extent * u_units_per_px, 0.0, 1.0);
+  } else {
+    vec4 center = u_matrix * vec4(base, 0.0, 1.0);
+    float w = u_pitch_scale == 1 ? u_camera_distance : center.w;
+    gl_Position = center + vec4(a_corner.xy * extent * 2.0 / u_viewport * w, 0.0, 0.0);
+  }
 }
 `,
   fragment: `
