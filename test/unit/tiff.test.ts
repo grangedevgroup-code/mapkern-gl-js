@@ -139,9 +139,10 @@ function writeTiff(o: WriteOptions): Uint8Array {
           [273, o.big ? 16 : 4, offsets],
           [278, 4, [bh]],
           [279, 4, blocks.map((b) => b.length)],
-        ] as [number, number, number[]][])),
+        ] as Tag[])),
     ...(o.tags ?? []),
-  ].sort((a, b) => a[0] - b[0]);
+  ];
+  const tags = list.sort((a, b) => a[0] - b[0]);
   const size: Record<number, number> = { 2: 1, 3: 2, 4: 4, 12: 8, 16: 8 };
   const entrySize = o.big ? 20 : 12;
   const inline = o.big ? 8 : 4;
