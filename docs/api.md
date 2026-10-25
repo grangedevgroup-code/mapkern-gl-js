@@ -109,7 +109,9 @@ map.setFilter("route", ["==", ["get", "kind"], "bike"]);
 
 To read a layer back, use `getFilter(id)`, `getPaintProperty(id, name)` and `getLayoutProperty(id, name)`. They return what the style says, or `undefined` for anything left at its default. `isSourceLoaded(id)` tells you whether a source has everything it needs for the current view, and `areTilesLoaded()` asks the same of all sources.
 
-`setStyle()` swaps the whole style and `getStyle()` returns the current one as a plain object.
+`setStyle()` swaps the whole style and `getStyle()` returns the current one as a plain object. Switching styles keeps whatever the two have in common. Sources that didn't change keep their tiles, layers keep their place on screen and only the properties that differ are updated, and a GeoJSON source that only got new `data` takes it the way [`setData`](#geojson) would. That makes a light and dark theme switch instant, with no reloading and no flash, and feature state on the kept sources survives too. The map ends up exactly as if it had built the new style from scratch. If you'd rather it did that, pass `{ diff: false }` as the second argument.
+
+`styleload` fires after every `setStyle`, so a handler that adds your own layers on top of a style keeps working when you switch.
 
 When an edit changes which features a layer draws, Maplet rebuilds the tiles in the background and keeps the old ones on screen until the new ones are ready.
 
