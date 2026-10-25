@@ -5,7 +5,8 @@ import { latFromMercatorY, lngFromMercatorX } from "../geo/mercator.ts";
 import type { PickedFeature } from "../render/painter.ts";
 import type { GeoJSONSource } from "../sources/geojson.ts";
 import type { MapSource } from "../sources/source.ts";
-import type { VectorTile } from "../sources/vector.ts";
+import type { VectorSource, VectorTile } from "../sources/vector.ts";
+import type { Compiled, GeometryType } from "../style/expression.ts";
 import type { Tile } from "../tiles/tile.ts";
 
 export interface QueriedFeature {
@@ -17,6 +18,63 @@ export interface QueriedFeature {
   source: string;
   sourceLayer: string | undefined;
   state: Record<string, unknown>;
+}
+
+export interface SourceQueriedFeature {
+  type: "Feature";
+  id: number | string | undefined;
+  properties: Record<string, unknown>;
+  geometry: Geometry | null;
+  source: string;
+  sourceLayer: string | undefined;
+  state: Record<string, unknown>;
+}
+
+const GEOMETRY_TYPES: Record<number, GeometryType> = { 1: "Point", 2: "LineString", 3: "Polygon" };
+
+export async function queryVectorSource(
+  source: VectorSource,
+  sourceLayer: string | undefined,
+  filter: Compiled<boolean> | null,
+  stateOf: StateReader,
+): Promise<SourceQueriedFeature[]> {
+  const manager = source.manager;
+  if (!manager) return [];
+  const out: SourceQueriedFeature[] = [];
+  const seen = new Set<number>();
+  for (const piece of manager.pieces) {
+    const tile = piece.tile;
+    if (seen.has(tile.key)) continue;
+    seen.add(tile.key);
+    const raw = tile.data?.raw;
+    if (!raw) continue;
+    const layers = await decodedLayers(raw);
+    const names = sourceLayer !== undefined ? [sourceLayer] : [...layers.keys()];
+    for (const name of names) {
+      const layer = layers.get(name);
+      if (!layer) continue;
+      const promote = promotedKey((source.spec as { promoteId?: unknown }).promoteId, name);
+      for (let i = 0; i < layer.length; i++) {
+        const feature = layer.feature(i);
+        const properties: Record<string, unknown> = { ...feature.properties() };
+        const id = promote ? featureIdValue(properties[promote]) : feature.id;
+        if (filter) {
+          const context = { properties, id, geometryType: GEOMETRY_TYPES[feature.type] ?? "Unknown" };
+          if (filter.evaluate({ zoom: tile.z, feature: context }) !== true) continue;
+        }
+        out.push({
+          type: "Feature",
+          id,
+          properties,
+          geometry: tileGeometry(feature, tile),
+          source: source.id,
+          sourceLayer: name,
+          state: stateOf(source.id, name, id),
+        });
+      }
+    }
+  }
+  return out;
 }
 
 export type StateReader = (
