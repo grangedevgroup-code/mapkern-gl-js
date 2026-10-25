@@ -249,8 +249,14 @@ export class Transform {
   }
 
   private constrain(): void {
-    const b = this.limits;
-    if (!b) return;
+    const limits = this.limits;
+    const wraps = this.renderWorldCopies && !limits;
+    const b = {
+      x0: limits ? limits.x0 : 0,
+      x1: limits ? limits.x1 : 1,
+      y0: Math.max(0, limits ? limits.y0 : 0),
+      y1: Math.min(1, limits ? limits.y1 : 1),
+    };
     const [px, py] = this.centerPoint;
     const angle = this.bearingDeg * DEG;
     const cos = Math.cos(angle);
