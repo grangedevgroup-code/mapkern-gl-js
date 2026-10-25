@@ -748,3 +748,14 @@ test("Lambert conformal conic files in meters and in US feet", () => {
   close(lon2!, needle[0], 1e-6, "longitude");
   close(lat2!, needle[1], 1e-6, "latitude");
 });
+
+test("long runs of spaces or letters in KML and XML read in linear time", () => {
+  const spaces = " ".repeat(200000);
+  const started = performance.now();
+  const kml = `<kml><Placemark><Point><coordinates>1 ,${spaces}2${spaces}</coordinates></Point></Placemark></kml>`;
+  const out = kmlToGeoJSON(kml);
+  assert.deepEqual((out.features[0]!.geometry as { coordinates: number[] }).coordinates, [1, 2]);
+  const tag = `<kml><Placemark id="a" ${"x".repeat(200000)} name='b'><Point><coordinates>3,4</coordinates></Point></Placemark></kml>`;
+  assert.equal(kmlToGeoJSON(tag).features.length, 1);
+  assert.ok(performance.now() - started < 500, `took ${performance.now() - started} ms`);
+});
