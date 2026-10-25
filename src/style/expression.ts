@@ -14,6 +14,7 @@ export interface EvalContext {
   feature?: FeatureContext | undefined;
   state?: Readonly<Record<string, unknown>> | undefined;
   images?: ((id: string) => boolean) | undefined;
+  accumulated?: unknown;
 }
 
 export type OutputKind = "number" | "color" | "string" | "boolean" | "any";
@@ -202,6 +203,7 @@ const OPS = new Set([
   "ln2",
   "is-supported-script",
   "image",
+  "accumulated",
 ]);
 
 function constant(v: unknown): Node {
@@ -584,6 +586,9 @@ function build(value: unknown, scope: Scope): Node {
       const a = sub(args[0]);
       return combine([a], () => true);
     }
+    case "accumulated":
+      need(0, 0);
+      return { fn: (ctx) => ctx.accumulated ?? null, zoom: false, feature: true };
     case "image": {
       need(1, 1);
       const name = sub(args[0]);
