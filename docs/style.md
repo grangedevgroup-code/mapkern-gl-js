@@ -253,14 +253,22 @@ Draws text, icons, or both. When symbols would overlap, the one with the lower `
 | `font` | `["sans-serif"]` | Font families to try in order. Labels use fonts installed on the device |
 | `weight` | `normal` | Or `bold` |
 | `italic` | `false` | |
-| `placement` | `point` | `line` makes the text follow the line |
-| `anchor` | `center` | Which side of the text sits on the point: `top`, `bottom`, `left` or `right` |
+| `placement` | `point` | `line` makes the text follow the line, repeated along it. `line-center` puts one label at the middle of each line |
+| `anchor` | `center` | Which part of the text sits on the point: `top`, `bottom`, `left`, `right` or a corner like `top-left` |
+| `variableAnchor` | none | A list of anchors to try in order, such as `["top", "bottom", "left", "right"]`. Each label takes the first one that fits |
 | `offset` | `[0, 0]` | Shift, measured in font sizes |
+| `radialOffset` | none | Distance from the point in font sizes, in the direction of the anchor. Handy with `variableAnchor` |
+| `justify` | `center` | Lines of a wrapped label line up on the `left`, `right` or `center`. `auto` follows the anchor |
+| `lineHeight` | 1.2 | Distance between wrapped lines, in font sizes |
+| `rotate` | 0 | per feature. Turns point labels, in degrees clockwise |
 | `maxWidth` | 10 | Wrap point labels after this many font sizes |
 | `letterSpacing` | 0 | Extra space between letters, in font sizes |
 | `padding` | 2 | Space kept clear around the label, in pixels |
 | `spacing` | 250 | Distance between repeats of a line label, in pixels |
 | `allowOverlap` | `false` | Show the label even when it collides |
+| `ignorePlacement` | `false` | Let other symbols draw over this label's space |
+| `maxAngle` | 45 | The sharpest bend, in degrees, a label may follow along a line |
+| `keepUpright` | `true` | Flip line labels so they never read upside down |
 | `transform` | `none` | Or `uppercase`, `lowercase` |
 | `optional` | `false` | With an icon, show the icon alone when the text doesn't fit |
 | `icon` | none | per feature. The name of an [image](#icons), such as `"cafe"` or `["get", "kind"]` |
@@ -270,6 +278,7 @@ Draws text, icons, or both. When symbols would overlap, the one with the lower `
 | `iconOffset` | `[0, 0]` | Shift in pixels, before `iconSize` |
 | `iconPadding` | 2 | Space kept clear around the icon, in pixels |
 | `iconAllowOverlap` | `false` | Show the icon even when it collides |
+| `iconIgnorePlacement` | `false` | Let other symbols draw over this icon's space |
 | `iconOptional` | `false` | Show the text alone when the icon doesn't fit |
 | `iconRotationAlignment` | `auto` | `map` turns icons with the map, `viewport` keeps them upright. `auto` means `map` on lines and `viewport` on points |
 
@@ -278,8 +287,11 @@ Draws text, icons, or both. When symbols would overlap, the one with the lower `
 | `color` | `#000000` | per feature |
 | `haloColor` | transparent | per feature |
 | `haloWidth` | 0 | per feature |
+| `haloBlur` | 0 | per feature. Fades the halo out over this many pixels |
 | `opacity` | 1 | per feature |
+| `translate` | `[0, 0]` | Shift the text in pixels, with `translateAnchor` as for fills |
 | `iconOpacity` | 1 | per feature |
+| `iconTranslate` | `[0, 0]` | Shift the icon in pixels, with `iconTranslateAnchor` |
 | `iconColor` | `#000000` | per feature, for SDF icons only |
 | `iconHaloColor` | transparent | per feature, for SDF icons only |
 | `iconHaloWidth` | 0 | per feature, in pixels, for SDF icons only |
