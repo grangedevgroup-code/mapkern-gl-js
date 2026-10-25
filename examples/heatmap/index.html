@@ -34,14 +34,14 @@
         sourceLayer: "poi",
         maxZoom: 17,
         paint: {
-          radius: ["interpolate", ["linear"], ["zoom"], 10, 6, 15, 30],
-          intensity: ["interpolate", ["linear"], ["zoom"], 10, 0.6, 15, 1.4],
+          radius: ["interpolate", ["linear"], ["zoom"], 12, 6, 16, 22],
+          intensity: ["interpolate", ["linear"], ["zoom"], 12, 0.15, 16, 0.45],
           opacity: ["interpolate", ["linear"], ["zoom"], 15, 0.9, 17, 0],
           weight: ["match", ["get", "class"], "shop", 1.5, "amenity", 1.2, 0.8],
         },
       });
 
-      const map = new maplet.Map({ container: "map", style, center: [-122.335, 47.61], zoom: 12.5 });
+      const map = new maplet.Map({ container: "map", style, center: [-122.3375, 47.6105], zoom: 14.6 });
       map.addControl(new maplet.NavigationControl());
       window.map = map;
     </script>
