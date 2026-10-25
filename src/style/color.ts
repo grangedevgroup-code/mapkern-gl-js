@@ -171,10 +171,14 @@ function parse(s: string): RGBA | null {
   const m = /^(rgba?|hsla?)\(([^)]*)\)$/.exec(s);
   if (!m) return null;
   const fn = m[1]!;
-  const parts = m[2]!
-    .replace(/\s*\/\s*/, ",")
-    .split(/[\s,]+/)
-    .filter((p) => p.length > 0);
+  const [main, slashed, ...rest] = m[2]!.split("/");
+  if (rest.length > 0) return null;
+  const parts = main!.split(/[\s,]+/).filter((p) => p.length > 0);
+  if (slashed !== undefined) {
+    const last = slashed.trim();
+    if (parts.length !== 3 || last.length === 0 || /[\s,]/.test(last)) return null;
+    parts.push(last);
+  }
   if (parts.length < 3 || parts.length > 4) return null;
   const alpha = parts.length === 4 ? parseAlpha(parts[3]!) : 1;
   if (alpha === null) return null;
