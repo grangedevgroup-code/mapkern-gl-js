@@ -11,6 +11,8 @@ export type {
   MapErrorEvent,
   MapEvent,
   MapEvents,
+  MapLayerEvent,
+  MapLayerEvents,
   MapMoveEvent,
   MapOptions,
   MapPointerEvent,
