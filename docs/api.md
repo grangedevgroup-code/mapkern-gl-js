@@ -45,7 +45,7 @@ const map = new maplet.Map({
 | `workerCount` | cores minus one, up to 4 | |
 | `workerUrl` | | URL of `dist/maplet-worker.js`, for sites whose Content Security Policy blocks `blob:` workers |
 | `reducedMotion` | the system setting | `true` turns camera animations into jumps |
-| `locale` | | Your own control labels: `{ zoomIn, zoomOut, resetNorth, map }` |
+| `locale` | | Your own labels for controls and screen readers: `{ zoomIn, zoomOut, resetNorth, map, marker, popup, closePopup }` |
 
 When you're done with a map, call `map.remove()`. It stops drawing and frees the workers and GPU memory.
 
@@ -66,7 +66,7 @@ To read the camera, use `getCenter()`, `getZoom()`, `getBearing()`, `getPitch()`
 
 The limits have getters and setters of their own: `getMinZoom()`, `setMinZoom()`, `getMaxZoom()`, `setMaxZoom()`, `getMinPitch()`, `setMinPitch()`, `getMaxPitch()`, `setMaxPitch()`, and `getRenderWorldCopies()` with `setRenderWorldCopies()`.
 
-`project(lngLat)` gives the screen position of a place in CSS pixels, and `unproject([x, y])` does the opposite. It returns `null` for points above the horizon on a tilted map.
+`project(lngLat)` gives the screen position of a place in CSS pixels, and `unproject([x, y])` does the opposite. It returns `null` for points above the horizon on a tilted map. `screenPosition(lngLat)` is `project` with two extras for your own overlays: `visible` says whether the place is in front of the camera and close enough to be drawn, and `occluded` whether a hill is in the way.
 
 People can drag to pan, scroll or pinch to zoom, and double-click to zoom in. Dragging with the right mouse button, or with Ctrl held, rotates and tilts. On touch screens, twisting two fingers rotates and sliding two fingers up or down tilts. With keyboard focus, the arrow keys pan, Shift with the arrows rotates and tilts, and `+` and `-` zoom.
 
@@ -244,6 +244,34 @@ class HomeButton {
 
 map.addControl(new HomeButton(), "top-left");
 ```
+
+## Markers and popups
+
+```js
+const popup = new maplet.Popup().setText("Pike Place Market");
+new maplet.Marker().setLngLat([-122.342, 47.609]).setPopup(popup).addTo(map);
+```
+
+A marker keeps a pin, or an element of your own, on a place while the map moves. Clicking it opens its popup, and so does Enter or Space once it has keyboard focus. Pass `element` to use your own HTML instead of the pin, or `color` and `scale` to change the pin. `anchor` says which part of the marker sits on the place: `center`, `top`, `bottom`, `left`, `right` or a corner such as `bottom-left`. The pin uses `bottom` and your own elements `center`. `offset` nudges it by `[x, y]` pixels.
+
+With `draggable: true` people can move the marker. It fires `dragstart`, `drag` and `dragend`, and `getLngLat()` tells you where it ended up. `rotation` turns it, in degrees. With `rotationAlignment: "map"` it turns along with the map, and with `pitchAlignment: "map"` it lies flat when the map tilts. When terrain hides a marker it fades to `occludedOpacity`, 0.2 unless you change it. Every option has a setter too, such as `setLngLat`, `setDraggable` or `setRotation`, and `remove()` takes the marker off the map.
+
+A popup is a small card that points at a place. It doesn't need a marker:
+
+```js
+map.on("click", "parks", (event) => {
+  new maplet.Popup()
+    .setLngLat(event.lngLat)
+    .setHTML(`<strong>${event.features[0].properties.name}</strong>`)
+    .addTo(map);
+});
+```
+
+`setText` shows plain text, `setHTML` simple formatted HTML, and `setDOMContent` an element you built. `setHTML` keeps text formatting, lists, tables, images and links, and drops scripts, styles, event handlers and anything else that could run code, so it's safe to fill with text from your data. For anything it doesn't allow, build the element yourself and use `setDOMContent`.
+
+Popups close when someone clicks the map, presses the × button or presses Escape inside them, and when you call `remove()`. `closeOnClick: false` and `closeButton: false` switch the first two off, and `closeOnMove: true` also closes the popup when the map starts moving. A popup opens on the side with the most room unless you set `anchor`, and `offset` moves it away from the point: a number, `[x, y]`, or one value per anchor. `maxWidth` is `"240px"` unless you say otherwise. `trackPointer()` makes the popup follow the mouse instead of a place. Popups fire `open` and `close`, and `isOpen()` tells you which state they're in.
+
+For screen readers, a marker with a popup acts as a button and a popup is a labelled dialog. Focus moves into a popup when it opens, unless you pass `focusAfterOpen: false`, and goes back to its marker when it closes. The labels come from the map's `locale` option.
 
 ## Tile files from the user's computer
 
