@@ -493,6 +493,19 @@ sky: {
 
 `color` is the sky high up and `horizonColor` the sky just above the horizon. `horizonBlend` says how far up the horizon color reaches, from 0 for none to 1 for halfway up the sky. The haze over the ground is a mix of `horizonColor` and `fogColor`, set by `horizonFogBlend` from 0 for all horizon to 1 for all fog. With [terrain](#terrain) on, the fog also covers the distant hills, starting `fogBlend` of the way from the middle of the map to the horizon. Every one of these can change with the zoom through an expression. [`setSky()`](api.md#sky) changes the sky while the map runs.
 
+## Day and night
+
+Add `sun` to a style and the map is lit by the sun at a date and time: the side of the Earth where the sun has set is in night, with twilight in between. It works on any map, vector or satellite, because it shades whatever is drawn.
+
+```js
+sun: { time: "now" }
+sun: { time: "2026-06-21T20:00:00Z", night: "#29335c", twilight: 12, shade: true }
+```
+
+`time` is `"now"`, which follows the clock and moves the night once a minute, or a date and time, either as text with a time zone or as milliseconds. `night` is the color the map is tinted with at night, so a darker color makes a darker night. `twilight` is how many degrees the sun has to sink below the horizon before it's fully night: 6 ends at the end of civil twilight, 12 at nautical and 18 at astronomical twilight. Around sunrise and sunset the light turns a little warm.
+
+With `shade` on, which it is unless you set it to `false`, the sun also lights the map in 3D. Buildings are lit on the side facing the sun, [hillshade](#hillshade) layers take their light from it, and [terrain](#terrain) is shaded by it, so mountains catch the low sun at dawn and dusk. The sky darkens at night too. Labels stay as they are, so they can still be read. [`setSun()`](api.md#day-and-night) changes it while the map runs.
+
 ## Styles from MapLibre and Mapbox
 
 Styles written for MapLibre GL JS or Mapbox GL JS, the ones with `"version": 8`, load as they are. Pass the object or its URL to the map, and Maplet turns it into its own style on the way in:
