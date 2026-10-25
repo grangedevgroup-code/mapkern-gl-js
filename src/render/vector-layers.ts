@@ -7,8 +7,10 @@ import type { StyleLayer } from "../style/layer.ts";
 import type { Terrain } from "../terrain/terrain.ts";
 import type { RenderPiece, TileManager } from "../tiles/manager.ts";
 import type { GL, Program, ProgramSource } from "./gl.ts";
+import { HeatmapResources } from "./heatmap.ts";
 import type { PaintBudget } from "./paint-table.ts";
 import type { FrameInput, PaintStats } from "./painter.ts";
+import { heatmapColorShader, heatmapShader } from "./shaders/heatmap.ts";
 import { circleShader, extrusionShader, fillOutlineShader, fillShader, lineShader } from "./shaders/vector.ts";
 
 type PaintUniform = { name: string; uniform: string; kind: "color" | "number" };
@@ -35,6 +37,11 @@ const EXTRUSION_PAINT: PaintUniform[] = [
   { name: "color", uniform: "u_color", kind: "color" },
   { name: "height", uniform: "u_height", kind: "number" },
   { name: "base", uniform: "u_base", kind: "number" },
+];
+
+const HEATMAP_PAINT: PaintUniform[] = [
+  { name: "radius", uniform: "u_radius", kind: "number" },
+  { name: "weight", uniform: "u_weight", kind: "number" },
 ];
 
 const CIRCLE_PAINT: PaintUniform[] = [
@@ -68,9 +75,19 @@ export class VectorPainter {
   private readonly matrix = new Float32Array(16);
   private readonly dash = new Float32Array(8);
   private boundStride = -1;
+  private readonly heat: HeatmapResources;
 
   constructor(gl: GL) {
     this.gl = gl;
+    this.heat = new HeatmapResources(gl);
+  }
+
+  reset(): void {
+    this.heat.reset();
+  }
+
+  destroy(): void {
+    this.heat.destroy();
   }
 
   draw(
@@ -93,9 +110,59 @@ export class VectorPainter {
       case "extrusion":
         this.drawExtrusion(frame, layer, manager, stats, pick);
         break;
+      case "heatmap":
+        if (!pick) this.drawHeatmap(frame, layer, manager, stats);
+        break;
       default:
         break;
     }
+  }
+
+  private drawHeatmap(frame: FrameInput, layer: StyleLayer, manager: TileManager<VectorTile>, stats: PaintStats): void {
+    const g = this.gl;
+    const gl = g.gl;
+    const [width, height] = frame.target ?? [gl.drawingBufferWidth, gl.drawingBufferHeight];
+    const target = this.heat.target(Math.max(1, Math.ceil(width / 2)), Math.max(1, Math.ceil(height / 2)));
+    if (!target) return;
+    const zoom = frame.view.zoom;
+    const states = frame.states?.(layer) ?? null;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+    g.setViewport(0, 0, target.width, target.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const program = this.program(heatmapShader, undefined);
+    g.setBlend("additive");
+    g.setDepth(false, false);
+    this.prepare(program, layer, zoom, HEATMAP_PAINT);
+    const u = program.uniforms;
+    gl.uniform1f(u.get("u_intensity") ?? null, Math.max(0, layer.paintValue<number>("intensity", { zoom })));
+    gl.uniform1f(u.get("u_scale") ?? null, target.scale);
+    gl.uniform2f(u.get("u_viewport") ?? null, frame.view.width, frame.view.height);
+    const near = frame.acceptNear ?? frame.accept;
+    for (const piece of manager.pieces) {
+      const bucket = piece.tile.data?.buckets.get(layer.id);
+      if (!bucket?.main || (near && !near(piece))) continue;
+      this.bindPaint(program, layer, bucket, zoom, HEATMAP_PAINT, states);
+      this.tileUniforms(program, frame, piece, bucket, undefined);
+      this.drawGeometry(bucket.main, stats);
+      stats.pieces++;
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, frame.framebuffer ?? null);
+    g.setViewport(0, 0, width, height);
+    const ramp = this.heat.ramp(layer, zoom);
+    const color = g.program(heatmapColorShader);
+    g.use(color);
+    g.setBlend("premultiplied");
+    g.bindTexture(0, target.texture);
+    g.bindTexture(1, ramp);
+    const c = color.uniforms;
+    gl.uniform1i(c.get("u_density") ?? null, 0);
+    gl.uniform1i(c.get("u_ramp") ?? null, 1);
+    gl.uniform1f(c.get("u_opacity") ?? null, Math.max(0, Math.min(1, layer.paintValue<number>("opacity", { zoom }))));
+    gl.uniform1f(c.get("u_unscale") ?? null, 1 / target.scale);
+    this.heat.drawQuad();
+    stats.drawCalls++;
+    this.boundStride = -1;
   }
 
   private program(source: ProgramSource, pick: PickPass | undefined): Program {
@@ -320,9 +387,10 @@ export class VectorPainter {
     gl.uniform1f(program.uniforms.get("u_pixel_ratio") ?? null, frame.pixelRatio);
     const [hx, hy] = pick ? pick.scale : [1, 1];
     gl.uniform2f(program.uniforms.get("u_viewport") ?? null, frame.view.width * hx, frame.view.height * hy);
+    const near = frame.acceptNear ?? frame.accept;
     for (const piece of manager.pieces) {
       const bucket = piece.tile.data?.buckets.get(layer.id);
-      if (!bucket?.main || (frame.accept && !frame.accept(piece))) continue;
+      if (!bucket?.main || (near && !near(piece))) continue;
       this.bindPaint(program, layer, bucket, zoom, CIRCLE_PAINT, states);
       this.tileUniforms(program, frame, piece, bucket, pick);
       this.drawGeometry(bucket.main, stats);
