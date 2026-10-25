@@ -23,7 +23,7 @@ export interface RasterSourceSpec extends TileSourceBase {
 
 export interface VectorSourceSpec extends TileSourceBase {
   type: "vector";
-  promoteId?: string;
+  promoteId?: string | Record<string, string>;
 }
 
 export type DemEncoding = "terrarium" | "mapbox" | { red: number; green: number; blue: number; offset: number };
@@ -45,6 +45,7 @@ export interface GeoJSONSourceSpec {
   buffer?: number;
   attribution?: string;
   promoteId?: string;
+  generateId?: boolean;
 }
 
 export type SourceSpec = RasterSourceSpec | VectorSourceSpec | DemSourceSpec | GeoJSONSourceSpec;
