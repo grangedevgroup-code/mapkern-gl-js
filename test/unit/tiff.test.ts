@@ -134,7 +134,7 @@ function writeTiff(o: WriteOptions): Uint8Array {
           [323, 4, [bh]],
           [324, o.big ? 16 : 4, offsets],
           [325, 4, blocks.map((b) => b.length)],
-        ] as [number, number, number[]][])
+        ] as Tag[])
       : ([
           [273, o.big ? 16 : 4, offsets],
           [278, 4, [bh]],
