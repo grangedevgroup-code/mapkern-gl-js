@@ -128,17 +128,126 @@ export const CSS = `
   top: 0;
   left: 0;
   z-index: 3;
+  display: flex;
   pointer-events: none;
   will-change: transform;
 }
 .maplet-popup-content {
   pointer-events: auto;
   position: relative;
-  max-width: 280px;
+  box-sizing: border-box;
   padding: 10px 12px;
   border-radius: 8px;
   background: var(--maplet-control-bg, #ffffff);
   box-shadow: 0 2px 12px rgba(16, 25, 29, 0.18);
+  overflow-wrap: break-word;
+}
+.maplet-popup-content:has(> .maplet-popup-close) {
+  padding-right: 30px;
+}
+.maplet-popup-close {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: 18px/24px system-ui, sans-serif;
+  cursor: pointer;
+}
+.maplet-popup-close:hover {
+  background: rgba(16, 25, 29, 0.06);
+}
+.maplet-popup-close:focus-visible {
+  outline: 2px solid var(--maplet-focus, #2f6fdb);
+  outline-offset: -2px;
+}
+.maplet-popup-tip {
+  flex: none;
+  width: 0;
+  height: 0;
+  border: 8px solid transparent;
+  z-index: 1;
+}
+.maplet-popup-anchor-top,
+.maplet-popup-anchor-top-left,
+.maplet-popup-anchor-top-right {
+  flex-direction: column;
+}
+.maplet-popup-anchor-bottom,
+.maplet-popup-anchor-bottom-left,
+.maplet-popup-anchor-bottom-right {
+  flex-direction: column-reverse;
+}
+.maplet-popup-anchor-left {
+  flex-direction: row;
+}
+.maplet-popup-anchor-right {
+  flex-direction: row-reverse;
+}
+.maplet-popup-anchor-center .maplet-popup-tip {
+  display: none;
+}
+.maplet-popup-anchor-top .maplet-popup-tip {
+  align-self: center;
+  border-top: none;
+  border-bottom-color: var(--maplet-control-bg, #ffffff);
+}
+.maplet-popup-anchor-top-left .maplet-popup-tip {
+  align-self: flex-start;
+  border-top: none;
+  border-left: none;
+  border-bottom-color: var(--maplet-control-bg, #ffffff);
+}
+.maplet-popup-anchor-top-right .maplet-popup-tip {
+  align-self: flex-end;
+  border-top: none;
+  border-right: none;
+  border-bottom-color: var(--maplet-control-bg, #ffffff);
+}
+.maplet-popup-anchor-bottom .maplet-popup-tip {
+  align-self: center;
+  border-bottom: none;
+  border-top-color: var(--maplet-control-bg, #ffffff);
+}
+.maplet-popup-anchor-bottom-left .maplet-popup-tip {
+  align-self: flex-start;
+  border-bottom: none;
+  border-left: none;
+  border-top-color: var(--maplet-control-bg, #ffffff);
+}
+.maplet-popup-anchor-bottom-right .maplet-popup-tip {
+  align-self: flex-end;
+  border-bottom: none;
+  border-right: none;
+  border-top-color: var(--maplet-control-bg, #ffffff);
+}
+.maplet-popup-anchor-left .maplet-popup-tip {
+  align-self: center;
+  border-left: none;
+  border-right-color: var(--maplet-control-bg, #ffffff);
+}
+.maplet-popup-anchor-right .maplet-popup-tip {
+  align-self: center;
+  border-right: none;
+  border-left-color: var(--maplet-control-bg, #ffffff);
+}
+.maplet-popup-anchor-top-left .maplet-popup-content {
+  border-top-left-radius: 0;
+}
+.maplet-popup-anchor-top-right .maplet-popup-content {
+  border-top-right-radius: 0;
+}
+.maplet-popup-anchor-bottom-left .maplet-popup-content {
+  border-bottom-left-radius: 0;
+}
+.maplet-popup-anchor-bottom-right .maplet-popup-content {
+  border-bottom-right-radius: 0;
 }
 .maplet-marker {
   position: absolute;
@@ -146,6 +255,28 @@ export const CSS = `
   left: 0;
   z-index: 1;
   will-change: transform;
+}
+.maplet-marker[role="button"] {
+  cursor: pointer;
+}
+.maplet-marker:focus-visible {
+  outline: 2px solid var(--maplet-focus, #2f6fdb);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.maplet-marker-draggable {
+  cursor: grab;
+}
+.maplet-marker-dragging {
+  cursor: grabbing;
+}
+.maplet-marker-pin {
+  line-height: 0;
+}
+.maplet-marker-pin svg {
+  display: block;
+  overflow: visible;
+  filter: drop-shadow(0 1px 2px rgba(16, 25, 29, 0.35));
 }
 @media (prefers-reduced-motion: reduce) {
   .maplet-compass svg {
