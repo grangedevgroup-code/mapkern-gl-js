@@ -88,9 +88,9 @@ export function hiddenOutlines(shapes: readonly Shape[], extent: number): Uint8A
     for (const p of cells[row(cy) * CELLS + column(cx)]!) {
       if (p === q || !encloses(p, q)) continue;
       if (!within(shapes[q]!.rings[0]!, shapes[p]!.rings, slack)) continue;
-      let list = parts.get(p);
-      if (!list) parts.set(p, (list = []));
-      list.push(q);
+      const list = parts.get(p);
+      if (list) list.push(q);
+      else parts.set(p, [q]);
     }
   }
   for (const [p, list] of parts) {
