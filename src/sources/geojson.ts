@@ -1,8 +1,9 @@
 import type { Transform } from "../camera/transform.ts";
 import { errorMessage, MapletError } from "../core/errors.ts";
 import type { Rect, TileCoord } from "../geo/tile.ts";
+import { changedKeys } from "../style/diff.ts";
 import type { StyleLayer } from "../style/layer.ts";
-import type { GeoJSONData, GeoJSONSourceSpec } from "../style/types.ts";
+import type { GeoJSONData, GeoJSONSourceSpec, SourceSpec } from "../style/types.ts";
 import { FetchFailure, fetchBytes, resolveRequest, retryDelay } from "../tiles/fetch.ts";
 import type { TileStats, Tiling } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
@@ -92,6 +93,14 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
       },
       tileEvents(this.id, this.ctx),
     );
+  }
+
+  adopt(spec: SourceSpec): boolean {
+    if (spec.type !== "geojson") return false;
+    const keys = changedKeys(this.spec, spec);
+    if (!keys.every((key) => key === "data")) return false;
+    if (keys.length > 0) this.setData(spec.data);
+    return true;
   }
 
   setData(data: GeoJSONData): this {
