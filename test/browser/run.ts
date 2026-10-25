@@ -990,6 +990,102 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "box zoom, max bounds and padding steer the camera",
+    async run({ page, base, shot }) {
+      await createMap(page, rasterStyle(base, "/fixture/raster"));
+      const target = await page.evaluate<[number, number]>("window.map.unproject([200, 150])");
+      await page.evaluate(`(() => {
+        window.boxLog = [];
+        for (const type of ["boxzoomstart", "boxzoomend", "boxzoomcancel"]) window.map.on(type, () => window.boxLog.push(type));
+      })()`);
+      await page.mouse("mouseMoved", 100, 100);
+      await page.mouse("mousePressed", 100, 100, { buttons: 1, modifiers: 8 });
+      for (let i = 1; i <= 8; i++) {
+        await page.mouse("mouseMoved", 100 + i * 25, 100 + i * 12.5, { buttons: 1, modifiers: 8 });
+        await new Promise((r) => setTimeout(r, 15));
+      }
+      const drawn = await page.evaluate<number>("document.querySelectorAll('.maplet-boxzoom').length");
+      await page.mouse("mouseReleased", 300, 200, { buttons: 0, modifiers: 8 });
+      await idle(page);
+      const zoom = await page.evaluate<number>("window.map.getZoom()");
+      const center = await page.evaluate<[number, number]>("window.map.getCenter()");
+      if (drawn !== 1) fail(`expected the box outline while dragging, found ${drawn}`);
+      if (Math.abs(zoom - 5) > 0.02) fail(`expected box zoom to land on zoom 5, got ${zoom}`);
+      if (Math.hypot(center[0] - target[0], center[1] - target[1]) > 0.05)
+        fail(`expected the box centre ${target} in the middle, got ${center}`);
+      const boxLog = await page.evaluate<string[]>("window.boxLog");
+      if (JSON.stringify(boxLog) !== JSON.stringify(["boxzoomstart", "boxzoomend"]))
+        fail(`unexpected box zoom events ${JSON.stringify(boxLog)}`);
+      const left = await page.evaluate<number>("document.querySelectorAll('.maplet-boxzoom').length");
+      if (left !== 0) fail("the box outline stayed after the zoom");
+
+      await page.evaluate(`void window.map.jumpTo({ center: [0, 0], zoom: 6 }).setMaxBounds([[-10, -10], [10, 10]])`);
+      await page.evaluate("void window.map.setZoom(1)");
+      await idle(page);
+      const bounded = await page.evaluate<{ zoom: number; bounds: number[][]; max: number[][] }>(
+        "({ zoom: window.map.getZoom(), bounds: window.map.getBounds(), max: window.map.getMaxBounds() })",
+      );
+      const [[w, s], [e, n]] = bounded.bounds as [[number, number], [number, number]];
+      if (w < -10.001 || e > 10.001 || s < -10.001 || n > 10.001)
+        fail(`the view ${JSON.stringify(bounded.bounds)} left the max bounds at zoom ${bounded.zoom}`);
+      if (Math.abs(bounded.max[0]![0]! + 10) > 1e-6 || Math.abs(bounded.max[1]![1]! - 10) > 1e-6)
+        fail(`getMaxBounds returned ${JSON.stringify(bounded.max)}`);
+      await page.mouse("mouseMoved", 400, 300);
+      await page.mouse("mousePressed", 400, 300, { buttons: 1 });
+      for (let i = 1; i <= 10; i++) {
+        await page.mouse("mouseMoved", 400 + i * 40, 300, { buttons: 1 });
+        await new Promise((r) => setTimeout(r, 15));
+      }
+      await page.mouse("mouseReleased", 800, 300, { buttons: 0 });
+      await idle(page);
+      const dragged = await page.evaluate<number[][]>("window.map.getBounds()");
+      if (dragged[0]![0]! < -10.001) fail(`dragging pulled the view past the west edge: ${JSON.stringify(dragged)}`);
+      await page.evaluate("void window.map.setMaxBounds(null).setZoom(1)");
+      await idle(page);
+      const free = await page.evaluate<number>("window.map.getZoom()");
+      if (Math.abs(free - 1) > 1e-9) fail(`removing max bounds should allow zoom 1, got ${free}`);
+
+      await page.evaluate("void window.map.jumpTo({ center: [0, 0], zoom: 4 }).setPadding({ left: 300 })");
+      await idle(page);
+      await shot("padding-left-300");
+      const padded = await page.evaluate<{ x: number; y: number; center: number[]; padding: unknown }>(
+        "({ ...window.map.project(window.map.getCenter()), center: window.map.getCenter(), padding: window.map.getPadding() })",
+      );
+      if (Math.abs(padded.x - 550) > 0.5 || Math.abs(padded.y - 300) > 0.5)
+        fail(`with 300 px left padding the centre should sit at 550,300, got ${padded.x},${padded.y}`);
+      if (JSON.stringify(padded.padding) !== JSON.stringify({ top: 0, right: 0, bottom: 0, left: 300 }))
+        fail(`getPadding returned ${JSON.stringify(padded.padding)}`);
+      const onLine = await brightness(page, 550, 200);
+      const offLine = await brightness(page, 400, 200);
+      if (onLine > 60 || offLine < 80)
+        fail(`the tile edge at longitude 0 should be drawn at x=550, brightness ${onLine} there and ${offLine} at 400`);
+      await page.evaluate("void window.map.fitBounds([[-10, -10], [10, 10]], { animate: false })");
+      await idle(page);
+      const fitted = await page.evaluate<{ x: number; y: number }>("window.map.project([0, 0])");
+      if (Math.abs(fitted.x - 550) > 1 || Math.abs(fitted.y - 300) > 1)
+        fail(`fitBounds should centre the bounds in the free area at 550,300, got ${fitted.x},${fitted.y}`);
+      await page.evaluate("void window.map.easeTo({ padding: 0, duration: 0 })");
+      await idle(page);
+      const reset = await page.evaluate<{ x: number; y: number }>("window.map.project(window.map.getCenter())");
+      if (Math.abs(reset.x - 400) > 0.5)
+        fail(`easeTo({ padding: 0 }) should move the centre back to 400, got ${reset.x}`);
+
+      await page.evaluate("window.map.remove()");
+      await createMap(page, rasterStyle(base, "/fixture/raster"), {
+        bounds: [
+          [-20, -10],
+          [20, 10],
+        ],
+      });
+      const start = await page.evaluate<{ center: number[]; zoom: number }>(
+        "({ center: window.map.getCenter(), zoom: window.map.getZoom() })",
+      );
+      const expectedZoom = Math.log2(Math.min(800 / ((40 / 360) * 512), 600 / (0.0558398 * 512)));
+      if (Math.abs(start.zoom - expectedZoom) > 0.05 || Math.hypot(start.center[0]!, start.center[1]!) > 1e-6)
+        fail(`the bounds option should start at zoom ${expectedZoom} over 0,0, got ${JSON.stringify(start)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
