@@ -247,7 +247,7 @@ export class LabelRenderer {
   ): boolean {
     const parts: string[] = [`images:${this.images.version}`];
     for (const { layer, manager, states } of inputs) {
-      parts.push(`${layer.id}:${layer.revision}:${states?.version ?? 0}`);
+      parts.push(`${layer.id}:${layer.revision}:${layer.motion}:${states?.version ?? 0}`);
       for (const piece of manager.pieces) {
         if (piece.tile.data?.buckets.has(layer.id))
           parts.push(`${piece.tile.key}/${piece.tile.revision}/${piece.wrap}`);
