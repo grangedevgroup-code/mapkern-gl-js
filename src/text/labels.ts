@@ -9,7 +9,7 @@ import type { StyleLayer } from "../style/layer.ts";
 import type { RenderPiece, TileManager } from "../tiles/manager.ts";
 import type { Tile } from "../tiles/tile.ts";
 import type { Anchor } from "../ui/anchor.ts";
-import { anchorOffsets, anchorShift } from "../ui/anchor.ts";
+import { anchorOffsets, anchorShift, isAnchor } from "../ui/anchor.ts";
 import type { FontSpec, GlyphMetrics } from "./glyphs.ts";
 import { cssFamily, GLYPH_SIZE, GlyphAtlas, needsWholeShaping, SDF_RADIUS, splitGraphemes } from "./glyphs.ts";
 import { ICON_SDF_RADIUS, iconShader } from "./icon-shader.ts";
@@ -469,28 +469,46 @@ export class LabelRenderer {
   private layoutCache = new Map<string, Laid>();
   private layoutGeneration = -1;
 
-  private layout(layer: StyleLayer, text: string, line: boolean, budget: { left: number }): Laid | null {
+  private layout(
+    layer: StyleLayer,
+    text: string,
+    line: boolean,
+    budget: { left: number },
+    shape: TextShape,
+  ): Laid | null {
     if (this.layoutGeneration !== this.atlas.generation || this.layoutCache.size > 6000) {
       this.layoutCache.clear();
       this.layoutGeneration = this.atlas.generation;
     }
-    const cacheKey = `${layer.id}#${layer.revision}#${line ? 1 : 0}#${text}`;
+    const cacheKey = `${layer.id}#${layer.revision}#${line ? 1 : 0}#${shape.letterSpacing}#${shape.lineHeight}#${shape.maxWidth}#${text}`;
     const cached = this.layoutCache.get(cacheKey);
     if (cached) return cached;
-    const laid = this.computeLayout(layer, text, line, budget);
+    const laid = this.computeLayout(layer, line ? text.replace(/\n/g, " ") : text, line, budget, shape);
     if (laid) this.layoutCache.set(cacheKey, laid);
     return laid;
   }
 
-  private computeLayout(layer: StyleLayer, text: string, line: boolean, budget: { left: number }): Laid | null {
+  private computeLayout(
+    layer: StyleLayer,
+    text: string,
+    line: boolean,
+    budget: { left: number },
+    shape: TextShape,
+  ): Laid | null {
     const font = this.font(layer);
     const whole = needsWholeShaping(text);
     if (whole && line) return null;
-    const units = whole ? [text] : splitGraphemes(text);
+    const units = whole
+      ? text.split("\n").flatMap((part, i) => (i === 0 ? [part] : ["\n", part]))
+      : splitGraphemes(text);
     const glyphs: Glyph[] = [];
-    const spacing = layer.fixed<number>("letterSpacing") * GLYPH_SIZE;
+    const spacing = shape.letterSpacing * GLYPH_SIZE;
     const metrics: (GlyphMetrics | null)[] = [];
     for (const u of units) {
+      if (u === "\n") {
+        metrics.push(null);
+        continue;
+      }
       let m = this.atlas.get(font, u);
       if (m === undefined) {
         if (budget.left <= 0) {
@@ -502,14 +520,21 @@ export class LabelRenderer {
       }
       metrics.push(m ?? null);
     }
-    const lineHeight = GLYPH_SIZE * layer.fixed<number>("lineHeight");
-    const maxWidth = line ? Number.POSITIVE_INFINITY : layer.fixed<number>("maxWidth") * GLYPH_SIZE;
+    const lineHeight = GLYPH_SIZE * shape.lineHeight;
+    const maxWidth = line ? Number.POSITIVE_INFINITY : shape.maxWidth * GLYPH_SIZE;
     const lines: { start: number; end: number; width: number }[] = [];
     let start = 0;
     let x = 0;
     let lastBreak = -1;
     let widthAtBreak = 0;
     for (let i = 0; i < units.length; i++) {
+      if (units[i] === "\n") {
+        lines.push({ start, end: i, width: x });
+        start = i + 1;
+        x = 0;
+        lastBreak = -1;
+        continue;
+      }
       const m = metrics[i];
       const advance = (m?.advance ?? 0) + spacing;
       if (units[i] === " ") {
@@ -543,7 +568,6 @@ export class LabelRenderer {
   }
 
   private textPlacement(
-    layer: StyleLayer,
     laid: Laid,
     anchor: Anchor,
     scale: number,
@@ -551,10 +575,10 @@ export class LabelRenderer {
     y: number,
     rotate: number,
     padding: number,
+    style: TextStyle,
   ): TextPlacement {
-    const variable = layer.fixed<Anchor[] | null>("variableAnchor");
-    const radial = layer.fixed<number | null>("radialOffset");
-    const [ox, oy] = layer.fixed<[number, number]>("offset");
+    const { variable, radial } = style;
+    const [ox, oy] = style.offset;
     let dx = ox;
     let dy = oy;
     if (radial !== null) {
@@ -567,7 +591,7 @@ export class LabelRenderer {
     const [sx, sy] = anchorShift(anchor);
     const offsetX = sx * laid.width + dx * GLYPH_SIZE;
     const offsetY = sy * laid.height + dy * GLYPH_SIZE;
-    const mode = layer.fixed<string>("justify");
+    const mode = style.justify;
     const justify = mode === "auto" ? (sx === 0 ? 0 : sx === -1 ? 1 : 0.5) : (JUSTIFY[mode] ?? 0.5);
     const x0 = offsetX * scale;
     const y0 = offsetY * scale;
@@ -628,23 +652,21 @@ export class LabelRenderer {
     for (let li = inputs.length - 1; li >= 0; li--) {
       const { layer, manager, states } = inputs[li]!;
       if (!layer.isVisible(zoom)) continue;
-      const allowOverlap = layer.fixed<boolean>("allowOverlap");
-      const padding = layer.fixed<number>("padding");
-      const spacing = layer.fixed<number>("spacing");
-      const textOptional = layer.fixed<boolean>("optional");
-      const iconAnchor = layer.fixed<Anchor>("iconAnchor");
-      const iconOffset = layer.fixed<[number, number]>("iconOffset");
-      const iconPadding = layer.fixed<number>("iconPadding");
-      const iconAllowOverlap = layer.fixed<boolean>("iconAllowOverlap");
-      const iconOptional = layer.fixed<boolean>("iconOptional");
-      const alignment = layer.fixed<string>("iconRotationAlignment");
-      const linePlacement = layer.fixed<string>("placement") !== "point";
-      const alignMap = alignment === "map" || (alignment === "auto" && linePlacement);
-      const ignoreText = layer.fixed<boolean>("ignorePlacement");
-      const ignoreIcon = layer.fixed<boolean>("iconIgnorePlacement");
-      const maxAngle = (layer.fixed<number>("maxAngle") * Math.PI) / 180;
-      const keepUpright = layer.fixed<boolean>("keepUpright");
-      const fixedAnchor = layer.fixed<Anchor>("anchor");
+      const at: EvalContext = { zoom };
+      const allowOverlap = layer.layoutValue<unknown>("allowOverlap", at) === true;
+      const padding = numberOr(layer.layoutValue<unknown>("padding", at), 2);
+      const spacing = numberOr(layer.layoutValue<unknown>("spacing", at), 250);
+      const textOptional = layer.layoutValue<unknown>("optional", at) === true;
+      const iconPadding = numberOr(layer.layoutValue<unknown>("iconPadding", at), 2);
+      const iconAllowOverlap = layer.layoutValue<unknown>("iconAllowOverlap", at) === true;
+      const iconOptional = layer.layoutValue<unknown>("iconOptional", at) === true;
+      const alignment = layer.layoutValue<unknown>("iconRotationAlignment", at);
+      const textAlignment = layer.layoutValue<unknown>("rotationAlignment", at);
+      const ignoreText = layer.layoutValue<unknown>("ignorePlacement", at) === true;
+      const ignoreIcon = layer.layoutValue<unknown>("iconIgnorePlacement", at) === true;
+      const maxAngle = (numberOr(layer.layoutValue<unknown>("maxAngle", at), 45) * Math.PI) / 180;
+      const keepUpright = layer.layoutValue<unknown>("keepUpright", at) !== false;
+      const lineHeight = numberOr(layer.layoutValue<unknown>("lineHeight", at), 1.2);
       const variable = layer.fixed<Anchor[] | null>("variableAnchor");
       const [textShiftX, textShiftY] = screenShift(
         layer.fixed<[number, number]>("translate"),
@@ -690,9 +712,16 @@ export class LabelRenderer {
         const fi = labels.feature[i]!;
         const featureId = bucket.features.id(fi);
         const dedupeKey = `${layer.id}|${text}|${labels.icons?.[i] ?? ""}`;
+        const alignMap = alignment === "map" || (alignment !== "viewport" && isLine);
+        const followLine = isLine && textAlignment !== "viewport";
         let featureReady = false;
         let iconId = "";
         let iconStyle: IconStyle | null = null;
+        let fixedAnchor: Anchor = "center";
+        let iconAnchor: Anchor = "center";
+        let iconOffset: [number, number] = [0, 0];
+        let textStyle: TextStyle = { variable, radial: null, offset: [0, 0], justify: "center" };
+        let shape: TextShape = { letterSpacing: 0, lineHeight, maxWidth: 10 };
         for (let a = 0; a < anchors.length; a += 3) {
           const tx = anchors[a]! / extent;
           const ty = anchors[a + 1]! / extent;
@@ -706,8 +735,6 @@ export class LabelRenderer {
           if (p.x < -margin || p.y < -margin || p.x > transform.width + margin || p.y > transform.height + margin)
             continue;
           if (terrain?.hidden(wx, wy, wz)) continue;
-          const laid = text ? this.layout(layer, text, isLine, budget) : EMPTY_LAID;
-          if (!laid) continue;
           if (!featureReady) {
             ctx.feature = {
               properties: bucket.features.fill(fi, scratch),
@@ -716,6 +743,22 @@ export class LabelRenderer {
             };
             ctx.state = featureId !== undefined ? states?.get(featureId) : undefined;
             featureReady = true;
+            fixedAnchor = anchorOr(layer.layoutValue<unknown>("anchor", ctx));
+            iconAnchor = anchorOr(layer.layoutValue<unknown>("iconAnchor", ctx));
+            iconOffset = pairOr(layer.layoutValue<unknown>("iconOffset", ctx));
+            const radial = layer.layoutValue<unknown>("radialOffset", ctx);
+            const justify = layer.layoutValue<unknown>("justify", ctx);
+            textStyle = {
+              variable,
+              radial: typeof radial === "number" && Number.isFinite(radial) ? radial : null,
+              offset: pairOr(layer.layoutValue<unknown>("offset", ctx)),
+              justify: typeof justify === "string" && justify in JUSTIFY_MODES ? justify : "center",
+            };
+            shape = {
+              letterSpacing: numberOr(layer.layoutValue<unknown>("letterSpacing", ctx), 0),
+              lineHeight,
+              maxWidth: numberOr(layer.layoutValue<unknown>("maxWidth", ctx), 10),
+            };
             const icon = layer.layoutValue<unknown>("icon", ctx);
             iconId = typeof icon === "string" ? icon : "";
             if (iconId) {
@@ -729,6 +772,8 @@ export class LabelRenderer {
               };
             }
           }
+          const laid = text ? this.layout(layer, text, followLine, budget, shape) : EMPTY_LAID;
+          if (!laid) continue;
           const perspective = Math.max(0.7, Math.min(1, 1.3 - 0.3 * depth));
           const anchorDist = anchors[a + 2]! / extent / n;
           const icon =
@@ -748,7 +793,7 @@ export class LabelRenderer {
           const size = layer.layoutValue<number>("size", ctx);
           const scale = (size / GLYPH_SIZE) * perspective;
           const w = laid.width * scale;
-          const rotate = isLine ? 0 : (layer.layoutValue<number>("rotate", ctx) * Math.PI) / 180;
+          const rotate = followLine ? 0 : (layer.layoutValue<number>("rotate", ctx) * Math.PI) / 180;
           const minDist = isLine ? Math.max(spacing, w * 1.5) : Math.max(80, w * 1.2);
           const key = `${dedupeKey}|${featureId ?? ""}|${Math.round((wx * ws) / 4)}|${Math.round((wy * ws) / 4)}`;
           const existing = this.labels.get(key);
@@ -767,7 +812,7 @@ export class LabelRenderer {
               heights = new Float64Array(path.length / 2);
               for (let k = 0; k < heights.length; k++) heights[k] = terrain.height(path[k * 2]!, path[k * 2 + 1]!);
             }
-            if (text) {
+            if (text && followLine) {
               const quads = layoutAlongPath(transform, path, anchorDist, laid, scale, heights, maxAngle, keepUpright);
               if (!quads) continue;
               for (const q of quads) {
@@ -783,11 +828,10 @@ export class LabelRenderer {
           }
           let chosen: TextPlacement | null = null;
           let textHit = false;
-          if (text && !isLine) {
+          if (text && !followLine) {
             const tries = variable && variable.length > 0 ? preferred(variable, existing?.anchor) : [fixedAnchor];
             for (const anchor of tries) {
               const candidate = this.textPlacement(
-                layer,
                 laid,
                 anchor,
                 scale,
@@ -795,6 +839,7 @@ export class LabelRenderer {
                 p.y + textShiftY,
                 rotate,
                 padding,
+                textStyle,
               );
               if (allowOverlap || !gridHits(grid, candidate.boxes)) {
                 chosen = candidate;
@@ -804,7 +849,6 @@ export class LabelRenderer {
             if (!chosen) {
               textHit = true;
               chosen = this.textPlacement(
-                layer,
                 laid,
                 tries[0]!,
                 scale,
@@ -812,6 +856,7 @@ export class LabelRenderer {
                 p.y + textShiftY,
                 rotate,
                 padding,
+                textStyle,
               );
             }
             boxes = chosen.boxes;
@@ -861,6 +906,7 @@ export class LabelRenderer {
             existing.wx = wx;
             existing.wy = wy;
             existing.wz = wz;
+            existing.line = followLine;
             existing.path = path;
             existing.heights = heights;
             existing.anchorDist = anchors[a + 2]! / extent / n;
@@ -890,7 +936,7 @@ export class LabelRenderer {
               dedupe: dedupeKey,
               layer,
               text,
-              line: isLine,
+              line: followLine,
               wx,
               wy,
               wz,
@@ -1365,4 +1411,33 @@ function layoutAlongPath(
     out.push({ glyph: g, cx, cy, angle, advance });
   }
   return out;
+}
+
+interface TextShape {
+  letterSpacing: number;
+  lineHeight: number;
+  maxWidth: number;
+}
+
+interface TextStyle {
+  variable: Anchor[] | null;
+  radial: number | null;
+  offset: [number, number];
+  justify: string;
+}
+
+const JUSTIFY_MODES: Record<string, true> = { auto: true, left: true, center: true, right: true };
+
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function pairOr(value: unknown): [number, number] {
+  return Array.isArray(value) && value.length === 2 && typeof value[0] === "number" && typeof value[1] === "number"
+    ? [value[0], value[1]]
+    : [0, 0];
+}
+
+function anchorOr(value: unknown): Anchor {
+  return typeof value === "string" && isAnchor(value) ? value : "center";
 }
