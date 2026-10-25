@@ -190,10 +190,10 @@ export interface SymbolLayerSpec extends SourceLayerBase {
   type: "symbol";
   layout?: {
     text?: Value<string>;
-    font?: string[];
+    font?: Value<string[]>;
     size?: Value<number>;
-    weight?: "normal" | "bold";
-    italic?: boolean;
+    weight?: Value<"normal" | "bold">;
+    italic?: Value<boolean>;
     placement?: Value<"point" | "line" | "line-center">;
     anchor?: Value<SymbolAnchor>;
     variableAnchor?: SymbolAnchor[];
