@@ -1,5 +1,6 @@
 import type { Transform } from "../camera/transform.ts";
 import type { GL } from "../render/gl.ts";
+import { ImageAtlas } from "../render/images.ts";
 import type { VectorBucket, VectorTile } from "../sources/vector.ts";
 import type { RGBA } from "../style/color.ts";
 import type { EvalContext, GeometryType } from "../style/expression.ts";
@@ -7,8 +8,11 @@ import type { StateLookup } from "../style/feature-state.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { RenderPiece, TileManager } from "../tiles/manager.ts";
 import type { Tile } from "../tiles/tile.ts";
+import type { Anchor } from "../ui/anchor.ts";
+import { anchorShift } from "../ui/anchor.ts";
 import type { FontSpec, GlyphMetrics } from "./glyphs.ts";
 import { cssFamily, GLYPH_SIZE, GlyphAtlas, needsWholeShaping, SDF_RADIUS, splitGraphemes } from "./glyphs.ts";
+import { ICON_SDF_RADIUS, iconShader } from "./icon-shader.ts";
 import { textShader } from "./shader.ts";
 
 export interface SymbolLayerInput {
@@ -30,6 +34,37 @@ interface Laid {
   offsetX: number;
   offsetY: number;
 }
+
+interface IconPart {
+  id: string;
+  width: number;
+  height: number;
+  left: number;
+  top: number;
+  size: number;
+  rotate: number;
+  alignMap: boolean;
+  alongLine: boolean;
+  segment: number;
+  color: RGBA;
+  halo: RGBA;
+  haloWidth: number;
+  opacity: number;
+  sdf: boolean;
+  pixelRatio: number;
+}
+
+interface IconStyle {
+  size: number;
+  rotate: number;
+  color: RGBA;
+  halo: RGBA;
+  haloWidth: number;
+  opacity: number;
+}
+
+const EMPTY_LAID: Laid = { glyphs: [], width: 0, height: 0, offsetX: 0, offsetY: 0 };
+const DEG = Math.PI / 180;
 
 export interface LabelTerrain {
   height(x: number, y: number): number;
@@ -61,6 +96,8 @@ interface Label {
   bucket: VectorBucket;
   feature: number;
   boxes: number[];
+  showText: boolean;
+  icon: IconPart | null;
 }
 
 export interface LabelHit {
@@ -117,6 +154,7 @@ class CollisionGrid {
 
 export class LabelRenderer {
   readonly atlas = new GlyphAtlas();
+  readonly images = new ImageAtlas();
   private readonly gl: GL;
   private labels = new Map<string, Label>();
   private lastPlacement = Number.NEGATIVE_INFINITY;
@@ -131,6 +169,13 @@ export class LabelRenderer {
   private glyphCount = 0;
   private atlasGeneration = -1;
   private pendingGlyphs = false;
+  private iconTexture: WebGLTexture | null = null;
+  private iconVao: WebGLVertexArrayObject | null = null;
+  private iconBuffer: WebGLBuffer | null = null;
+  private iconData = new ArrayBuffer(STRIDE * 4 * 64);
+  private iconCount = 0;
+  private iconGeneration = -1;
+  private readonly missing = new Set<string>();
   visibleCount = 0;
 
   constructor(gl: GL) {
@@ -146,6 +191,10 @@ export class LabelRenderer {
     this.atlasGeneration = -1;
     this.atlas.resized = true;
     this.atlas.dirty = null;
+    this.iconTexture = null;
+    this.iconVao = null;
+    this.iconBuffer = null;
+    this.iconGeneration = -1;
   }
 
   destroy(): void {
@@ -153,8 +202,18 @@ export class LabelRenderer {
     this.gl.deleteBuffer(this.vertexBuffer);
     this.gl.deleteBuffer(this.indexBuffer);
     this.gl.deleteVertexArray(this.vao);
+    this.gl.deleteTexture(this.iconTexture);
+    this.gl.deleteBuffer(this.iconBuffer);
+    this.gl.deleteVertexArray(this.iconVao);
     this.reset();
     this.labels.clear();
+  }
+
+  takeMissing(): string[] {
+    if (this.missing.size === 0) return [];
+    const out = [...this.missing];
+    this.missing.clear();
+    return out;
   }
 
   update(
@@ -165,7 +224,7 @@ export class LabelRenderer {
     pixelRatio: number,
     terrain: LabelTerrain | null = null,
   ): boolean {
-    const parts: string[] = [];
+    const parts: string[] = [`images:${this.images.version}`];
     for (const { layer, manager, states } of inputs) {
       parts.push(`${layer.id}:${layer.revision}:${states?.version ?? 0}`);
       for (const piece of manager.pieces) {
@@ -219,7 +278,8 @@ export class LabelRenderer {
   }
 
   draw(transform: Transform, pixelRatio: number): number {
-    if (this.glyphCount === 0) return 0;
+    const icons = this.drawIcons(transform, pixelRatio);
+    if (this.glyphCount === 0) return icons;
     const g = this.gl;
     const gl = g.gl;
     this.syncAtlas();
@@ -239,7 +299,103 @@ export class LabelRenderer {
       gl.drawElements(gl.TRIANGLES, this.glyphCount * 6, gl.UNSIGNED_INT, 0);
     }
     gl.bindVertexArray(null);
+    return icons + 2;
+  }
+
+  private drawIcons(transform: Transform, pixelRatio: number): number {
+    if (this.iconCount === 0) return 0;
+    const g = this.gl;
+    const gl = g.gl;
+    this.syncIcons();
+    const program = g.program(iconShader);
+    g.use(program);
+    g.setBlend("premultiplied");
+    g.setDepth(false, false);
+    g.bindTexture(0, this.iconTexture);
+    gl.uniform1i(program.uniforms.get("u_atlas") ?? null, 0);
+    gl.uniform2f(program.uniforms.get("u_viewport") ?? null, transform.width, transform.height);
+    gl.uniform2f(program.uniforms.get("u_atlas_size") ?? null, this.images.width, this.images.height);
+    gl.uniform1f(program.uniforms.get("u_pixel_ratio") ?? null, pixelRatio);
+    gl.uniform1f(program.uniforms.get("u_radius") ?? null, ICON_SDF_RADIUS);
+    gl.bindVertexArray(this.iconVao);
+    for (const pass of [0, 1]) {
+      gl.uniform1i(program.uniforms.get("u_pass") ?? null, pass);
+      gl.drawElements(gl.TRIANGLES, this.iconCount * 6, gl.UNSIGNED_INT, 0);
+    }
+    gl.bindVertexArray(null);
     return 2;
+  }
+
+  private syncIcons(): void {
+    const gl = this.gl.gl;
+    const images = this.images;
+    if (!this.iconTexture || this.iconGeneration !== images.generation) {
+      if (!this.iconTexture) this.iconTexture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, this.iconTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, images.width, images.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, images.data);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      this.iconGeneration = images.generation;
+      images.dirty = null;
+      return;
+    }
+    if (images.dirty) {
+      const { y0, y1 } = images.dirty;
+      gl.bindTexture(gl.TEXTURE_2D, this.iconTexture);
+      gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        0,
+        y0,
+        images.width,
+        y1 - y0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        images.data.subarray(y0 * images.width * 4, y1 * images.width * 4),
+      );
+      images.dirty = null;
+    }
+  }
+
+  private iconPart(
+    id: string,
+    style: IconStyle,
+    anchor: Anchor,
+    offset: [number, number],
+    alignMap: boolean,
+    alongLine: boolean,
+    segment: number,
+    perspective: number,
+  ): IconPart | null {
+    const rect = this.images.get(id);
+    if (!rect) {
+      if (!this.images.has(id)) this.missing.add(id);
+      return null;
+    }
+    const image = rect.image;
+    const width = image.width / image.pixelRatio;
+    const height = image.height / image.pixelRatio;
+    const [sx, sy] = anchorShift(anchor);
+    return {
+      id,
+      width,
+      height,
+      left: sx * width + offset[0],
+      top: sy * height + offset[1],
+      size: Math.max(0, style.size) * perspective,
+      rotate: style.rotate * DEG,
+      alignMap,
+      alongLine,
+      segment,
+      color: style.color,
+      halo: style.halo,
+      haloWidth: style.haloWidth,
+      opacity: style.opacity,
+      sdf: image.sdf,
+      pixelRatio: image.pixelRatio,
+    };
   }
 
   private syncAtlas(): void {
@@ -386,6 +542,8 @@ export class LabelRenderer {
     const visible = new Set<string>();
     const zoom = transform.zoom;
     const budget = { left: 40 };
+    const images = this.images;
+    const hasImage = (id: string) => images.has(id);
     this.pendingGlyphs = false;
     const ws = transform.worldSize;
     const margin = 64;
@@ -397,7 +555,16 @@ export class LabelRenderer {
       const allowOverlap = layer.fixed<boolean>("allowOverlap");
       const padding = layer.fixed<number>("padding");
       const spacing = layer.fixed<number>("spacing");
-      const ctx: EvalContext = { zoom };
+      const textOptional = layer.fixed<boolean>("optional");
+      const iconAnchor = layer.fixed<Anchor>("iconAnchor");
+      const iconOffset = layer.fixed<[number, number]>("iconOffset");
+      const iconPadding = layer.fixed<number>("iconPadding");
+      const iconAllowOverlap = layer.fixed<boolean>("iconAllowOverlap");
+      const iconOptional = layer.fixed<boolean>("iconOptional");
+      const alignment = layer.fixed<string>("iconRotationAlignment");
+      const linePlacement = layer.fixed<string>("placement") === "line";
+      const alignMap = alignment === "map" || (alignment === "auto" && linePlacement);
+      const ctx: EvalContext = { zoom, images: hasImage };
       const items: {
         piece: RenderPiece<VectorTile>;
         bucket: VectorBucket;
@@ -412,7 +579,7 @@ export class LabelRenderer {
         const labels = bucket?.labels;
         if (!bucket || !labels) continue;
         for (let i = 0; i < labels.count; i++) {
-          const was = shown.has(`${layer.id}|${labels.texts[i]}`) ? 0 : 1;
+          const was = shown.has(`${layer.id}|${labels.texts[i]}|${labels.icons?.[i] ?? ""}`) ? 0 : 1;
           items.push({ piece, bucket, i, priority: labels.priority[i]!, was, order: order++ });
         }
       }
@@ -430,8 +597,10 @@ export class LabelRenderer {
         const pathData = labels.paths.subarray(labels.pathStart[i]!, labels.pathStart[i + 1]!);
         const fi = labels.feature[i]!;
         const featureId = bucket.features.id(fi);
-        const dedupeKey = `${layer.id}|${text}`;
+        const dedupeKey = `${layer.id}|${text}|${labels.icons?.[i] ?? ""}`;
         let featureReady = false;
+        let iconId = "";
+        let iconStyle: IconStyle | null = null;
         for (let a = 0; a < anchors.length; a += 3) {
           const tx = anchors[a]! / extent;
           const ty = anchors[a + 1]! / extent;
@@ -445,7 +614,7 @@ export class LabelRenderer {
           if (p.x < -margin || p.y < -margin || p.x > transform.width + margin || p.y > transform.height + margin)
             continue;
           if (terrain?.hidden(wx, wy, wz)) continue;
-          const laid = this.layout(layer, text, isLine, budget);
+          const laid = text ? this.layout(layer, text, isLine, budget) : EMPTY_LAID;
           if (!laid) continue;
           if (!featureReady) {
             ctx.feature = {
@@ -455,17 +624,45 @@ export class LabelRenderer {
             };
             ctx.state = featureId !== undefined ? states?.get(featureId) : undefined;
             featureReady = true;
+            const icon = layer.layoutValue<unknown>("icon", ctx);
+            iconId = typeof icon === "string" ? icon : "";
+            if (iconId) {
+              iconStyle = {
+                size: layer.layoutValue<number>("iconSize", ctx),
+                rotate: layer.layoutValue<number>("iconRotate", ctx),
+                color: layer.paintValue<RGBA>("iconColor", ctx),
+                halo: layer.paintValue<RGBA>("iconHaloColor", ctx),
+                haloWidth: layer.paintValue<number>("iconHaloWidth", ctx),
+                opacity: layer.paintValue<number>("iconOpacity", ctx),
+              };
+            }
           }
+          const perspective = Math.max(0.7, Math.min(1, 1.3 - 0.3 * depth));
+          const anchorDist = anchors[a + 2]! / extent / n;
+          const icon =
+            iconId && iconStyle
+              ? this.iconPart(
+                  iconId,
+                  iconStyle,
+                  iconAnchor,
+                  iconOffset,
+                  alignMap,
+                  isLine,
+                  isLine ? segmentAt(pathData, anchors[a + 2]!) : 0,
+                  perspective,
+                )
+              : null;
+          if (!text && !icon) continue;
           const size = layer.layoutValue<number>("size", ctx);
-          const scale = (size / GLYPH_SIZE) * Math.max(0.7, Math.min(1, 1.3 - 0.3 * depth));
+          const scale = (size / GLYPH_SIZE) * perspective;
           const w = laid.width * scale;
           const h = laid.height * scale;
           const minDist = isLine ? Math.max(spacing, w * 1.5) : Math.max(80, w * 1.2);
-          const prior = placed.get(dedupeKey);
+          const prior = text ? placed.get(dedupeKey) : undefined;
           if (prior?.some(([x, y]) => Math.hypot(x - p.x, y - p.y) < minDist)) continue;
           let path: Float64Array | null = null;
           let heights: Float64Array | null = null;
-          let boxes: number[];
+          let boxes: number[] = [];
           if (isLine && pathData.length >= 4) {
             path = new Float64Array(pathData.length);
             for (let k = 0; k < pathData.length; k += 2) {
@@ -476,31 +673,44 @@ export class LabelRenderer {
               heights = new Float64Array(path.length / 2);
               for (let k = 0; k < heights.length; k++) heights[k] = terrain.height(path[k * 2]!, path[k * 2 + 1]!);
             }
-            const quads = layoutAlongPath(transform, path, anchors[a + 2]! / extent / n, laid, scale, heights);
-            if (!quads) continue;
-            boxes = [];
-            for (const q of quads) {
-              const half = (size * 0.6) / 2 + padding;
-              boxes.push(q.cx - half, q.cy - half, q.cx + half, q.cy + half);
+            if (text) {
+              const quads = layoutAlongPath(transform, path, anchorDist, laid, scale, heights);
+              if (!quads) continue;
+              for (const q of quads) {
+                const half = (size * 0.6) / 2 + padding;
+                boxes.push(q.cx - half, q.cy - half, q.cx + half, q.cy + half);
+              }
             }
-          } else {
+          } else if (text) {
             const x0 = p.x + laid.offsetX * scale - padding;
             const y0 = p.y + laid.offsetY * scale - padding;
             boxes = [x0, y0, x0 + w + padding * 2, y0 + h + padding * 2];
           }
-          if (!allowOverlap) {
-            let hit = false;
-            for (let i = 0; i < boxes.length; i += 4) {
-              if (grid.hits(boxes[i]!, boxes[i + 1]!, boxes[i + 2]!, boxes[i + 3]!)) {
-                hit = true;
-                break;
-              }
+          const iconBox = icon ? iconBounds(transform, icon, p.x, p.y, path, heights, iconPadding) : null;
+          let showText = text.length > 0;
+          let showIcon = icon !== null;
+          const textHit = showText && !allowOverlap && gridHits(grid, boxes);
+          const iconHit = iconBox !== null && !iconAllowOverlap && gridHits(grid, iconBox);
+          if (showText && showIcon) {
+            if (textHit && iconHit) continue;
+            if (textHit) {
+              if (!textOptional) continue;
+              showText = false;
             }
-            if (hit) continue;
+            if (iconHit) {
+              if (!iconOptional) continue;
+              showIcon = false;
+            }
+          } else if (textHit || iconHit) {
+            continue;
           }
+          if (!showText) boxes = [];
+          if (showIcon && iconBox) boxes.push(...iconBox);
           for (let i = 0; i < boxes.length; i += 4) grid.insert(boxes[i]!, boxes[i + 1]!, boxes[i + 2]!, boxes[i + 3]!);
-          if (prior) prior.push([p.x, p.y]);
-          else placed.set(dedupeKey, [[p.x, p.y]]);
+          if (showText) {
+            if (prior) prior.push([p.x, p.y]);
+            else placed.set(dedupeKey, [[p.x, p.y]]);
+          }
           const key = `${dedupeKey}|${featureId ?? ""}|${Math.round((wx * ws) / 4)}|${Math.round((wy * ws) / 4)}`;
           visible.add(key);
           const existing = this.labels.get(key);
@@ -527,6 +737,8 @@ export class LabelRenderer {
             existing.bucket = bucket;
             existing.feature = fi;
             existing.boxes = boxes;
+            existing.showText = showText;
+            existing.icon = showIcon ? icon : null;
           } else {
             this.labels.set(key, {
               key,
@@ -553,6 +765,8 @@ export class LabelRenderer {
               bucket,
               feature: fi,
               boxes,
+              showText,
+              icon: showIcon ? icon : null,
             });
           }
           if (!isLine) break;
@@ -565,8 +779,11 @@ export class LabelRenderer {
   }
 
   private build(transform: Transform, pixelRatio: number): void {
+    this.buildIcons(transform, pixelRatio);
     let glyphs = 0;
-    for (const label of this.labels.values()) if (label.opacity > 0) glyphs += label.laid.glyphs.length;
+    for (const label of this.labels.values()) {
+      if (label.opacity > 0 && label.showText) glyphs += label.laid.glyphs.length;
+    }
     const needed = glyphs * 4 * STRIDE;
     if (this.vertexData.byteLength < needed)
       this.vertexData = new ArrayBuffer(Math.max(needed, this.vertexData.byteLength * 2));
@@ -598,7 +815,7 @@ export class LabelRenderer {
       v++;
     };
     for (const label of this.labels.values()) {
-      if (label.opacity <= 0) continue;
+      if (label.opacity <= 0 || !label.showText) continue;
       const s = label.scale;
       if (label.line && label.path) {
         const quads = layoutAlongPath(transform, label.path, label.anchorDist, label.laid, s, label.heights);
@@ -645,45 +862,206 @@ export class LabelRenderer {
     this.upload();
   }
 
+  private buildIcons(transform: Transform, pixelRatio: number): void {
+    let count = 0;
+    for (const label of this.labels.values()) if (label.opacity > 0 && label.icon) count++;
+    const needed = count * 4 * STRIDE;
+    if (this.iconData.byteLength < needed)
+      this.iconData = new ArrayBuffer(Math.max(needed, this.iconData.byteLength * 2));
+    const f32 = new Float32Array(this.iconData);
+    const u16 = new Uint16Array(this.iconData);
+    const u8 = new Uint8Array(this.iconData);
+    const ws = transform.worldSize;
+    let v = 0;
+    for (const label of this.labels.values()) {
+      const icon = label.icon;
+      if (!icon || label.opacity <= 0) continue;
+      const rect = this.images.get(icon.id);
+      if (!rect) continue;
+      const p = transform.project(label.wx, label.wy, label.wz * ws);
+      if (p.w <= 0) continue;
+      const angle = iconAngle(transform, icon, label.path, label.heights);
+      const s = icon.size;
+      const x0 = icon.left * s;
+      const y0 = icon.top * s;
+      const x1 = x0 + icon.width * s;
+      const y1 = y0 + icon.height * s;
+      const u0 = rect.x;
+      const v0 = rect.y;
+      const u1 = rect.x + rect.image.width;
+      const v1 = rect.y + rect.image.height;
+      let px = p.x;
+      let py = p.y;
+      if (angle === 0) {
+        px = Math.round((p.x + x0) * pixelRatio) / pixelRatio - x0;
+        py = Math.round((p.y + y0) * pixelRatio) / pixelRatio - y0;
+      }
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const c = icon.color;
+      const h = icon.halo;
+      const opacity = label.opacity * Math.max(0, Math.min(1, icon.opacity));
+      for (const [dx, dy, u, w] of [
+        [x0, y0, u0, v0],
+        [x1, y0, u1, v0],
+        [x1, y1, u1, v1],
+        [x0, y1, u0, v1],
+      ] as const) {
+        const o = v * STRIDE;
+        f32[o / 4] = px + dx * cos - dy * sin;
+        f32[o / 4 + 1] = py + dx * sin + dy * cos;
+        u16[o / 2 + 4] = u;
+        u16[o / 2 + 5] = w;
+        u8[o + 12] = c[0] * c[3] * 255;
+        u8[o + 13] = c[1] * c[3] * 255;
+        u8[o + 14] = c[2] * c[3] * 255;
+        u8[o + 15] = c[3] * 255;
+        u8[o + 16] = h[0] * h[3] * 255;
+        u8[o + 17] = h[1] * h[3] * 255;
+        u8[o + 18] = h[2] * h[3] * 255;
+        u8[o + 19] = h[3] * 255;
+        f32[o / 4 + 5] = opacity;
+        f32[o / 4 + 6] = s / icon.pixelRatio;
+        f32[o / 4 + 7] = icon.haloWidth;
+        f32[o / 4 + 8] = icon.sdf ? 1 : 0;
+        v++;
+      }
+    }
+    this.iconCount = v / 4;
+    this.uploadIcons();
+  }
+
+  private uploadIcons(): void {
+    const g = this.gl;
+    const gl = g.gl;
+    if (g.isLost || this.iconCount === 0) return;
+    this.ensureIndices(this.iconCount);
+    if (!this.iconVao) {
+      this.iconVao = gl.createVertexArray();
+      this.iconBuffer = gl.createBuffer();
+      gl.bindVertexArray(this.iconVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.iconBuffer);
+      describeVertices(gl);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+      gl.bindVertexArray(null);
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.iconBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Uint8Array(this.iconData, 0, this.iconCount * 4 * STRIDE), gl.DYNAMIC_DRAW);
+  }
+
+  private ensureIndices(quads: number): void {
+    const gl = this.gl.gl;
+    if (!this.indexBuffer) this.indexBuffer = gl.createBuffer();
+    if (quads <= this.indexCapacity) return;
+    const capacity = Math.max(1024, quads * 2);
+    const indices = new Uint32Array(capacity * 6);
+    for (let i = 0; i < capacity; i++) {
+      const b = i * 4;
+      indices.set([b, b + 1, b + 2, b, b + 2, b + 3], i * 6);
+    }
+    gl.bindVertexArray(null);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+    this.indexCapacity = capacity;
+  }
+
   private upload(): void {
     const g = this.gl;
     const gl = g.gl;
     if (g.isLost) return;
+    this.ensureIndices(this.glyphCount);
     if (!this.vao) {
       this.vao = gl.createVertexArray();
       this.vertexBuffer = gl.createBuffer();
-      this.indexBuffer = gl.createBuffer();
       gl.bindVertexArray(this.vao);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
-      gl.enableVertexAttribArray(0);
-      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, STRIDE, 0);
-      gl.enableVertexAttribArray(1);
-      gl.vertexAttribPointer(1, 2, gl.UNSIGNED_SHORT, false, STRIDE, 8);
-      gl.enableVertexAttribArray(2);
-      gl.vertexAttribPointer(2, 4, gl.UNSIGNED_BYTE, true, STRIDE, 12);
-      gl.enableVertexAttribArray(3);
-      gl.vertexAttribPointer(3, 4, gl.UNSIGNED_BYTE, true, STRIDE, 16);
-      gl.enableVertexAttribArray(4);
-      gl.vertexAttribPointer(4, 4, gl.FLOAT, false, STRIDE, 20);
+      describeVertices(gl);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
       gl.bindVertexArray(null);
     }
-    gl.bindVertexArray(this.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Uint8Array(this.vertexData, 0, this.glyphCount * 4 * STRIDE), gl.DYNAMIC_DRAW);
-    if (this.glyphCount > this.indexCapacity) {
-      const capacity = Math.max(1024, this.glyphCount * 2);
-      const indices = new Uint32Array(capacity * 6);
-      for (let i = 0; i < capacity; i++) {
-        const b = i * 4;
-        indices.set([b, b + 1, b + 2, b, b + 2, b + 3], i * 6);
-      }
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
-      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
-      this.indexCapacity = capacity;
-    }
-    gl.bindVertexArray(null);
   }
+}
+
+function describeVertices(gl: WebGL2RenderingContext): void {
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, STRIDE, 0);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 2, gl.UNSIGNED_SHORT, false, STRIDE, 8);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 4, gl.UNSIGNED_BYTE, true, STRIDE, 12);
+  gl.enableVertexAttribArray(3);
+  gl.vertexAttribPointer(3, 4, gl.UNSIGNED_BYTE, true, STRIDE, 16);
+  gl.enableVertexAttribArray(4);
+  gl.vertexAttribPointer(4, 4, gl.FLOAT, false, STRIDE, 20);
+}
+
+function gridHits(grid: CollisionGrid, boxes: readonly number[]): boolean {
+  for (let i = 0; i < boxes.length; i += 4) {
+    if (grid.hits(boxes[i]!, boxes[i + 1]!, boxes[i + 2]!, boxes[i + 3]!)) return true;
+  }
+  return false;
+}
+
+function segmentAt(path: Int32Array, distance: number): number {
+  let remaining = distance;
+  for (let i = 0; i + 3 < path.length; i += 2) {
+    const len = Math.hypot(path[i + 2]! - path[i]!, path[i + 3]! - path[i + 1]!);
+    if (remaining <= len) return i / 2;
+    remaining -= len;
+  }
+  return Math.max(0, path.length / 2 - 2);
+}
+
+function iconAngle(
+  transform: Transform,
+  icon: IconPart,
+  path: Float64Array | null,
+  heights: Float64Array | null,
+): number {
+  if (icon.alongLine && icon.alignMap && path && path.length >= 4) {
+    const i = Math.min(icon.segment, path.length / 2 - 2);
+    const ws = transform.worldSize;
+    const a = transform.project(path[i * 2]!, path[i * 2 + 1]!, (heights?.[i] ?? 0) * ws);
+    const b = transform.project(path[i * 2 + 2]!, path[i * 2 + 3]!, (heights?.[i + 1] ?? 0) * ws);
+    if (a.w > 0 && b.w > 0) return icon.rotate + Math.atan2(b.y - a.y, b.x - a.x);
+  }
+  if (icon.alignMap) return icon.rotate - transform.bearing * DEG;
+  return icon.rotate;
+}
+
+function iconBounds(
+  transform: Transform,
+  icon: IconPart,
+  x: number,
+  y: number,
+  path: Float64Array | null,
+  heights: Float64Array | null,
+  padding: number,
+): number[] {
+  const angle = iconAngle(transform, icon, path, heights);
+  const s = icon.size;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const [dx, dy] of [
+    [icon.left, icon.top],
+    [icon.left + icon.width, icon.top],
+    [icon.left + icon.width, icon.top + icon.height],
+    [icon.left, icon.top + icon.height],
+  ] as const) {
+    const px = x + (dx * cos - dy * sin) * s;
+    const py = y + (dx * sin + dy * cos) * s;
+    x0 = Math.min(x0, px);
+    y0 = Math.min(y0, py);
+    x1 = Math.max(x1, px);
+    y1 = Math.max(y1, py);
+  }
+  return [x0 - padding, y0 - padding, x1 + padding, y1 + padding];
 }
 
 function withOpacity(c: RGBA, opacity: number): RGBA {
