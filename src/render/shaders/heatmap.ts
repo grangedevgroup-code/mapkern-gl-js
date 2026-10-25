@@ -19,7 +19,7 @@ uniform float u_scale;
 ${paintChunk}
 out vec2 v_offset;
 out float v_weight;
-out vec2 v_pos;
+flat out vec2 v_pos;
 void main() {
   float radius = max(paintValue(a_feature, u_radius_slot, u_radius_comp, vec4(u_radius)).x, 0.0);
   float weight = max(paintValue(a_feature, u_weight_slot, u_weight_comp, vec4(u_weight)).x, 0.0);
@@ -34,10 +34,10 @@ void main() {
 ${clipChunk}
 in vec2 v_offset;
 in float v_weight;
-in vec2 v_pos;
+flat in vec2 v_pos;
 out vec4 fragColor;
 void main() {
-  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x > u_clip.z || v_pos.y > u_clip.w) discard;
+  if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x >= u_clip.z || v_pos.y >= u_clip.w) discard;
   float d2 = dot(v_offset, v_offset);
   if (d2 > 1.0) discard;
   float density = v_weight * 0.3989422804 * exp(-4.5 * d2);
