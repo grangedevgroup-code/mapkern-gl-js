@@ -12,6 +12,7 @@ export interface FeatureContext {
 export interface EvalContext {
   zoom: number;
   feature?: FeatureContext | undefined;
+  state?: Readonly<Record<string, unknown>> | undefined;
 }
 
 export type OutputKind = "number" | "color" | "string" | "boolean" | "any";
@@ -20,6 +21,7 @@ export interface Compiled<T> {
   readonly evaluate: (ctx: EvalContext) => T;
   readonly zoomDependent: boolean;
   readonly featureDependent: boolean;
+  readonly stateDependent: boolean;
   readonly constant: boolean;
   readonly properties: ReadonlySet<string>;
 }
@@ -37,11 +39,14 @@ interface Node {
   fn: Fn;
   zoom: boolean;
   feature: boolean;
+  state?: boolean;
 }
 
 interface Scope {
   properties: Set<string>;
   path: string;
+  allowState: boolean;
+  vars: Map<string, Node>;
 }
 
 const EMPTY_PROPS: Readonly<Record<string, unknown>> = Object.freeze({});
@@ -50,8 +55,14 @@ export function isExpression(value: unknown): value is readonly [string, ...unkn
   return Array.isArray(value) && value.length > 0 && typeof value[0] === "string" && OPS.has(value[0]);
 }
 
-export function compile<T>(value: unknown, kind: OutputKind, fallback: T, path = "value"): Compiled<T> {
-  const scope: Scope = { properties: new Set(), path };
+export function compile<T>(
+  value: unknown,
+  kind: OutputKind,
+  fallback: T,
+  path = "value",
+  allowState = false,
+): Compiled<T> {
+  const scope: Scope = { properties: new Set(), path, allowState, vars: new Map() };
   const node = build(value, scope);
   const coerce = coercer(kind);
   const evaluate = (ctx: EvalContext): T => {
@@ -71,6 +82,7 @@ export function compile<T>(value: unknown, kind: OutputKind, fallback: T, path =
       evaluate: () => v,
       zoomDependent: false,
       featureDependent: false,
+      stateDependent: false,
       constant: true,
       properties: scope.properties,
     };
@@ -79,6 +91,7 @@ export function compile<T>(value: unknown, kind: OutputKind, fallback: T, path =
     evaluate,
     zoomDependent: node.zoom,
     featureDependent: node.feature,
+    stateDependent: node.state === true,
     constant: false,
     properties: scope.properties,
   };
@@ -164,6 +177,29 @@ const OPS = new Set([
   "rgb",
   "rgba",
   "typeof",
+  "feature-state",
+  "let",
+  "var",
+  "at",
+  "index-of",
+  "split",
+  "number",
+  "string",
+  "boolean",
+  "object",
+  "array",
+  "number-format",
+  "hsl",
+  "hsla",
+  "to-rgba",
+  "to-hsla",
+  "interpolate-hcl",
+  "interpolate-lab",
+  "acos",
+  "asin",
+  "atan",
+  "ln2",
+  "is-supported-script",
 ]);
 
 function constant(v: unknown): Node {
@@ -189,6 +225,7 @@ function build(value: unknown, scope: Scope): Node {
     fn,
     zoom: nodes.some((n) => n.zoom),
     feature: nodes.some((n) => n.feature),
+    state: nodes.some((n) => n.state === true),
   });
   const need = (min: number, max = Number.POSITIVE_INFINITY) => {
     if (args.length < min || args.length > max) {
@@ -370,7 +407,181 @@ function build(value: unknown, scope: Scope): Node {
       });
     }
     case "interpolate":
-      return buildInterpolate(args, scope, combine, sub);
+      return buildInterpolate(args, scope, combine, sub, "rgb");
+    case "interpolate-hcl":
+      return buildInterpolate(args, scope, combine, sub, "hcl");
+    case "interpolate-lab":
+      return buildInterpolate(args, scope, combine, sub, "lab");
+    case "feature-state": {
+      need(1, 1);
+      if (!scope.allowState) {
+        throw new ExpressionError(`${scope.path}: "feature-state" only works in paint properties`);
+      }
+      const key = sub(args[0]);
+      return {
+        fn: (ctx) => {
+          const k = key.fn(ctx);
+          return typeof k === "string" ? (ctx.state?.[k] ?? null) : null;
+        },
+        zoom: key.zoom,
+        feature: true,
+        state: true,
+      };
+    }
+    case "let": {
+      if (args.length < 3 || args.length % 2 !== 1) {
+        throw new ExpressionError(`${scope.path}: "let" expects name/value pairs and then an expression`);
+      }
+      const saved = new Map(scope.vars);
+      const bound: Node[] = [];
+      for (let i = 0; i < args.length - 1; i += 2) {
+        const name = args[i];
+        if (typeof name !== "string") throw new ExpressionError(`${scope.path}: "let" names must be strings`);
+        const value = sub(args[i + 1]);
+        scope.vars.set(name, value);
+        bound.push(value);
+      }
+      const body = sub(args[args.length - 1]);
+      scope.vars = saved;
+      return combine([body, ...bound], body.fn);
+    }
+    case "var": {
+      need(1, 1);
+      const name = args[0];
+      const value = typeof name === "string" ? scope.vars.get(name) : undefined;
+      if (!value) throw new ExpressionError(`${scope.path}: "var" refers to an unknown name ${JSON.stringify(name)}`);
+      return value;
+    }
+    case "at": {
+      need(2, 2);
+      const [index, list] = many(args) as [Node, Node];
+      return combine([index, list], (ctx) => {
+        const i = index.fn(ctx);
+        const a = list.fn(ctx);
+        return Array.isArray(a) && typeof i === "number" && Number.isInteger(i) && i >= 0 && i < a.length ? a[i] : null;
+      });
+    }
+    case "index-of": {
+      need(2, 3);
+      const nodes = many(args);
+      return combine(nodes, (ctx) => {
+        const needle = nodes[0]!.fn(ctx);
+        const haystack = nodes[1]!.fn(ctx);
+        const from = nodes[2]?.fn(ctx);
+        const start = typeof from === "number" ? from : 0;
+        if (typeof haystack === "string" && typeof needle === "string") return haystack.indexOf(needle, start);
+        if (Array.isArray(haystack)) return haystack.indexOf(needle, start);
+        return -1;
+      });
+    }
+    case "split": {
+      need(2, 2);
+      const [text, separator] = many(args) as [Node, Node];
+      return combine([text, separator], (ctx) => {
+        const t = text.fn(ctx);
+        const s = separator.fn(ctx);
+        return typeof t === "string" && typeof s === "string" ? t.split(s) : null;
+      });
+    }
+    case "number":
+    case "string":
+    case "boolean":
+    case "object": {
+      need(1);
+      const nodes = many(args);
+      const test =
+        op === "object"
+          ? (v: unknown) => typeof v === "object" && v !== null && !Array.isArray(v)
+          : (v: unknown) => typeof v === op;
+      return combine(nodes, (ctx) => {
+        for (const n of nodes) {
+          const v = n.fn(ctx);
+          if (test(v)) return v;
+        }
+        return null;
+      });
+    }
+    case "array": {
+      need(1, 3);
+      const value = sub(args[args.length - 1]);
+      const itemType = args.length >= 2 ? args[0] : undefined;
+      const length = args.length === 3 ? args[1] : undefined;
+      return combine([value], (ctx) => {
+        const v = value.fn(ctx);
+        if (!Array.isArray(v)) return null;
+        if (typeof length === "number" && v.length !== length) return null;
+        if (typeof itemType === "string" && itemType !== "value" && v.some((x) => typeof x !== itemType)) return null;
+        return v;
+      });
+    }
+    case "number-format": {
+      need(2, 2);
+      const value = sub(args[0]);
+      const options = args[1];
+      if (typeof options !== "object" || options === null || Array.isArray(options)) {
+        throw new ExpressionError(`${scope.path}: "number-format" expects a number and an options object`);
+      }
+      const o = options as Record<string, unknown>;
+      const digits = (key: string) => (typeof o[key] === "number" ? (o[key] as number) : undefined);
+      const currency = typeof o.currency === "string" ? o.currency : undefined;
+      const settings: Intl.NumberFormatOptions = { style: currency ? "currency" : "decimal" };
+      if (currency) settings.currency = currency;
+      const min = digits("min-fraction-digits");
+      const max = digits("max-fraction-digits");
+      if (min !== undefined) settings.minimumFractionDigits = min;
+      if (max !== undefined) settings.maximumFractionDigits = Math.max(max, min ?? 0);
+      let format: Intl.NumberFormat;
+      try {
+        format = new Intl.NumberFormat(typeof o.locale === "string" ? o.locale : undefined, settings);
+      } catch {
+        throw new ExpressionError(`${scope.path}: "number-format" options are not valid`);
+      }
+      return combine([value], (ctx) => {
+        const v = value.fn(ctx);
+        return typeof v === "number" ? format.format(v) : null;
+      });
+    }
+    case "hsl":
+    case "hsla": {
+      need(op === "hsl" ? 3 : 4, op === "hsl" ? 3 : 4);
+      const nodes = many(args);
+      return combine(nodes, (ctx) => {
+        const v = nodes.map((n) => n.fn(ctx));
+        if (v.some((c) => typeof c !== "number")) return null;
+        const [h, s, l, a] = v as number[];
+        return hslToRgba(h!, s! / 100, l! / 100, a ?? 1);
+      });
+    }
+    case "to-rgba":
+    case "to-hsla": {
+      need(1, 1);
+      const a = sub(args[0]);
+      const hsla = op === "to-hsla";
+      return combine([a], (ctx) => {
+        const v = a.fn(ctx);
+        const c = typeof v === "string" ? parseColor(v) : isColor(v) ? v : null;
+        if (!c) return null;
+        return hsla ? rgbaToHsla(c) : [c[0] * 255, c[1] * 255, c[2] * 255, c[3]];
+      });
+    }
+    case "acos":
+    case "asin":
+    case "atan": {
+      need(1, 1);
+      const a = sub(args[0]);
+      const f = op === "acos" ? Math.acos : op === "asin" ? Math.asin : Math.atan;
+      return combine([a], (ctx) => {
+        const x = a.fn(ctx);
+        return typeof x === "number" ? f(x) : null;
+      });
+    }
+    case "ln2":
+      return constant(Math.LN2);
+    case "is-supported-script": {
+      need(1, 1);
+      const a = sub(args[0]);
+      return combine([a], () => true);
+    }
     case "+":
     case "*":
     case "min":
@@ -580,11 +791,14 @@ function stringify(v: unknown): string {
   return JSON.stringify(v);
 }
 
+type ColorSpace = "rgb" | "lab" | "hcl";
+
 function buildInterpolate(
   args: unknown[],
   scope: Scope,
   combine: (nodes: Node[], fn: Fn) => Node,
   sub: (v: unknown) => Node,
+  space: ColorSpace,
 ): Node {
   if (args.length < 4 || args.length % 2 !== 0) {
     throw new ExpressionError(`${scope.path}: "interpolate" expects a type, an input and stop/output pairs`);
@@ -631,8 +845,91 @@ function buildInterpolate(
     const lo = stops[i]!;
     const hi = stops[i + 1]!;
     const t = curve((x - lo) / (hi - lo), lo, hi, x);
-    return mix(outs[i]!.fn(ctx), outs[i + 1]!.fn(ctx), t);
+    return mix(outs[i]!.fn(ctx), outs[i + 1]!.fn(ctx), t, space);
   });
+}
+
+function hslToRgba(h: number, s: number, l: number, a: number): RGBA {
+  const hue = (((h % 360) + 360) % 360) / 360;
+  const sat = Math.min(1, Math.max(0, s));
+  const light = Math.min(1, Math.max(0, l));
+  const q = light < 0.5 ? light * (1 + sat) : light + sat - light * sat;
+  const p = 2 * light - q;
+  const channel = (t: number) => {
+    const k = t < 0 ? t + 1 : t > 1 ? t - 1 : t;
+    if (k < 1 / 6) return p + (q - p) * 6 * k;
+    if (k < 1 / 2) return q;
+    if (k < 2 / 3) return p + (q - p) * (2 / 3 - k) * 6;
+    return p;
+  };
+  return [channel(hue + 1 / 3), channel(hue), channel(hue - 1 / 3), Math.min(1, Math.max(0, a))];
+}
+
+function rgbaToHsla(c: RGBA): [number, number, number, number] {
+  const [r, g, b, a] = c;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l * 100, a];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s * 100, l * 100, a];
+}
+
+const LAB_WHITE = [0.95047, 1, 1.08883] as const;
+
+function toLab(c: RGBA): [number, number, number, number] {
+  const lin = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  const r = lin(c[0]);
+  const g = lin(c[1]);
+  const b = lin(c[2]);
+  const f = (t: number) => (t > 216 / 24389 ? Math.cbrt(t) : (24389 / 27 / 116) * t + 16 / 116);
+  const x = f((0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / LAB_WHITE[0]);
+  const y = f((0.2126729 * r + 0.7151522 * g + 0.072175 * b) / LAB_WHITE[1]);
+  const z = f((0.0193339 * r + 0.119192 * g + 0.9503041 * b) / LAB_WHITE[2]);
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z), c[3]];
+}
+
+function fromLab(l: number, a: number, b: number, alpha: number): RGBA {
+  const fy = (l + 16) / 116;
+  const fx = fy + a / 500;
+  const fz = fy - b / 200;
+  const inv = (t: number) => (t ** 3 > 216 / 24389 ? t ** 3 : (t - 16 / 116) / (24389 / 27 / 116));
+  const x = inv(fx) * LAB_WHITE[0];
+  const y = inv(fy) * LAB_WHITE[1];
+  const z = inv(fz) * LAB_WHITE[2];
+  const gamma = (v: number) => {
+    const c = Math.min(1, Math.max(0, v));
+    return c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055;
+  };
+  return [
+    gamma(3.2404542 * x - 1.5371385 * y - 0.4985314 * z),
+    gamma(-0.969266 * x + 1.8760108 * y + 0.041556 * z),
+    gamma(0.0556434 * x - 0.2040259 * y + 1.0572252 * z),
+    alpha,
+  ];
+}
+
+function mixInSpace(a: RGBA, b: RGBA, t: number, space: ColorSpace): RGBA {
+  const la = toLab(a);
+  const lb = toLab(b);
+  const alpha = a[3] + (b[3] - a[3]) * t;
+  if (space === "lab") {
+    return fromLab(la[0] + (lb[0] - la[0]) * t, la[1] + (lb[1] - la[1]) * t, la[2] + (lb[2] - la[2]) * t, alpha);
+  }
+  const ca = Math.hypot(la[1], la[2]);
+  const cb = Math.hypot(lb[1], lb[2]);
+  let ha = Math.atan2(la[2], la[1]);
+  let hb = Math.atan2(lb[2], lb[1]);
+  if (ca < 1e-6) ha = hb;
+  if (cb < 1e-6) hb = ha;
+  let dh = hb - ha;
+  if (dh > Math.PI) dh -= 2 * Math.PI;
+  if (dh < -Math.PI) dh += 2 * Math.PI;
+  const h = ha + dh * t;
+  const c = ca + (cb - ca) * t;
+  return fromLab(la[0] + (lb[0] - la[0]) * t, c * Math.cos(h), c * Math.sin(h), alpha);
 }
 
 function exponentialT(x: number, base: number, lo: number, hi: number): number {
@@ -643,11 +940,11 @@ function exponentialT(x: number, base: number, lo: number, hi: number): number {
   return (base ** progress - 1) / (base ** range - 1);
 }
 
-function mix(a: unknown, b: unknown, t: number): unknown {
+function mix(a: unknown, b: unknown, t: number, space: ColorSpace): unknown {
   if (typeof a === "number" && typeof b === "number") return a + (b - a) * t;
   const ca = typeof a === "string" ? parseColor(a) : isColor(a) ? a : null;
   const cb = typeof b === "string" ? parseColor(b) : isColor(b) ? b : null;
-  if (ca && cb) return mixColor(ca, cb, t);
+  if (ca && cb) return space === "rgb" ? mixColor(ca, cb, t) : mixInSpace(ca, cb, t, space);
   if (Array.isArray(a) && Array.isArray(b) && a.length === b.length) {
     return a.map((v, i) => (typeof v === "number" && typeof b[i] === "number" ? v + ((b[i] as number) - v) * t : v));
   }
