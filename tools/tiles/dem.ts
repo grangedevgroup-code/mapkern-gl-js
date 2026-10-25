@@ -18,9 +18,9 @@ import { encodePng } from "./png.ts";
 export interface DemOptions {
   inputs: string[];
   output: string;
-  minZoom?: number;
-  maxZoom?: number;
-  name?: string;
+  minZoom?: number | undefined;
+  maxZoom?: number | undefined;
+  name?: string | undefined;
   log?: (line: string) => void;
 }
 
