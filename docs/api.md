@@ -267,6 +267,15 @@ map.setTerrain(null);
 
 `setTerrain` turns 3D terrain on with an elevation source from the style, or off again with `null`. `getTerrain()` returns the current setting. While terrain is on, `project`, `unproject`, pointer events and `queryRenderedFeatures` all work on the raised ground, so `event.lngLat` is the spot on the hillside under the pointer. [The style guide](style.md#terrain) explains what changes on screen.
 
+## Sky
+
+```js
+map.setSky({ color: "#88c6fc", horizonColor: "#ffffff" });
+map.setSky(null);
+```
+
+`setSky` sets the colors of the sky and the haze you see over the distant ground on a tilted map, and `null` goes back to the sky Maplet picks to suit the style. `getSky()` returns what the style set. [The style guide](style.md#sky) lists the settings.
+
 ## Errors
 
 Errors come with a `code`, a readable `message` and a `detail` object. If you don't listen for `error`, they're logged to the console.
