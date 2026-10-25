@@ -2201,6 +2201,261 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "image, canvas and video sources stretch over their corners",
+    async run({ page, base, shot }) {
+      const square = [
+        [-20, 20],
+        [20, 20],
+        [20, -20],
+        [-20, -20],
+      ];
+      const background = { id: "bg", type: "background", paint: { color: "#ffffff" } };
+      const style = JSON.stringify({
+        version: 1,
+        sources: { pic: { type: "image", url: `${base}/fixture/raster/2/1/1.png`, coordinates: square } },
+        layers: [background, { id: "pic", type: "raster", source: "pic" }],
+      });
+      await createMap(page, style, { zoom: 3, center: [0, 0] });
+      await shot("image-source");
+      const inside = await pixel(page, 420, 320);
+      const outside = await pixel(page, 400, 40);
+      if (!isZoomColor(inside, 2)) fail(`the image should cover its corners, got ${inside}`);
+      if (!near(outside, WHITE, 6)) fail(`outside its corners the map should be untouched, got ${outside}`);
+      await page.evaluate(
+        `void window.map.getSource("pic").setCoordinates([[10, 20], [30, 20], [30, -20], [10, -20]])`,
+      );
+      await idle(page);
+      const moved = await pixel(page, 380, 320);
+      if (!near(moved, WHITE, 6)) fail(`setCoordinates should move the image away, got ${moved}`);
+      const east = await page.evaluate<{ x: number; y: number }>("window.map.project([20, 0])");
+      const there = await pixel(page, Math.round(east.x), Math.round(east.y) + 10);
+      if (!isZoomColor(there, 2)) fail(`the image should now sit between 10 and 30 degrees east, got ${there}`);
+      await page.evaluate("window.map.remove()");
+
+      const tiny = [
+        [-122.3302, 47.6001],
+        [-122.3298, 47.6001],
+        [-122.3298, 47.5999],
+        [-122.3302, 47.5999],
+      ];
+      const close = JSON.stringify({
+        version: 1,
+        sources: { pic: { type: "image", url: `${base}/fixture/raster/2/1/1.png`, coordinates: tiny } },
+        layers: [background, { id: "pic", type: "raster", source: "pic", paint: { resampling: "nearest" } }],
+      });
+      await createMap(page, close, { zoom: 20, center: [-122.33, 47.6] });
+      for (const [corner, dx, dy] of [
+        [tiny[0], 1, 1],
+        [tiny[2], -1, -1],
+      ] as const) {
+        const at = await page.evaluate<{ x: number; y: number }>(`window.map.project(${JSON.stringify(corner)})`);
+        const into = await pixel(page, Math.round(at.x + dx * 3), Math.round(at.y + dy * 3));
+        const away = await pixel(page, Math.round(at.x - dx * 3), Math.round(at.y - dy * 3));
+        if (near(into, WHITE, 6) || !near(away, WHITE, 6))
+          fail(`at zoom 20 the image edge should sit on its corner ${corner}, got ${into} inside and ${away} outside`);
+      }
+      await page.evaluate("window.map.remove()");
+
+      const trapezoid = [
+        [-10, 15],
+        [10, 15],
+        [25, -15],
+        [-25, -15],
+      ];
+      await page.evaluate(`(() => {
+        const c = document.createElement("canvas");
+        c.width = 64;
+        c.height = 64;
+        const g = c.getContext("2d");
+        g.fillStyle = "#ff0000"; g.fillRect(0, 0, 32, 32);
+        g.fillStyle = "#00ff00"; g.fillRect(32, 0, 32, 32);
+        g.fillStyle = "#0000ff"; g.fillRect(32, 32, 32, 32);
+        g.fillStyle = "#ffff00"; g.fillRect(0, 32, 32, 32);
+        window.paintCanvas = c;
+      })()`);
+      await page.evaluate(`(async () => {
+        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: {
+          version: 1,
+          sources: { live: { type: "canvas", canvas: window.paintCanvas, coordinates: ${JSON.stringify(trapezoid)}, animate: false } },
+          layers: [${JSON.stringify(background)}, { id: "live", type: "raster", source: "live" }],
+        } });
+        await new Promise((resolve) => window.map.once("idle", resolve));
+      })()`);
+      await shot("canvas-trapezoid");
+      const middle = await page.evaluate<{ x: number; y: number }>(`(() => {
+        const [a, b, c, d] = ${JSON.stringify(trapezoid)}.map((p) => window.map.project(p));
+        const ax = c.x - a.x, ay = c.y - a.y, bx = d.x - b.x, by = d.y - b.y;
+        const t = ((b.x - a.x) * by - (b.y - a.y) * bx) / (ax * by - ay * bx);
+        return { x: a.x + t * ax, y: a.y + t * ay };
+      })()`);
+      const YELLOW = [255, 255, 0, 255];
+      for (const [dx, dy, color, name] of [
+        [-5, -5, RED, "red"],
+        [5, -5, GREEN, "green"],
+        [5, 5, BLUE, "blue"],
+        [-5, 5, YELLOW, "yellow"],
+      ] as const) {
+        const got = await pixel(page, Math.round(middle.x + dx), Math.round(middle.y + dy));
+        if (!near(got, color, 12))
+          fail(`the canvas quarters should meet where the diagonals cross, expected ${name} near it but got ${got}`);
+      }
+      const kept = await page.evaluate<string>("typeof window.map.getStyle().sources.live.canvas");
+      if (kept !== "object") fail(`getStyle should hand back the canvas element, got ${kept}`);
+      const center = await page.evaluate<{ x: number; y: number }>("window.map.project([0, -10])");
+      const cx = Math.round(center.x);
+      const cy = Math.round(center.y);
+      await page.evaluate(`(() => {
+        window.map.getSource("live").play();
+        const g = window.paintCanvas.getContext("2d");
+        g.fillStyle = "#0000ff";
+        g.fillRect(0, 0, 64, 64);
+      })()`);
+      await page.evaluate("new Promise((resolve) => setTimeout(resolve, 300))");
+      const playing = await pixel(page, cx, cy);
+      if (!near(playing, BLUE, 12)) fail(`a playing canvas source should follow the canvas, got ${playing}`);
+      await page.evaluate(`(() => {
+        window.map.getSource("live").pause();
+        window.map.once("render", () => {
+          const g = window.paintCanvas.getContext("2d");
+          g.fillStyle = "#ff0000";
+          g.fillRect(0, 0, 64, 64);
+        });
+      })()`);
+      await page.evaluate("new Promise((resolve) => setTimeout(resolve, 300))");
+      const paused = await pixel(page, cx, cy);
+      if (!near(paused, BLUE, 12)) fail(`a paused canvas source should keep its last picture, got ${paused}`);
+      await page.evaluate("window.map.remove()");
+
+      const recorded = await page.evaluate<string>(`(async () => {
+        const c = document.createElement("canvas");
+        c.width = 64;
+        c.height = 64;
+        const g = c.getContext("2d");
+        const recorder = new MediaRecorder(c.captureStream(30), { mimeType: "video/webm" });
+        const parts = [];
+        recorder.ondataavailable = (e) => parts.push(e.data);
+        const stopped = new Promise((resolve) => (recorder.onstop = resolve));
+        recorder.start();
+        for (let i = 0; i < 12; i++) {
+          g.fillStyle = i % 2 ? "#0000ff" : "#ff0000";
+          g.fillRect(0, 0, 64, 64);
+          await new Promise((resolve) => setTimeout(resolve, 150));
+        }
+        recorder.stop();
+        await stopped;
+        return URL.createObjectURL(new Blob(parts, { type: "video/webm" }));
+      })()`);
+      const film = JSON.stringify({
+        version: 1,
+        sources: {
+          film: { type: "video", urls: [`${base}/fixture/missing.webm`, recorded], coordinates: square },
+        },
+        layers: [background, { id: "film", type: "raster", source: "film" }],
+      });
+      await createMap(page, film, { zoom: 3, center: [0, 0] });
+      const seen = await page.evaluate<{ red: number; blue: number }>(`(async () => {
+        const seen = { red: 0, blue: 0 };
+        const end = performance.now() + 1200;
+        while (performance.now() < end) {
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          const [r, g, b] = window.pixel(400, 300);
+          if (r > 170 && g < 90 && b < 90) seen.red++;
+          if (b > 170 && r < 90 && g < 90) seen.blue++;
+        }
+        return seen;
+      })()`);
+      if (seen.red === 0 || seen.blue === 0)
+        fail(`a playing video source should show its frames as they change, saw ${JSON.stringify(seen)}`);
+      const isVideo = await page.evaluate<boolean>(
+        `window.map.getSource("film").getVideo() instanceof HTMLVideoElement`,
+      );
+      if (!isVideo) fail("getVideo should return the video element");
+      await page.evaluate(`window.map.getSource("film").pause()`);
+      await page.evaluate("new Promise((resolve) => setTimeout(resolve, 200))");
+      const still = await page.evaluate<number[][]>(`(async () => {
+        const out = [];
+        for (let i = 0; i < 4; i++) {
+          out.push(window.pixel(400, 300));
+          await new Promise((resolve) => setTimeout(resolve, 120));
+        }
+        return out;
+      })()`);
+      if (still.some((p) => !near(p as RGBA, still[0] as RGBA, 4)))
+        fail(`a paused video should hold its frame, got ${JSON.stringify(still)}`);
+      await page.evaluate("window.map.remove()");
+
+      const other = base.includes("127.0.0.1")
+        ? base.replace("127.0.0.1", "localhost")
+        : base.replace("localhost", "127.0.0.1");
+      const tainted = await page.evaluate<{ errors: string[]; background: number[] }>(`(async () => {
+        const img = new Image();
+        img.src = "${other}/fixture/raster/3/1/1.png";
+        await img.decode();
+        const c = document.createElement("canvas");
+        c.width = 64;
+        c.height = 64;
+        c.getContext("2d").drawImage(img, 0, 0, 64, 64);
+        const errors = [];
+        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: {
+          version: 1,
+          sources: { foreign: { type: "canvas", canvas: c, coordinates: ${JSON.stringify(square)} } },
+          layers: [${JSON.stringify(background)}, { id: "foreign", type: "raster", source: "foreign" }],
+        } });
+        window.map.on("error", (e) => errors.push(e.error.message));
+        await new Promise((resolve) => window.map.once("load", resolve));
+        for (let i = 0; i < 10; i++) await new Promise((resolve) => requestAnimationFrame(resolve));
+        return { errors, background: window.pixel(400, 40) };
+      })()`);
+      if (tainted.errors.length !== 1 || !tainted.errors[0]!.includes("CORS"))
+        fail(`a canvas the map may not read should be reported once, got ${JSON.stringify(tainted.errors)}`);
+      if (!near(tainted.background as RGBA, WHITE, 6))
+        fail(`the rest of the map should still draw, got ${tainted.background}`);
+      await page.evaluate("window.map.remove()");
+
+      const small = [
+        [1, -1],
+        [3, -1],
+        [3, -3],
+        [1, -3],
+      ];
+      await page.evaluate(`(async () => {
+        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [2, -2], zoom: 6, pitch: 60, style: {
+          version: 1,
+          sources: {
+            dem: { type: "dem", tiles: ["${base}/fixture/dem/{z}/{x}/{y}.png"], tileSize: 256, maxZoom: 12 },
+            pic: { type: "image", url: "${base}/fixture/raster/2/1/1.png", coordinates: ${JSON.stringify(square)} },
+            live: { type: "canvas", canvas: window.paintCanvas, coordinates: ${JSON.stringify(small)}, animate: true },
+          },
+          layers: [
+            ${JSON.stringify(background)},
+            { id: "pic", type: "raster", source: "pic" },
+            { id: "live", type: "raster", source: "live" },
+          ],
+          terrain: { source: "dem" },
+        } });
+        await new Promise((resolve) => window.map.once("load", resolve));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      })()`);
+      await shot("overlays-on-terrain");
+      const draped = await pixel(page, 150, 330);
+      if (!isZoomColor(draped, 2)) fail(`the image should drape over terrain, got ${draped}`);
+      const live = await pixel(page, 400, 300);
+      if (!near(live, RED, 16)) fail(`the canvas should drape over terrain too, got ${live}`);
+      const counts = await page.evaluate<{ tiles: number; redrawn: number[] }>(`(async () => {
+        const redrawn = [];
+        const end = performance.now() + 400;
+        while (performance.now() < end) {
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          redrawn.push(window.map.getDiagnostics().terrain.redrawn);
+        }
+        return { tiles: window.map.getDiagnostics().terrain.tiles, redrawn };
+      })()`);
+      const most = Math.max(...counts.redrawn);
+      if (most === 0 || most > 4 || counts.tiles <= 6)
+        fail(`an animated overlay should only redraw the terrain tiles under it, got ${JSON.stringify(counts)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
