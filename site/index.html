@@ -28,7 +28,8 @@
           <h1>Maps for the web, without the baggage.</h1>
           <p>
             Maplet GL JS draws vector tiles, raster tiles, GeoJSON and 3D terrain with WebGL2. It has no dependencies,
-            it's about 110 KB gzipped, and it can build its own street map tiles from OpenStreetMap data.
+            it reads the styles written for MapLibre and Mapbox as they are, and it can build its own street map tiles
+            from OpenStreetMap data.
           </p>
           <div class="actions">
             <a class="button dark" href="https://github.com/grangedevgroup-code/maplet-gl-js#install">Get started</a>
@@ -41,30 +42,23 @@
         <h2>A map in a few lines</h2>
         <p>Install it from GitHub:</p>
         <pre><code>npm install github:grangedevgroup-code/maplet-gl-js</code></pre>
-        <p>Then give it a container and some data. This one needs no tile server or API key:</p>
+        <p>Then give it a container. That's the whole world, the same map you see above, with no tile server or API key:</p>
         <pre><code>import * as maplet from "maplet-gl";
 
-const map = new maplet.Map({
-  container: "map",
-  center: [-122.335, 47.608],
-  zoom: 13,
-  style: {
-    version: 1,
-    sources: { places: { type: "geojson", data: "places.geojson" } },
-    layers: [
-      { id: "background", type: "background", paint: { color: "#eef1ef" } },
-      { id: "places", type: "circle", source: "places", paint: { radius: 7, color: "#246a50" } },
-    ],
-  },
+const map = new maplet.Map({ container: "map" });</code></pre>
+        <p>Your own data goes on top once the map has loaded:</p>
+        <pre><code>map.on("load", () => {
+  map.addSource("places", { type: "geojson", data: "places.geojson" });
+  map.addLayer({ id: "places", type: "circle", source: "places", paint: { radius: 7, color: "#246a50" } });
 });</code></pre>
       </section>
 
       <section class="text columns">
         <div>
-          <h2>Your own basemap</h2>
+          <h2>Any style, or your own</h2>
           <p>
-            Download an OpenStreetMap extract, run <code>npx maplet-tiles</code> on the area you want, and you get a
-            single file you can host anywhere. The map above comes from one of those files.
+            The map above is OpenFreeMap's Liberty style, loaded as it is. Point Maplet at any other style URL, or run
+            <code>npx maplet-tiles</code> on an OpenStreetMap extract and host the single file it makes anywhere.
           </p>
         </div>
         <div>
@@ -102,20 +96,12 @@ const map = new maplet.Map({
       })();
 
       if (supported) {
-        const map = new maplet.Map({
-          container,
-          style: maplet.lightStyle({ url: "data/seattle.pmtiles" }),
-          center: [-122.336, 47.612],
-          zoom: 13.2,
-          pitch: 45,
-          bearing: -20,
-          scrollZoom: false,
-        });
+        const map = new maplet.Map({ container, cooperativeGestures: true });
         map.addControl(new maplet.NavigationControl());
         window.map = map;
       } else {
         container.classList.add("fallback");
-        container.innerHTML = '<img src="assets/screenshot-seattle.webp" alt="Seattle drawn by Maplet" />';
+        container.innerHTML = '<img src="assets/screenshot-world.webp" alt="The world drawn by Maplet" />';
       }
     </script>
   </body>
