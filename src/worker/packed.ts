@@ -9,6 +9,7 @@ export interface PackedColumn {
 export interface PackedFeatures {
   count: number;
   ids: Float64Array;
+  textIds: string[] | null;
   types: Uint8Array;
   sources: Uint32Array;
   columns: PackedColumn[];
@@ -17,6 +18,7 @@ export interface PackedFeatures {
 export class FeatureTableBuilder {
   private readonly keys: readonly string[];
   private ids: number[] = [];
+  private textIds: string[] | null = null;
   private types: number[] = [];
   private sources: number[] = [];
   private readonly dicts: Map<string, number>[];
@@ -33,6 +35,8 @@ export class FeatureTableBuilder {
   add(feature: VectorFeature, source: number): number {
     const i = this.ids.length;
     this.ids.push(feature.id ?? Number.NaN);
+    if (feature.textId !== undefined && this.textIds === null) this.textIds = new Array<string>(i).fill("");
+    this.textIds?.push(feature.textId ?? "");
     this.types.push(feature.type);
     this.sources.push(source);
     if (this.keys.length > 0) {
@@ -64,6 +68,7 @@ export class FeatureTableBuilder {
     return {
       count: this.ids.length,
       ids: Float64Array.from(this.ids),
+      textIds: this.textIds,
       types: Uint8Array.from(this.types),
       sources: Uint32Array.from(this.sources),
       columns: this.keys.map((key, k) => ({ key, dict: this.values[k]!, index: Uint32Array.from(this.indexes[k]!) })),
@@ -94,6 +99,11 @@ export class FeatureTable {
     return v === undefined || Number.isNaN(v) ? undefined : v;
   }
 
+  idValue(i: number): number | string | undefined {
+    const text = this.packed.textIds?.[i];
+    return text ? text : this.id(i);
+  }
+
   type(i: number): FeatureType {
     return (this.packed.types[i] ?? 0) as FeatureType;
   }
@@ -122,6 +132,7 @@ export class FeatureTable {
 
   get bytes(): number {
     let b = this.packed.ids.byteLength + this.packed.types.byteLength + this.packed.sources.byteLength;
+    for (const text of this.packed.textIds ?? []) b += 8 + text.length * 2;
     for (const c of this.packed.columns) b += c.index.byteLength + c.dict.length * 16;
     return b;
   }
