@@ -1463,6 +1463,89 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "querySourceFeatures reads every loaded feature of a source",
+    async run({ page, base }) {
+      const points = [];
+      for (let i = 0; i < 40; i++) {
+        points.push({
+          type: "Feature",
+          properties: { kind: i % 2 === 0 ? "even" : "odd", n: i },
+          geometry: { type: "Point", coordinates: [-30 + i * 1.5, i % 2 === 0 ? 1 : -1] },
+        });
+      }
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          v: { type: "vector", tiles: [`${base}/fixture/vector/{z}/{x}/{y}.pbf`], maxZoom: 6 },
+          g: { type: "geojson", data: { type: "FeatureCollection", features: points } },
+          c: {
+            type: "geojson",
+            data: { type: "FeatureCollection", features: points },
+            cluster: true,
+            clusterRadius: 80,
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "areas", type: "fill", source: "v", sourceLayer: "areas", paint: { color: "#dddddd" } },
+          { id: "dots", type: "circle", source: "g", paint: { radius: 3, color: "#000000" } },
+          { id: "clusters", type: "circle", source: "c", paint: { radius: 3, color: "#ff0000" } },
+        ],
+      });
+      await createMap(page, style, { zoom: 3, center: [0, 0] });
+      const result = await page.evaluate<{
+        tiles: string[];
+        one: { name: unknown; type: string | undefined; layer: string | undefined }[];
+        even: number[];
+        all: number;
+        types: string[];
+        clusters: number;
+        clustered: number;
+      }>(`(async () => {
+        const map = window.map;
+        const tiles = await map.querySourceFeatures("v", { sourceLayer: "areas" });
+        const one = await map.querySourceFeatures("v", { sourceLayer: "areas", filter: ["==", ["get", "name"], "tile 3/4/3"] });
+        const even = await map.querySourceFeatures("g", { filter: ["==", ["get", "kind"], "even"] });
+        const all = await map.querySourceFeatures("g");
+        const clusters = await map.querySourceFeatures("c");
+        return {
+          tiles: tiles.map((f) => f.properties.name).sort(),
+          one: one.map((f) => ({ name: f.properties.name, type: f.geometry?.type, layer: f.sourceLayer })),
+          even: even.map((f) => f.properties.n).sort((a, b) => a - b),
+          all: all.length,
+          types: [...new Set(all.map((f) => f.geometry.type))],
+          clusters: clusters.filter((f) => f.properties.cluster).length,
+          clustered: clusters.reduce((sum, f) => sum + (f.properties.point_count ?? 1), 0),
+        };
+      })()`);
+      if (result.tiles.length < 4 || new Set(result.tiles).size !== result.tiles.length)
+        fail(`expected one polygon per visible tile, got ${JSON.stringify(result.tiles)}`);
+      if (JSON.stringify(result.one) !== JSON.stringify([{ name: "tile 3/4/3", type: "Polygon", layer: "areas" }]))
+        fail(`the filter should pick out tile 3/4/3, got ${JSON.stringify(result.one)}`);
+      const expectedEven = [...Array(20).keys()].map((i) => i * 2);
+      if (JSON.stringify(result.even) !== JSON.stringify(expectedEven))
+        fail(`expected the 20 even points once each, got ${JSON.stringify(result.even)}`);
+      if (result.all !== 40 || JSON.stringify(result.types) !== JSON.stringify(["Point"]))
+        fail(`expected all 40 points as whole points, got ${result.all} of ${JSON.stringify(result.types)}`);
+      if (result.clusters === 0 || result.clustered !== 40)
+        fail(
+          `a clustered source should give clusters covering all 40 points, got ${result.clusters} and ${result.clustered}`,
+        );
+      const errors = await page.evaluate<string[]>(`(async () => {
+        const out = [];
+        for (const call of [
+          () => window.map.querySourceFeatures("nope"),
+          () => window.map.querySourceFeatures("g", { filter: ["nonsense", 1] }),
+        ]) {
+          try { await call(); out.push("no error"); } catch (e) { out.push(e.code); }
+        }
+        return out;
+      })()`);
+      if (JSON.stringify(errors) !== JSON.stringify(["invalid-option", "invalid-option"]))
+        fail(`bad sources and filters should fail with invalid-option, got ${JSON.stringify(errors)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
