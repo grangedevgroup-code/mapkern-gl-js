@@ -276,6 +276,18 @@ map.setSky(null);
 
 `setSky` sets the colors of the sky and the haze you see over the distant ground on a tilted map, and `null` goes back to the sky Maplet picks to suit the style. `getSky()` returns what the style set. [The style guide](style.md#sky) lists the settings.
 
+## Day and night
+
+```js
+map.setSun({ time: "now" });
+map.setSun({ time: new Date("2026-12-21T16:00:00Z"), twilight: 6 });
+map.setSun(null);
+```
+
+`setSun` lights the map by the sun at a date and time, with night and twilight where the sun is down, and `null` turns it off. `time` takes `"now"`, a `Date`, text like `"2026-06-21T20:00:00Z"` or milliseconds. `getSun()` returns the setting. [The style guide](style.md#day-and-night) lists the options.
+
+`sunPosition(time)` gives you where the sun is overhead at a moment, as `{ declination, subsolarLng }` in degrees, and `sunAltitude(position, lng, lat)` and `sunAzimuth(position, lng, lat)` tell you how high it stands at a place and in which direction, in degrees from north.
+
 ## Errors
 
 Errors come with a `code`, a readable `message` and a `detail` object. If you don't listen for `error`, they're logged to the console.
