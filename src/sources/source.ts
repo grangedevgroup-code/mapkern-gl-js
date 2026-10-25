@@ -39,6 +39,7 @@ export interface MapSource {
   reload(): void;
   destroy(): void;
   setLayers?(layers: readonly StyleLayer[]): void;
+  adopt?(spec: SourceSpec): boolean;
 }
 
 export function tileEvents(sourceId: string, ctx: SourceContext): ManagerEvents {
