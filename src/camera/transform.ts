@@ -432,6 +432,31 @@ export class Transform {
     ];
   }
 
+  groundMatrix(refX: number, refY: number, width: number, height: number, out: Float32Array): Float32Array {
+    this.update();
+    const m = this.pixelMatrix;
+    const ws = this.worldSize;
+    const a = [
+      [m[0]!, m[4]!, m[12]!],
+      [m[1]!, m[5]!, m[13]!],
+      [m[3]!, m[7]!, m[15]!],
+    ];
+    const window = [
+      [width / 2, 0, width / 2],
+      [0, height / 2, height / 2],
+      [0, 0, 1],
+    ];
+    const world = [
+      [ws, 0, refX * ws],
+      [0, ws, refY * ws],
+      [0, 0, 1],
+    ];
+    const s = multiply3(multiply3(window, a), world);
+    const inv = invert3(s);
+    for (let col = 0; col < 3; col++) for (let row = 0; row < 3; row++) out[col * 3 + row] = inv[row]![col]!;
+    return out;
+  }
+
   tileMatrix(z: number, x: number, y: number, wrap: number, extent: number, out: Float32Array): Float32Array {
     this.update();
     const ws = this.worldSize;
@@ -690,4 +715,32 @@ export function polygonIntersectsRect(
     if (rMax < pMin || rMin > pMax) return false;
   }
   return true;
+}
+
+function multiply3(a: readonly number[][], b: readonly number[][]): number[][] {
+  const out = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) out[r]![c] = a[r]![0]! * b[0]![c]! + a[r]![1]! * b[1]![c]! + a[r]![2]! * b[2]![c]!;
+  }
+  return out;
+}
+
+function invert3(m: readonly number[][]): number[][] {
+  const [a, b, c] = m[0]!;
+  const [d, e, f] = m[1]!;
+  const [g, h, i] = m[2]!;
+  const A = e! * i! - f! * h!;
+  const B = f! * g! - d! * i!;
+  const C = d! * h! - e! * g!;
+  const det = a! * A + b! * B + c! * C;
+  const k = det !== 0 ? 1 / det : 0;
+  return [
+    [A * k, (c! * h! - b! * i!) * k, (b! * f! - c! * e!) * k],
+    [B * k, (a! * i! - c! * g!) * k, (c! * d! - a! * f!) * k],
+    [C * k, (b! * g! - a! * h!) * k, (a! * e! - b! * d!) * k],
+  ];
 }
