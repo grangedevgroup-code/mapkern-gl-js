@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Day and night</title>
+    <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font: 14px/1.4 system-ui, sans-serif;
+      }
+      #map {
+        position: absolute;
+        inset: 0;
+      }
+      .panel {
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        bottom: 28px;
+        max-width: 520px;
+        margin: 0 auto;
+        padding: 10px 14px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 8px 12px;
+        align-items: center;
+      }
+      .panel input[type="range"] {
+        width: 100%;
+      }
+      .panel output {
+        grid-column: 1 / -1;
+        color: #444;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <div class="panel">
+      <input id="date" type="date" aria-label="Date" />
+      <input id="time" type="range" min="0" max="1439" step="5" aria-label="Time of day in UTC" />
+      <button id="now" type="button">Now</button>
+      <output id="label"></output>
+    </div>
+    <script type="module">
+      import * as maplet from "../../dist/maplet.js";
+
+      const params = new URLSearchParams(location.search);
+      const imagery = params.get("imagery");
+      const style = imagery
+        ? {
+            version: 1,
+            sources: { imagery: { type: "raster", tiles: [imagery], tileSize: 256 } },
+            layers: [{ id: "imagery", type: "raster", source: "imagery" }],
+          }
+        : undefined;
+      const map = new maplet.Map({ container: "map", maxPitch: 75, ...(style ? { style } : {}) });
+      map.addControl(new maplet.NavigationControl());
+
+      const date = document.getElementById("date");
+      const time = document.getElementById("time");
+      const label = document.getElementById("label");
+      let live = true;
+
+      function show(ms) {
+        const when = new Date(ms);
+        date.value = when.toISOString().slice(0, 10);
+        time.value = String(when.getUTCHours() * 60 + when.getUTCMinutes());
+        const local = when.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+        label.textContent = `${live ? "Now: " : ""}${local} your time, ${when.toISOString().slice(11, 16)} UTC`;
+      }
+
+      function apply() {
+        if (live) {
+          map.setSun({ time: "now" });
+          show(Date.now());
+          return;
+        }
+        const [y, m, d] = date.value.split("-").map(Number);
+        const minutes = Number(time.value);
+        const ms = Date.UTC(y, m - 1, d, Math.floor(minutes / 60), minutes % 60);
+        map.setSun({ time: ms });
+        show(ms);
+      }
+
+      map.once("styleload").then(apply);
+      date.addEventListener("input", () => {
+        live = false;
+        apply();
+      });
+      time.addEventListener("input", () => {
+        live = false;
+        apply();
+      });
+      document.getElementById("now").addEventListener("click", () => {
+        live = true;
+        apply();
+      });
+      setInterval(() => {
+        if (live) show(Date.now());
+      }, 30000);
+    </script>
+  </body>
+</html>
