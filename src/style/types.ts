@@ -148,11 +148,45 @@ export interface SymbolLayerSpec extends SourceLayerBase {
     allowOverlap?: boolean;
     transform?: "none" | "uppercase" | "lowercase";
     priority?: Value<number>;
+    optional?: boolean;
+    icon?: Value<string>;
+    iconSize?: Value<number>;
+    iconRotate?: Value<number>;
+    iconAnchor?:
+      | "center"
+      | "top"
+      | "bottom"
+      | "left"
+      | "right"
+      | "top-left"
+      | "top-right"
+      | "bottom-left"
+      | "bottom-right";
+    iconOffset?: [number, number];
+    iconPadding?: number;
+    iconAllowOverlap?: boolean;
+    iconOptional?: boolean;
+    iconRotationAlignment?: "auto" | "map" | "viewport";
   };
   paint?: {
     color?: Value<Color>;
     haloColor?: Value<Color>;
     haloWidth?: Value<number>;
+    opacity?: Value<number>;
+    iconColor?: Value<Color>;
+    iconHaloColor?: Value<Color>;
+    iconHaloWidth?: Value<number>;
+    iconOpacity?: Value<number>;
+  };
+}
+
+export interface HeatmapLayerSpec extends SourceLayerBase {
+  type: "heatmap";
+  paint?: {
+    radius?: Value<number>;
+    weight?: Value<number>;
+    intensity?: Value<number>;
+    color?: Value<Color>;
     opacity?: Value<number>;
   };
 }
@@ -186,6 +220,7 @@ export type LayerSpec =
   | FillLayerSpec
   | LineLayerSpec
   | CircleLayerSpec
+  | HeatmapLayerSpec
   | SymbolLayerSpec
   | ExtrusionLayerSpec
   | HillshadeLayerSpec;
