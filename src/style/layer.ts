@@ -43,6 +43,11 @@ const oneOf =
 const numberAtLeast = (min: number) => (v: unknown) =>
   typeof v === "number" && Number.isFinite(v) && v >= min ? null : `must be a number >= ${min}`;
 
+const numberQuad = (v: unknown) =>
+  Array.isArray(v) && v.length === 4 && v.every((n) => typeof n === "number" && Number.isFinite(n))
+    ? null
+    : "must be [top, right, bottom, left] in pixels";
+
 const numberOrNull = (v: unknown) =>
   v === null || (typeof v === "number" && Number.isFinite(v)) ? null : "must be a number";
 
@@ -235,6 +240,8 @@ export const LAYOUT: Record<LayerType, Record<string, PropertyDef>> = {
     iconAllowOverlap: checked("boolean", false, false, isBoolean),
     iconOptional: checked("boolean", false, false, isBoolean),
     iconRotationAlignment: checked("string", "auto", false, oneOf("auto", "map", "viewport")),
+    iconTextFit: checked("string", "none", false, oneOf("none", "width", "height", "both")),
+    iconTextFitPadding: checked("any", [0, 0, 0, 0], false, numberQuad),
   },
   extrusion: {},
   hillshade: {},
