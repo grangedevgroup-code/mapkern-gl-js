@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { convexHull, polygonIntersectsRect, Transform } from "../../src/camera/transform.ts";
+import { convexHull, MIN_ZOOM, polygonIntersectsRect, Transform } from "../../src/camera/transform.ts";
 import { EARTH_CIRCUMFERENCE, mercatorX, mercatorY } from "../../src/geo/mercator.ts";
 
 const close = (a: number, b: number, eps = 1e-6) => assert.ok(Math.abs(a - b) <= eps, `${a} != ${b}`);
@@ -9,10 +9,10 @@ function make(zoom: number, pitch = 0, bearing = 0, w = 800, h = 600): Transform
   const t = new Transform();
   t.resize(w, h);
   t.setPitchRange(0, 85);
-  t.setCenter(-122.33, 47.6);
   t.setZoom(zoom);
   t.setPitch(pitch);
   t.setBearing(bearing);
+  t.setCenter(-122.33, 47.6);
   return t;
 }
 
@@ -307,4 +307,77 @@ test("max bounds across the antimeridian keep the center on the right side", () 
   t.setCenter(0, 0);
   const [lng] = t.center;
   assert.ok(lng > 170 || lng < -170, `center escaped to ${lng}`);
+});
+
+const corners = (t: Transform) =>
+  [
+    [0, 0],
+    [t.width, 0],
+    [t.width, t.height],
+    [0, t.height],
+  ].map(([x, y]) => t.unproject(x!, y!)!);
+
+test("the world always fills the map from top to bottom", () => {
+  const t = new Transform();
+  t.setZoomRange(MIN_ZOOM, 22);
+  t.resize(800, 600);
+  t.setZoom(-1);
+  close(t.zoom, Math.log2(600 / 512));
+  close(t.lowestZoom, Math.log2(600 / 512));
+  for (const [, y] of corners(t)) assert.ok(y >= -1e-9 && y <= 1 + 1e-9, `corner at y ${y}`);
+  t.setCenter(40, 80);
+  close(t.centerWorld[1], 0.5);
+});
+
+test("panning stops at the poles instead of showing empty space", () => {
+  const t = new Transform();
+  t.resize(800, 600);
+  t.setZoom(2);
+  t.setCenter(0, 85);
+  close(t.unproject(400, 0)![1], 0, 1e-9);
+  t.setCenter(0, -85);
+  close(t.unproject(400, 600)![1], 1, 1e-9);
+});
+
+test("a rotated map keeps all four corners on the world", () => {
+  const t = new Transform();
+  t.resize(800, 600);
+  t.setBearing(45);
+  t.setZoom(0.5);
+  t.setCenter(0, 80);
+  for (const [, y] of corners(t)) assert.ok(y >= -1e-9 && y <= 1 + 1e-9, `corner at y ${y}`);
+  assert.ok(t.zoom > 0.5, `zoom ${t.zoom} should rise so the rotated view fits`);
+});
+
+test("without world copies the map also stops at the antimeridian", () => {
+  const t = new Transform();
+  t.renderWorldCopies = false;
+  t.resize(800, 600);
+  t.setZoom(3);
+  t.setCenter(179, 0);
+  close(t.unproject(800, 300)![0], 1, 1e-9);
+  const wrapping = new Transform();
+  wrapping.resize(800, 600);
+  wrapping.setZoom(3);
+  wrapping.setCenter(179, 0);
+  close(wrapping.centerWorld[0], (179 + 180) / 360, 1e-9);
+});
+
+test("a wide, short map can still zoom out below zero", () => {
+  const t = new Transform();
+  t.setZoomRange(MIN_ZOOM, 22);
+  t.resize(1600, 200);
+  t.setZoom(-1);
+  close(t.zoom, -1);
+});
+
+test("a transform used for measuring can leave the world", () => {
+  const t = new Transform();
+  t.keepInWorld = false;
+  t.setZoomRange(MIN_ZOOM, 22);
+  t.resize(800, 600);
+  t.setZoom(-1);
+  t.setCenter(0, 85);
+  close(t.zoom, -1);
+  close(t.centerWorld[1], mercatorY(85));
 });
