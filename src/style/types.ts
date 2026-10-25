@@ -202,6 +202,7 @@ export interface SymbolLayerSpec extends SourceLayerBase {
     lineHeight?: Value<number>;
     rotate?: Value<number>;
     rotationAlignment?: Value<"auto" | "map" | "viewport">;
+    pitchAlignment?: Value<"auto" | "map" | "viewport">;
     ignorePlacement?: Value<boolean>;
     iconIgnorePlacement?: Value<boolean>;
     maxAngle?: Value<number>;
