@@ -2753,6 +2753,7 @@ const specs: Spec[] = [
           },
           { id: "stars", type: "sky" },
           { id: "marsh", type: "fill", source: "v", "source-layer": "areas", paint: { "fill-pattern": "marsh" } },
+          { id: "rails", type: "line", source: "v", "source-layer": "areas", paint: { "line-pattern": "rail" } },
         ],
       };
       const result = await page.evaluate<{ skipped: string[]; version: number; ids: string[] }>(`(async () => {
@@ -2767,7 +2768,7 @@ const specs: Spec[] = [
       await shot("v8-style");
       const green = await pixel(page, 400, 300);
       if (!near(green, GREEN, 6)) fail(`a v8 style should draw with its own colors, got ${green}`);
-      if (result.version !== 1 || result.ids.join() !== "bg,areas")
+      if (result.version !== 1 || result.ids.join() !== "bg,areas,marsh")
         fail(
           `the style should come through as a Maplet style without the parts it can't draw, got ${JSON.stringify(result)}`,
         );
@@ -2977,6 +2978,95 @@ const specs: Spec[] = [
       const height = (box: number[] | null) => (box ? box[3]! - box[1]! + 1 : 0);
       if (height(two) < height(one) * 1.8)
         fail(`a line break should start a second line, got ${height(two)} against ${height(one)}`);
+    },
+  },
+  {
+    name: "pattern fills repeat an image fixed to the map",
+    async run({ page, shot }) {
+      const style = {
+        version: 1,
+        sources: {
+          g: {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: [
+                {
+                  type: "Feature",
+                  properties: {},
+                  geometry: {
+                    type: "Polygon",
+                    coordinates: [
+                      [
+                        [-170, -80],
+                        [170, -80],
+                        [170, 80],
+                        [-170, 80],
+                        [-170, -80],
+                      ],
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "f", type: "fill", source: "g", paint: { pattern: "stripes", color: "#00ff00" } },
+        ],
+      };
+      await page.evaluate(`(async () => {
+        const data = new Uint8Array(8 * 8 * 4);
+        for (let y = 0; y < 8; y++) {
+          for (let x = 0; x < 8; x++) data.set(x < 4 ? [255, 0, 0, 255] : [0, 0, 255, 255], (y * 8 + x) * 4);
+        }
+        window.stripes = { width: 8, height: 8, data };
+        window.missing = [];
+        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: ${JSON.stringify(style)} });
+        window.map.on("styleimagemissing", (e) => window.missing.push(e.id));
+        window.map.addImage("stripes", window.stripes);
+        await new Promise((resolve) => window.map.once("idle", resolve));
+      })()`);
+      await shot("stripes");
+      const row = (y: number) =>
+        page.evaluate<string>(`(() => {
+          let out = "";
+          for (let x = 380; x < 420; x++) {
+            const [r, , b] = window.pixel(x, ${y});
+            out += r + b < 200 ? "?" : r > b ? "r" : "b";
+          }
+          return out;
+        })()`);
+      const stripes = await row(300);
+      const runs = stripes.match(/r+|b+|\?+/g) ?? [];
+      const inner = runs.slice(1, -1);
+      if (stripes.includes("?") || inner.length < 6 || inner.some((r) => r.length !== 4))
+        fail(`the pattern should repeat in 4 pixel stripes, got ${stripes}`);
+      const shifted = async (dx: number) => {
+        const target = await page.evaluate<number[]>(`window.map.unproject([400 + ${dx}, 300])`);
+        await page.evaluate(`void window.map.jumpTo({ center: ${JSON.stringify(target)} })`);
+        await idle(page);
+        return row(300);
+      };
+      const period = await shifted(8);
+      if (period !== stripes)
+        fail(`moving the map one period should show the same stripes, got ${period} against ${stripes}`);
+      const half = await shifted(4);
+      const flipped = stripes.replace(/r/g, "x").replace(/b/g, "r").replace(/x/g, "b");
+      if (half !== flipped)
+        fail(`moving the map half a period should swap the stripes, got ${half} against ${flipped}`);
+      await page.evaluate("void window.map.jumpTo({ center: [-122.33, 47.6], zoom: 18 })");
+      await idle(page);
+      const close = await row(300);
+      const closeRuns = (close.match(/r+|b+|\?+/g) ?? []).slice(1, -1);
+      if (close.includes("?") || closeRuns.length < 6 || closeRuns.some((r) => r.length !== 4))
+        fail(`at zoom 18 the stripes should stay 4 pixels wide, got ${close}`);
+      await page.evaluate(`void window.map.setPaintProperty("f", "pattern", "nothing-here")`);
+      await idle(page);
+      const missing = await page.evaluate<string[]>("window.missing");
+      if (!missing.includes("nothing-here"))
+        fail(`a missing pattern image should be reported, got ${JSON.stringify(missing)}`);
     },
   },
   {
