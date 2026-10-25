@@ -1,6 +1,6 @@
 import type { LayerUpdate } from "./diff.ts";
 import type { Compiled, EvalContext, OutputKind } from "./expression.ts";
-import { compile } from "./expression.ts";
+import { compile, isOperator } from "./expression.ts";
 import { checkTransition, settled, Transition, timing } from "./transition.ts";
 import type { LayerSpec, LayerType, TransitionSpec } from "./types.ts";
 
@@ -46,8 +46,14 @@ const numberAtLeast = (min: number) => (v: unknown) =>
 const numberOrNull = (v: unknown) =>
   v === null || (typeof v === "number" && Number.isFinite(v)) ? null : "must be a number";
 
-export function isPlainValue(value: unknown): boolean {
-  return !(Array.isArray(value) && typeof value[0] === "string");
+export function isPlainValue(value: unknown, def: { kind: string }): boolean {
+  return !Array.isArray(value) || (def.kind === "any" && !isOperator(value[0]));
+}
+
+export function literalList(value: unknown): unknown {
+  return Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === "string") && !isOperator(value[0])
+    ? ["literal", value]
+    : value;
 }
 
 const numberPair = (v: unknown) =>
@@ -194,10 +200,10 @@ export const LAYOUT: Record<LayerType, Record<string, PropertyDef>> = {
   heatmap: {},
   symbol: {
     text: p("string", ""),
-    font: fixed(["sans-serif"], stringList),
+    font: checked("any", ["sans-serif"], true, stringList),
     size: p("number", 14),
-    weight: fixed("normal", oneOf("normal", "bold")),
-    italic: fixed(false, isBoolean),
+    weight: checked("string", "normal", true, oneOf("normal", "bold")),
+    italic: checked("boolean", false, true, isBoolean),
     placement: checked("string", "point", false, oneOf("point", "line", "line-center")),
     anchor: checked("string", "center", true, oneOf(...ANCHOR_NAMES)),
     variableAnchor: fixed(null, anchorList),
@@ -440,14 +446,14 @@ export class StyleLayer {
       this.fixedValues.set(name, structuredClone(v));
       return;
     }
-    if (value !== undefined && def.check && isPlainValue(value)) {
+    if (value !== undefined && def.check && isPlainValue(value, def)) {
       const problem = def.check(value);
       if (problem) throw new Error(`${this.id}.${group}.${name} ${problem}`);
     }
     target.set(
       name,
       compile(
-        value === undefined ? def.default : value,
+        literalList(value === undefined ? def.default : value),
         def.kind,
         def.default,
         `${this.id}.${group}.${name}`,
