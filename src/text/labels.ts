@@ -467,11 +467,14 @@ export class LabelRenderer {
     }
   }
 
-  private font(layer: StyleLayer): FontSpec {
+  private font(layer: StyleLayer, ctx: EvalContext): FontSpec {
+    const families = layer.layoutValue<unknown>("font", ctx);
     return {
-      family: cssFamily(layer.fixed<string[]>("font")),
-      weight: layer.fixed<string>("weight") === "bold" ? "700" : "400",
-      italic: layer.fixed<boolean>("italic"),
+      family: cssFamily(
+        Array.isArray(families) && families.every((f) => typeof f === "string") ? families : ["sans-serif"],
+      ),
+      weight: layer.layoutValue<unknown>("weight", ctx) === "bold" ? "700" : "400",
+      italic: layer.layoutValue<unknown>("italic", ctx) === true,
     };
   }
 
@@ -489,22 +492,17 @@ export class LabelRenderer {
       this.layoutCache.clear();
       this.layoutGeneration = this.atlas.generation;
     }
-    const cacheKey = `${layer.id}#${layer.revision}#${line ? 1 : 0}#${shape.letterSpacing}#${shape.lineHeight}#${shape.maxWidth}#${text}`;
+    const { font } = shape;
+    const cacheKey = `${layer.id}#${layer.revision}#${line ? 1 : 0}#${shape.letterSpacing}#${shape.lineHeight}#${shape.maxWidth}#${font.family}#${font.weight}#${font.italic}#${text}`;
     const cached = this.layoutCache.get(cacheKey);
     if (cached) return cached;
-    const laid = this.computeLayout(layer, line ? text.replace(/\n/g, " ") : text, line, budget, shape);
+    const laid = this.computeLayout(line ? text.replace(/\n/g, " ") : text, line, budget, shape);
     if (laid) this.layoutCache.set(cacheKey, laid);
     return laid;
   }
 
-  private computeLayout(
-    layer: StyleLayer,
-    text: string,
-    line: boolean,
-    budget: { left: number },
-    shape: TextShape,
-  ): Laid | null {
-    const font = this.font(layer);
+  private computeLayout(text: string, line: boolean, budget: { left: number }, shape: TextShape): Laid | null {
+    const font = shape.font;
     const whole = needsWholeShaping(text);
     if (whole && line) return null;
     const units = whole
@@ -730,7 +728,7 @@ export class LabelRenderer {
         let iconAnchor: Anchor = "center";
         let iconOffset: [number, number] = [0, 0];
         let textStyle: TextStyle = { variable, radial: null, offset: [0, 0], justify: "center" };
-        let shape: TextShape = { letterSpacing: 0, lineHeight, maxWidth: 10 };
+        let shape: TextShape = { letterSpacing: 0, lineHeight, maxWidth: 10, font: this.font(layer, at) };
         for (let a = 0; a < anchors.length; a += 3) {
           const tx = anchors[a]! / extent;
           const ty = anchors[a + 1]! / extent;
@@ -767,6 +765,7 @@ export class LabelRenderer {
               letterSpacing: numberOr(layer.layoutValue<unknown>("letterSpacing", ctx), 0),
               lineHeight,
               maxWidth: numberOr(layer.layoutValue<unknown>("maxWidth", ctx), 10),
+              font: this.font(layer, ctx),
             };
             const icon = layer.layoutValue<unknown>("icon", ctx);
             iconId = typeof icon === "string" ? icon : "";
@@ -1426,6 +1425,7 @@ interface TextShape {
   letterSpacing: number;
   lineHeight: number;
   maxWidth: number;
+  font: FontSpec;
 }
 
 interface TextStyle {
