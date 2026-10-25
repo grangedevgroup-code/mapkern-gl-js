@@ -3148,6 +3148,81 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "line labels lie on the ground when the map is tilted",
+    async run({ page, shot }) {
+      const style = (alignment: string) => ({
+        version: 1,
+        sources: {
+          g: {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: [
+                {
+                  type: "Feature",
+                  properties: { name: "HHHHHH" },
+                  geometry: {
+                    type: "LineString",
+                    coordinates: [
+                      [-4, 0],
+                      [4, 0],
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          {
+            id: "t",
+            type: "symbol",
+            source: "g",
+            layout: {
+              text: ["get", "name"],
+              size: 28,
+              placement: "line",
+              allowOverlap: true,
+              pitchAlignment: alignment,
+              spacing: 5000,
+            },
+            paint: { color: "#ff0000" },
+          },
+        ],
+      });
+      const height = async () =>
+        page.evaluate<number>(`(() => {
+          const gl = window.map.getCanvas().getContext("webgl2");
+          const px = new Uint8Array(800 * 600 * 4);
+          gl.readPixels(0, 0, 800, 600, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          let top = Infinity, bottom = -Infinity;
+          for (let y = 0; y < 600; y++) {
+            for (let x = 0; x < 800; x++) {
+              const i = (y * 800 + x) * 4;
+              if (px[i] > 200 && px[i + 1] < 90 && px[i + 2] < 90) { top = Math.min(top, y); bottom = Math.max(bottom, y); }
+            }
+          }
+          return Number.isFinite(top) ? bottom - top + 1 : 0;
+        })()`);
+      const measure = async (alignment: string, pitch: number) => {
+        await createMap(page, JSON.stringify(style(alignment)), { zoom: 5, center: [0, 0], pitch });
+        const h = await height();
+        await shot(`${alignment}-${pitch}`);
+        await page.evaluate("window.map.remove()");
+        return h;
+      };
+      const flatGround = await measure("map", 0);
+      const flatUpright = await measure("viewport", 0);
+      const tiltedGround = await measure("map", 60);
+      const tiltedUpright = await measure("viewport", 60);
+      if (!flatGround || Math.abs(flatGround - flatUpright) > 2)
+        fail(`without tilt both alignments should look the same, got ${flatGround} and ${flatUpright} pixels high`);
+      if (!tiltedGround || tiltedGround > tiltedUpright * 0.75)
+        fail(`tilted, text on the ground should be squashed, got ${tiltedGround} against ${tiltedUpright} pixels high`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
