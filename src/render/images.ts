@@ -20,6 +20,12 @@ export interface RawImage {
   data: Uint8Array | Uint8ClampedArray;
 }
 
+interface Shelf {
+  y: number;
+  height: number;
+  x: number;
+}
+
 const GUTTER = 1;
 const MAX_SIZE = 4096;
 
@@ -32,7 +38,7 @@ export class ImageAtlas {
   dirty: { y0: number; y1: number } | null = null;
   private readonly images = new Map<string, StyleImage>();
   private readonly rects = new Map<string, ImageRect>();
-  private shelves: { y: number; height: number; x: number }[] = [];
+  private shelves: Shelf[] = [];
   private bottom = 0;
   private stale = false;
 
@@ -48,22 +54,20 @@ export class ImageAtlas {
     return [...this.images.keys()];
   }
 
-  get size(): number {
-    return this.images.size;
-  }
-
   add(image: StyleImage): void {
     const before = this.images.get(image.id);
     this.images.set(image.id, image);
     this.version++;
     const rect = this.rects.get(image.id);
-    if (before && rect && before.width === image.width && before.height === image.height) {
+    if (!before || !rect) return;
+    if (before.width === image.width && before.height === image.height && !this.stale) {
       const next = { x: rect.x, y: rect.y, image };
       this.rects.set(image.id, next);
       this.copy(next);
+      this.mark(next);
       return;
     }
-    if (before) this.stale = true;
+    this.stale = true;
   }
 
   remove(id: string): boolean {
@@ -92,8 +96,7 @@ export class ImageAtlas {
     const rect = this.rects.get(id);
     if (rect) return rect;
     const image = this.images.get(id);
-    if (!image) return undefined;
-    return this.place(image);
+    return image ? this.place(image) : undefined;
   }
 
   private place(image: StyleImage): ImageRect | undefined {
@@ -106,15 +109,16 @@ export class ImageAtlas {
         const rect = { x: spot[0] + GUTTER, y: spot[1] + GUTTER, image };
         this.rects.set(image.id, rect);
         this.copy(rect);
+        this.mark(rect);
         return rect;
       }
-      if (this.width >= MAX_SIZE && this.height >= MAX_SIZE) return undefined;
-      this.grow();
+      if (!this.enlarge()) return undefined;
+      this.repack();
     }
   }
 
   private find(w: number, h: number): [number, number] | null {
-    let best: { y: number; height: number; x: number } | null = null;
+    let best: Shelf | null = null;
     for (const shelf of this.shelves) {
       if (shelf.height < h || shelf.height > h * 1.5 + 4 || shelf.x + w > this.width) continue;
       if (!best || shelf.height < best.height) best = shelf;
@@ -125,72 +129,61 @@ export class ImageAtlas {
       return [x, best.y];
     }
     if (this.bottom + h > this.height || w > this.width) return null;
-    const shelf = { y: this.bottom, height: h, x: w };
-    this.shelves.push(shelf);
+    this.shelves.push({ y: this.bottom, height: h, x: w });
+    const y = this.bottom;
     this.bottom += h;
-    return [0, shelf.y];
+    return [0, y];
   }
 
-  private grow(): void {
+  private enlarge(): boolean {
+    if (this.width >= MAX_SIZE && this.height >= MAX_SIZE) return false;
     if (this.width <= this.height) this.width = Math.min(MAX_SIZE, this.width * 2);
     else this.height = Math.min(MAX_SIZE, this.height * 2);
-    this.repack();
+    return true;
   }
 
   private repack(): void {
     this.stale = false;
-    this.data = new Uint8Array(this.width * this.height * 4);
-    this.shelves = [];
-    this.bottom = 0;
-    this.generation++;
-    this.dirty = null;
-    const placed = [...this.rects.keys()];
-    this.rects.clear();
-    const order = placed
+    const order = [...this.rects.keys()]
       .map((id) => this.images.get(id))
       .filter((image): image is StyleImage => image !== undefined)
       .sort((a, b) => b.height - a.height);
-    for (const image of order) {
-      const w = image.width + GUTTER * 2;
-      const h = image.height + GUTTER * 2;
-      const spot = this.find(w, h);
-      if (!spot) {
-        if (this.width >= MAX_SIZE && this.height >= MAX_SIZE) continue;
-        if (this.width <= this.height) this.width = Math.min(MAX_SIZE, this.width * 2);
-        else this.height = Math.min(MAX_SIZE, this.height * 2);
-        this.repack();
-        return;
+    for (;;) {
+      this.data = new Uint8Array(this.width * this.height * 4);
+      this.shelves = [];
+      this.bottom = 0;
+      this.rects.clear();
+      let fits = true;
+      for (const image of order) {
+        const spot = this.find(image.width + GUTTER * 2, image.height + GUTTER * 2);
+        if (!spot) {
+          fits = false;
+          break;
+        }
+        const rect = { x: spot[0] + GUTTER, y: spot[1] + GUTTER, image };
+        this.rects.set(image.id, rect);
+        this.copy(rect);
       }
-      const rect = { x: spot[0] + GUTTER, y: spot[1] + GUTTER, image };
-      this.rects.set(image.id, rect);
-      this.copy(rect, false);
+      if (fits || !this.enlarge()) break;
+    }
+    this.generation++;
+    this.dirty = null;
+  }
+
+  private copy(rect: ImageRect): void {
+    const { image } = rect;
+    const stride = this.width * 4;
+    const row = image.width * 4;
+    for (let y = 0; y < image.height; y++) {
+      const from = y * row;
+      this.data.set(image.data.subarray(from, from + row), (rect.y + y) * stride + rect.x * 4);
     }
   }
 
-  private copy(rect: ImageRect, mark = true): void {
-    const { image } = rect;
-    const stride = this.width * 4;
-    const x0 = rect.x - GUTTER;
+  private mark(rect: ImageRect): void {
     const y0 = rect.y - GUTTER;
-    const w = image.width;
-    const h = image.height;
-    for (let row = -GUTTER; row < h + GUTTER; row++) {
-      const sy = Math.min(h - 1, Math.max(0, row));
-      for (let col = -GUTTER; col < w + GUTTER; col++) {
-        const sx = Math.min(w - 1, Math.max(0, col));
-        const from = (sy * w + sx) * 4;
-        const to = (rect.y + row) * stride + (rect.x + col) * 4;
-        const inside = row >= 0 && row < h && col >= 0 && col < w;
-        this.data[to] = inside ? image.data[from]! : 0;
-        this.data[to + 1] = inside ? image.data[from + 1]! : 0;
-        this.data[to + 2] = inside ? image.data[from + 2]! : 0;
-        this.data[to + 3] = inside ? image.data[from + 3]! : 0;
-      }
-    }
-    if (!mark) return;
-    const y1 = y0 + h + GUTTER * 2;
+    const y1 = rect.y + rect.image.height + GUTTER;
     this.dirty = this.dirty ? { y0: Math.min(this.dirty.y0, y0), y1: Math.max(this.dirty.y1, y1) } : { y0, y1 };
-    void x0;
   }
 }
 
