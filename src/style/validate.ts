@@ -10,9 +10,12 @@ export interface StyleIssue {
 }
 
 const LAYER_TYPES = new Set<LayerType>(Object.keys(PAINT) as LayerType[]);
-const SOURCE_TYPES = new Set(["raster", "vector", "dem", "geojson"]);
+const SOURCE_TYPES = new Set(["raster", "vector", "dem", "geojson", "image", "video", "canvas"]);
 const SOURCE_KEYS: Record<string, Set<string>> = {
   raster: new Set(["type", "tiles", "url", "minZoom", "maxZoom", "bounds", "scheme", "attribution", "tileSize"]),
+  image: new Set(["type", "url", "coordinates", "attribution"]),
+  video: new Set(["type", "urls", "coordinates", "attribution"]),
+  canvas: new Set(["type", "canvas", "coordinates", "animate", "attribution"]),
   vector: new Set(["type", "tiles", "url", "minZoom", "maxZoom", "bounds", "scheme", "attribution", "promoteId"]),
   dem: new Set([
     "type",
@@ -125,12 +128,43 @@ export function validateSource(id: string, source: unknown): StyleIssue[] {
   if (!isObject(source)) return [{ path, message: "source must be an object" }];
   const type = source.type;
   if (typeof type !== "string" || !SOURCE_TYPES.has(type)) {
-    return [{ path: `${path}.type`, message: "source type must be raster, vector, dem or geojson" }];
+    return [
+      { path: `${path}.type`, message: "source type must be raster, vector, dem, geojson, image, video or canvas" },
+    ];
   }
   const issues: StyleIssue[] = [];
   const allowed = SOURCE_KEYS[type]!;
   for (const key of Object.keys(source)) {
     if (!allowed.has(key)) issues.push({ path: `${path}.${key}`, message: `unknown ${type} source property "${key}"` });
+  }
+  if (type === "image" || type === "video" || type === "canvas") {
+    const corners = source.coordinates;
+    if (!Array.isArray(corners) || corners.length !== 4 || !corners.every(isLngLat)) {
+      issues.push({
+        path: `${path}.coordinates`,
+        message: "coordinates must be four [lng, lat] corners: top left, top right, bottom right, bottom left",
+      });
+    }
+    if (type === "image" && (typeof source.url !== "string" || source.url === "")) {
+      issues.push({ path: `${path}.url`, message: "an image source needs a url" });
+    }
+    if (
+      type === "video" &&
+      !(Array.isArray(source.urls) && source.urls.length > 0 && source.urls.every((u) => typeof u === "string"))
+    ) {
+      issues.push({ path: `${path}.urls`, message: "a video source needs a list of urls" });
+    }
+    if (
+      type === "canvas" &&
+      typeof source.canvas !== "string" &&
+      !(isObject(source.canvas) && source.canvas.tagName === "CANVAS")
+    ) {
+      issues.push({
+        path: `${path}.canvas`,
+        message: "canvas must be the id of a canvas element or the element itself",
+      });
+    }
+    return issues;
   }
   if (type === "geojson") {
     if (source.data === undefined || (typeof source.data !== "string" && !isObject(source.data))) {
@@ -237,8 +271,8 @@ function checkSourceType(
   path: string,
 ): StyleIssue[] {
   const featureLayers: LayerType[] = ["fill", "line", "circle", "heatmap", "symbol", "extrusion"];
-  if (type === "raster" && source.type !== "raster")
-    return [{ path: `${path}.source`, message: "raster layers need a raster source" }];
+  if (type === "raster" && !["raster", "image", "video", "canvas"].includes(source.type))
+    return [{ path: `${path}.source`, message: "raster layers need a raster, image, video or canvas source" }];
   if (type === "hillshade" && source.type !== "dem")
     return [{ path: `${path}.source`, message: "hillshade layers need a dem source" }];
   if (featureLayers.includes(type)) {
