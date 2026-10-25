@@ -26,7 +26,8 @@ import { importStyle, isStyleV8 } from "../style/import.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { StyleUpdate } from "../style/style.ts";
 import { assertValid, Style } from "../style/style.ts";
-import type { LayerSpec, SourceSpec, StyleSpec, StyleSpecV8, TerrainSpec } from "../style/types.ts";
+import type { LayerSpec, SkySpec, SourceSpec, StyleSpec, StyleSpecV8, TerrainSpec } from "../style/types.ts";
+import { validateSky } from "../style/validate.ts";
 import { metersToWorld, Terrain } from "../terrain/terrain.ts";
 import type { TransformRequest } from "../tiles/fetch.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
@@ -910,6 +911,27 @@ export class MapletMap extends Emitter<MapEvents> {
   getTerrain(): TerrainSpec | null {
     const terrain = this.style?.meta.terrain;
     return terrain ? { ...terrain } : null;
+  }
+
+  setSky(sky: SkySpec | null): this {
+    const style = this.style;
+    if (!style) throw new MapletError("invalid-option", "Set a style before changing the sky");
+    if (sky === null) {
+      delete style.meta.sky;
+    } else {
+      const issues = validateSky(sky);
+      if (issues.length > 0) {
+        throw new MapletError("invalid-option", `${issues[0]!.path} ${issues[0]!.message}`, { sky });
+      }
+      style.meta.sky = structuredClone(sky);
+    }
+    this.triggerRepaint();
+    return this;
+  }
+
+  getSky(): SkySpec | null {
+    const sky = this.style?.meta.sky;
+    return sky ? structuredClone(sky) : null;
   }
 
   easeTo(options: CameraOptions & AnimationOptions): this {
@@ -2266,6 +2288,7 @@ export class MapletMap extends Emitter<MapEvents> {
         pixelRatio: this.pixelRatioValue,
         layers: style.layers,
         sources: style.sources,
+        sky: style.meta.sky ?? null,
         now,
         cameraVersion: this.cameraVersion,
         states: this.stateScope,
