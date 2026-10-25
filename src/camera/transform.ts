@@ -31,6 +31,22 @@ export interface Point {
   y: number;
 }
 
+export interface Padding {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export interface WorldBounds {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+const NO_PADDING: Padding = { top: 0, right: 0, bottom: 0, left: 0 };
+
 const DEG = Math.PI / 180;
 const DEFAULT_FOV = (2 * Math.atan(0.375)) / DEG;
 const MAX_GROUND_ANGLE = 88 * DEG;
@@ -65,6 +81,8 @@ export class Transform {
   private groundMeters = 0;
   private elevationPx = 0;
   private groundPx = 0;
+  private pad: Padding = { ...NO_PADDING };
+  private limits: WorldBounds | null = null;
   private readonly tmp: Vec4 = [0, 0, 0, 0];
 
   get center(): LngLat {
@@ -127,6 +145,21 @@ export class Transform {
     return this.farZ;
   }
 
+  get padding(): Padding {
+    return { ...this.pad };
+  }
+
+  get centerPoint(): [number, number] {
+    return [
+      this.width / 2 + (this.pad.left - this.pad.right) / 2,
+      this.height / 2 + (this.pad.top - this.pad.bottom) / 2,
+    ];
+  }
+
+  get maxBounds(): WorldBounds | null {
+    return this.limits ? { ...this.limits } : null;
+  }
+
   get near(): number {
     this.update();
     return this.nearZ;
@@ -148,6 +181,8 @@ export class Transform {
     t.pitchDeg = this.pitchDeg;
     t.elevationMeters = this.elevationMeters;
     t.groundMeters = this.groundMeters;
+    t.pad = { ...this.pad };
+    t.limits = this.limits ? { ...this.limits } : null;
     t.dirty = true;
     return t;
   }
@@ -159,6 +194,22 @@ export class Transform {
     this.width = w;
     this.height = h;
     this.dirty = true;
+    this.constrain();
+  }
+
+  setPadding(padding: Padding): void {
+    const p = this.pad;
+    if (p.top === padding.top && p.right === padding.right && p.bottom === padding.bottom && p.left === padding.left) {
+      return;
+    }
+    this.pad = { top: padding.top, right: padding.right, bottom: padding.bottom, left: padding.left };
+    this.dirty = true;
+    this.constrain();
+  }
+
+  setMaxBounds(bounds: WorldBounds | null): void {
+    this.limits = bounds ? { ...bounds } : null;
+    this.constrain();
   }
 
   setCenter(lng: number, lat: number): void {
@@ -173,6 +224,7 @@ export class Transform {
     this.cx = nx;
     this.cy = ny;
     this.dirty = true;
+    this.constrain();
   }
 
   setZoom(zoom: number): void {
@@ -181,6 +233,7 @@ export class Transform {
     if (z === this.z) return;
     this.z = z;
     this.dirty = true;
+    this.constrain();
   }
 
   setBearing(bearing: number): void {
@@ -189,6 +242,53 @@ export class Transform {
     if (b > 180) b -= 360;
     if (b === this.bearingDeg) return;
     this.bearingDeg = b;
+    this.dirty = true;
+    this.constrain();
+  }
+
+  private constrain(): void {
+    const b = this.limits;
+    if (!b) return;
+    const [px, py] = this.centerPoint;
+    const angle = this.bearingDeg * DEG;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    let left = Infinity;
+    let right = -Infinity;
+    let top = Infinity;
+    let bottom = -Infinity;
+    for (const [sx, sy] of [
+      [-px, -py],
+      [this.width - px, -py],
+      [this.width - px, this.height - py],
+      [-px, this.height - py],
+    ] as const) {
+      const dx = sx * cos - sy * sin;
+      const dy = sx * sin + sy * cos;
+      left = Math.min(left, dx);
+      right = Math.max(right, dx);
+      top = Math.min(top, dy);
+      bottom = Math.max(bottom, dy);
+    }
+    const spanX = (b.x1 - b.x0) * TILE_SIZE;
+    const spanY = (b.y1 - b.y0) * TILE_SIZE;
+    const fit = Math.log2(Math.max((right - left) / spanX, (bottom - top) / spanY));
+    let z = this.z;
+    if (z < fit) z = Math.min(this.maxZoom, fit);
+    const ws = worldSize(z);
+    const mid = (b.x0 + b.x1) / 2;
+    let x = this.cx + Math.round(mid - this.cx);
+    const minX = b.x0 - left / ws;
+    const maxX = b.x1 - right / ws;
+    x = minX > maxX ? mid : Math.min(maxX, Math.max(minX, x));
+    const minY = b.y0 - top / ws;
+    const maxY = b.y1 - bottom / ws;
+    const y = minY > maxY ? (b.y0 + b.y1) / 2 : Math.min(maxY, Math.max(minY, this.cy));
+    const nx = this.renderWorldCopies ? x - Math.floor(x) : Math.min(1, Math.max(0, x));
+    if (nx === this.cx && y === this.cy && z === this.z) return;
+    this.cx = nx;
+    this.cy = y;
+    this.z = z;
     this.dirty = true;
   }
 
@@ -267,12 +367,16 @@ export class Transform {
     this.elevationPx = this.elevationMeters * ppm;
     this.groundPx = Math.min(this.groundMeters * ppm, this.elevationPx);
     const camHeight = d * Math.cos(pitch);
-    const topAngle = Math.min(pitch + fovRad / 2, MAX_GROUND_ANGLE);
+    const [, principalY] = this.centerPoint;
+    const topAngle = Math.min(pitch + Math.atan(principalY / d), MAX_GROUND_ANGLE);
     const groundAlongTopRay = (camHeight + this.elevationPx - this.groundPx) / Math.cos(topAngle);
     const farDepth = groundAlongTopRay * Math.cos(fovRad / 2);
     this.farZ = farDepth * 1.01 + 1;
     this.nearZ = Math.max(d / 100, 0.01);
     mat4.perspective(this.projMatrix, fovRad, this.width / this.height, this.nearZ, this.farZ);
+    const [principalX] = this.centerPoint;
+    this.projMatrix[8] = -((principalX - this.width / 2) * 2) / this.width;
+    this.projMatrix[9] = ((principalY - this.height / 2) * 2) / this.height;
     const v = this.viewMatrix;
     mat4.identity(v);
     mat4.translate(v, v, 0, 0, -d);
