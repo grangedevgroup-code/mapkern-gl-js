@@ -128,7 +128,7 @@ export const PAINT: Record<LayerType, Record<string, PropertyDef>> = {
     width: p("number", 1),
     opacity: p("number", 1),
     blur: p("number", 0),
-    dash: fixed(null, numberList),
+    dash: checked("any", null, false, numberList),
   },
   circle: {
     radius: p("number", 5),
