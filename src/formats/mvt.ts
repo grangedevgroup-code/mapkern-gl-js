@@ -5,6 +5,7 @@ export type PropertyValue = string | number | boolean;
 
 export interface VectorFeature {
   readonly id: number | undefined;
+  readonly textId?: string | undefined;
   readonly source?: number;
   readonly type: FeatureType;
   readonly extent: number;
@@ -248,6 +249,35 @@ export function numericId(value: unknown): number | undefined {
   if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
   if (typeof value === "string" && /^\d{1,15}$/.test(value)) return Number(value);
   return undefined;
+}
+
+export function featureKey(value: unknown): number | undefined {
+  const n = numericId(value);
+  if (n !== undefined || typeof value !== "string" || value === "") return n;
+  return -1 - textHash(value);
+}
+
+export function featureIdValue(value: unknown): number | string | undefined {
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+function textHash(text: string): number {
+  let a = 0x811c9dc5;
+  let b = 0x9e3779b9;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193);
+    b = Math.imul(b ^ c, 0x5bd1e995);
+    b ^= b >>> 15;
+  }
+  a ^= a >>> 16;
+  a = Math.imul(a, 0x85ebca6b);
+  a ^= a >>> 13;
+  b ^= b >>> 16;
+  b = Math.imul(b, 0xc2b2ae35);
+  b ^= b >>> 16;
+  return (b >>> 11) * 0x100000000 + (a >>> 0);
 }
 
 export { decodeUtf8 };
