@@ -41,7 +41,7 @@ export class PaintTable {
   private readonly scratch: Record<string, unknown> = {};
   private readonly feature: {
     properties: Record<string, unknown>;
-    id: number | undefined;
+    id: number | string | undefined;
     geometryType: GeometryType;
   } = { properties: this.scratch, id: undefined, geometryType: "Unknown" };
   private readonly ctx: EvalContext = { zoom: 0, feature: this.feature };
@@ -141,7 +141,7 @@ export class PaintTable {
     const feature = this.feature;
     features.fill(f, this.scratch);
     const id = features.id(f);
-    feature.id = id;
+    feature.id = features.idValue(f);
     feature.geometryType = GEOMETRY[features.type(f)] ?? "Unknown";
     ctx.state = id !== undefined ? states?.get(id) : undefined;
     for (const { slot, property } of slots) {
