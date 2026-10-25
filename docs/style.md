@@ -273,6 +273,9 @@ Put extrusion layers after your roads and point layers, so buildings hide what's
 
 Draws text, icons, or both. When symbols would overlap, the one with the lower `priority` is hidden.
 
+Apart from `font`, `weight`, `italic` and `variableAnchor`, every layout property also takes an expression, so it can change with the zoom, like `["step", ["zoom"], "point", 11, "line"]`. The ones marked per feature can also differ from one feature to the next. A line break, `"
+"`, in the text starts a new line.
+
 | Layout | Default | |
 | --- | --- | --- |
 | `text` | empty | per feature. Usually `["get", "name"]` |
@@ -282,28 +285,29 @@ Draws text, icons, or both. When symbols would overlap, the one with the lower `
 | `weight` | `normal` | Or `bold` |
 | `italic` | `false` | |
 | `placement` | `point` | `line` makes the text follow the line, repeated along it. `line-center` puts one label at the middle of each line |
-| `anchor` | `center` | Which part of the text sits on the point: `top`, `bottom`, `left`, `right` or a corner like `top-left` |
+| `anchor` | `center` | per feature. Which part of the text sits on the point: `top`, `bottom`, `left`, `right` or a corner like `top-left` |
 | `variableAnchor` | none | A list of anchors to try in order, such as `["top", "bottom", "left", "right"]`. Each label takes the first one that fits |
-| `offset` | `[0, 0]` | Shift, measured in font sizes |
-| `radialOffset` | none | Distance from the point in font sizes, in the direction of the anchor. Handy with `variableAnchor` |
-| `justify` | `center` | Lines of a wrapped label line up on the `left`, `right` or `center`. `auto` follows the anchor |
+| `offset` | `[0, 0]` | per feature. Shift, measured in font sizes |
+| `radialOffset` | none | per feature. Distance from the point in font sizes, in the direction of the anchor. Handy with `variableAnchor` |
+| `justify` | `center` | per feature. Lines of a wrapped label line up on the `left`, `right` or `center`. `auto` follows the anchor |
 | `lineHeight` | 1.2 | Distance between wrapped lines, in font sizes |
 | `rotate` | 0 | per feature. Turns point labels, in degrees clockwise |
-| `maxWidth` | 10 | Wrap point labels after this many font sizes |
-| `letterSpacing` | 0 | Extra space between letters, in font sizes |
+| `rotationAlignment` | `auto` | `viewport` keeps text upright even when it's placed along a line, the way road shields usually are. `auto` and `map` let line labels follow the line |
+| `maxWidth` | 10 | per feature. Wrap point labels after this many font sizes |
+| `letterSpacing` | 0 | per feature. Extra space between letters, in font sizes |
 | `padding` | 2 | Space kept clear around the label, in pixels |
 | `spacing` | 250 | Distance between repeats of a line label, in pixels |
 | `allowOverlap` | `false` | Show the label even when it collides |
 | `ignorePlacement` | `false` | Let other symbols draw over this label's space |
 | `maxAngle` | 45 | The sharpest bend, in degrees, a label may follow along a line |
 | `keepUpright` | `true` | Flip line labels so they never read upside down |
-| `transform` | `none` | Or `uppercase`, `lowercase` |
+| `transform` | `none` | per feature. Or `uppercase`, `lowercase` |
 | `optional` | `false` | With an icon, show the icon alone when the text doesn't fit |
 | `icon` | none | per feature. The name of an [image](#icons), such as `"cafe"` or `["get", "kind"]` |
 | `iconSize` | 1 | per feature. Scales the image |
 | `iconRotate` | 0 | per feature, in degrees clockwise |
-| `iconAnchor` | `center` | Which part of the icon sits on the point: `top`, `bottom`, `left`, `right` or a corner like `bottom-left` |
-| `iconOffset` | `[0, 0]` | Shift in pixels, before `iconSize` |
+| `iconAnchor` | `center` | per feature. Which part of the icon sits on the point: `top`, `bottom`, `left`, `right` or a corner like `bottom-left` |
+| `iconOffset` | `[0, 0]` | per feature. Shift in pixels, before `iconSize` |
 | `iconPadding` | 2 | Space kept clear around the icon, in pixels |
 | `iconAllowOverlap` | `false` | Show the icon even when it collides |
 | `iconIgnorePlacement` | `false` | Let other symbols draw over this icon's space |
@@ -447,6 +451,20 @@ Everything flat gets drawn onto the ground: fills, lines, circles, rasters and h
 When you drag the map over mountains, the camera keeps its height, so the zoom level changes a little as the ground in the middle of the map rises and falls. `jumpTo`, `easeTo` and `flyTo` end at exactly the zoom you ask for, measured from the ground.
 
 On steep slopes the roofs of 3D buildings follow the slope instead of staying flat.
+
+## Styles from MapLibre and Mapbox
+
+Styles written for MapLibre GL JS or Mapbox GL JS, the ones with `"version": 8`, load as they are. Pass the object or its URL to the map, and Maplet turns it into its own style on the way in:
+
+```js
+const map = new maplet.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/liberty" });
+```
+
+Property names lose their prefix and move to camel case, so `fill-color` becomes `color` and `text-halo-width` becomes `haloWidth`, and `fill-extrusion` layers become `extrusion` layers. Filters and property functions in the older format, like `["==", "class", "park"]` or `{ "stops": [[5, 1], [10, 4]] }`, become expressions, `{name}` in a label becomes `["get", "name"]`, and relative addresses are read from where the style lives. Where the two formats disagree on a default, such as the text size or the tile size of raster sources, Maplet uses the one the style was written for. `text-font` picks the font family, weight and slant, and the text is drawn with fonts installed on the device.
+
+A few things can't be drawn yet: pattern fills and lines, `line-gradient`, `icon-text-fit`, `text-pitch-alignment`, `fog`, `sky` and the globe projection. When a style uses them, Maplet leaves out that property, or the layer when nothing else would make sense, and draws the rest. The `styleload` event lists what was left out in `event.skipped`. Addresses starting with `mapbox://` need Mapbox's own servers and are left out too.
+
+`maplet.importStyle(style, url)` does the same conversion without a map and returns `{ style, skipped }`, if you'd like to look at the result or keep it.
 
 ## The built-in style
 
