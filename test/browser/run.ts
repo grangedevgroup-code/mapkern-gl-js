@@ -3494,9 +3494,18 @@ const specs: Spec[] = [
       ] as const) {
         await move(camera);
         await shot(name);
-        const tilted = await blank(true);
-        if (tilted > 0) fail(`${name}: ${tilted} rows or columns of the near half showed past the world`);
+        const tilted = await blank();
+        if (tilted > 0) fail(`${name}: ${tilted} rows or columns showed past the world`);
       }
+      await page.evaluate(`void window.map.setSky({ color: "#0000ff", horizonColor: "#0000ff", fogColor: "#0000ff" })`);
+      await move({ center: [10, 80], zoom: 2, bearing: 0, pitch: 60 });
+      await shot("blue-sky");
+      const sky = await pixel(page, 150, 2);
+      if (!near(sky, [0, 0, 255, 255], 12)) fail(`past the pole a tilted map should show the sky, got ${sky}`);
+      await move({ center: [10, 40], zoom: 12, pitch: 60 });
+      const city = await pixel(page, 150, 2);
+      if (!near(city, [0, 170, 0, 255], 12)) fail(`a tilted city view should not show the sky, got ${city}`);
+      await page.evaluate("void window.map.setSky(null)");
       await move({ pitch: 0 });
       await move({ bearing: 0, zoom: -2 });
       await move({ center: [-122.33, 47.6], zoom: 12 });
