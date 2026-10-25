@@ -1365,6 +1365,104 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "heatmaps glow where points crowd together",
+    async run({ page, base, shot }) {
+      const features = [];
+      for (let i = 0; i < 60; i++) {
+        const a = (i / 60) * Math.PI * 2;
+        const r = 0.3 * ((i % 5) / 5);
+        features.push({
+          type: "Feature",
+          properties: { weight: 1 },
+          geometry: { type: "Point", coordinates: [Math.cos(a) * r, Math.sin(a) * r] },
+        });
+      }
+      features.push({ type: "Feature", properties: { weight: 1 }, geometry: { type: "Point", coordinates: [12, 0] } });
+      const layers = [
+        { id: "bg", type: "background", paint: { color: "#ffffff" } },
+        { id: "heat", type: "heatmap", source: "g", paint: { radius: 40, weight: ["get", "weight"] } },
+      ];
+      const style = JSON.stringify({
+        version: 1,
+        sources: { g: { type: "geojson", data: { type: "FeatureCollection", features } } },
+        layers,
+      });
+      await createMap(page, style, { zoom: 4, center: [0, 0] });
+      await shot("heatmap");
+      const hot = await pixel(page, 400, 300);
+      const lone = await page.evaluate<{ x: number; y: number }>("window.map.project([12, 0])");
+      const cool = await pixel(page, Math.round(lone.x), Math.round(lone.y));
+      const empty = await pixel(page, 400, 80);
+      const redness = (c: RGBA) => c[0] - c[2];
+      if (redness(hot) < 120) fail(`the crowded centre should glow warm, got ${hot}`);
+      if (redness(cool) > 0 || near(cool, WHITE, 10)) fail(`a lone point should be a cool faint spot, got ${cool}`);
+      if (!near(empty, WHITE, 6)) fail(`away from the points the map should be untouched, got ${empty}`);
+      await page.evaluate(`void window.map.setPaintProperty("heat", "opacity", 0.4)`);
+      await idle(page);
+      const faded = await pixel(page, 400, 300);
+      if (!(faded[1] > hot[1] + 40)) fail(`opacity 0.4 should let the white show through, got ${faded} from ${hot}`);
+      await page.evaluate(`void window.map.setPaintProperty("heat", "opacity", 1)`);
+      await page.evaluate(
+        `void window.map.setPaintProperty("heat", "color", ["interpolate", ["linear"], ["heatmap-density"], 0, "rgba(0, 0, 255, 0)", 0.2, "#00ff00", 1, "#00ff00"])`,
+      );
+      await idle(page);
+      const green = await pixel(page, 400, 300);
+      if (!near(green, GREEN, 12)) fail(`a custom color ramp should paint the centre green, got ${green}`);
+      const query = await page.evaluate<number>("window.map.queryRenderedFeatures([400, 300]).then((fs) => fs.length)");
+      if (query !== 0) fail(`heatmap layers are not queryable, got ${query} features`);
+
+      await page.evaluate("window.map.remove()");
+      const terrain = JSON.stringify({
+        version: 1,
+        sources: {
+          dem: { type: "dem", tiles: [`${base}/fixture/dem/{z}/{x}/{y}.png`], tileSize: 256, maxZoom: 12 },
+          g: { type: "geojson", data: { type: "FeatureCollection", features } },
+        },
+        layers,
+        terrain: { source: "dem" },
+      });
+      await createMap(page, terrain, { zoom: 4, center: [0, 0], pitch: 30 });
+      await shot("heatmap-terrain");
+      const draped = await pixel(page, 400, 300);
+      if (redness(draped) < 100) fail(`with terrain on the heatmap should still glow, got ${draped}`);
+      const seam = await page.evaluate<{ x: number; y: number }>("window.map.project([12, 0])");
+      const above = await pixel(page, Math.round(seam.x), Math.round(seam.y - 6));
+      const below = await pixel(page, Math.round(seam.x), Math.round(seam.y + 6));
+      if (near(above, WHITE, 10) || near(below, WHITE, 10))
+        fail(
+          `a point on a tile edge should glow on both sides of it on terrain, got ${above} above and ${below} below`,
+        );
+
+      await page.evaluate("window.map.remove()");
+      const dots = JSON.stringify({
+        version: 1,
+        sources: {
+          g: {
+            type: "geojson",
+            data: {
+              type: "FeatureCollection",
+              features: [
+                { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [0, 0] } },
+                { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [5, 5] } },
+              ],
+            },
+          },
+        },
+        layers: [
+          { id: "bg", type: "background", paint: { color: "#ffffff" } },
+          { id: "dots", type: "circle", source: "g", paint: { radius: 10, color: "#000000", opacity: 0.5 } },
+        ],
+      });
+      await createMap(page, dots, { zoom: 4, center: [2.5, 2.5] });
+      const corner = await page.evaluate<{ x: number; y: number }>("window.map.project([0, 0])");
+      const open = await page.evaluate<{ x: number; y: number }>("window.map.project([5, 5])");
+      const onCorner = await pixel(page, Math.round(corner.x) + 2, Math.round(corner.y) + 2);
+      const inside = await pixel(page, Math.round(open.x) + 2, Math.round(open.y) + 2);
+      if (Math.abs(onCorner[0] - inside[0]) > 4)
+        fail(`a see-through circle on a tile corner was drawn more than once: ${onCorner} against ${inside}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
