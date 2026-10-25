@@ -228,6 +228,10 @@ const OPS = new Set([
   "within",
 ]);
 
+export function isOperator(name: unknown): boolean {
+  return typeof name === "string" && OPS.has(name);
+}
+
 function constant(v: unknown): Node {
   return { fn: () => v, zoom: false, feature: false };
 }
