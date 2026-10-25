@@ -550,11 +550,12 @@ export class VectorPainter {
     }
     const b = (transform.bearing * Math.PI) / 180;
     const [sx, sy, sz] = LIGHT;
+    const sun = frame.sun?.light;
     gl.uniform3f(
       program.uniforms.get("u_light") ?? null,
-      sx * Math.cos(b) - sy * Math.sin(b),
-      sx * Math.sin(b) + sy * Math.cos(b),
-      sz,
+      sun ? sun[0] : sx * Math.cos(b) - sy * Math.sin(b),
+      sun ? sun[1] : sx * Math.sin(b) + sy * Math.cos(b),
+      sun ? sun[2] : sz,
     );
     const passes = opacity < 1 && !pick ? 2 : 1;
     for (let pass = 0; pass < passes; pass++) {
