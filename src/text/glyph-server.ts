@@ -114,6 +114,7 @@ export class GlyphServer {
   private readonly arrived: () => void;
   private readonly ranges = new Map<string, Map<number, ServerGlyph> | null | "loading">();
   private readonly controller = new AbortController();
+  private waiting = 0;
 
   constructor(template: string, load: GlyphLoader, arrived: () => void) {
     this.template = template;
@@ -134,12 +135,17 @@ export class GlyphServer {
     return range.get(codepoint) ?? null;
   }
 
+  get loading(): boolean {
+    return this.waiting > 0;
+  }
+
   destroy(): void {
     this.controller.abort();
   }
 
   private fetch(stack: string, start: number, key: string): void {
     this.ranges.set(key, "loading");
+    this.waiting++;
     this.load(glyphUrl(this.template, stack, start), this.controller.signal)
       .then((bytes) => {
         this.ranges.set(key, bytes ? decodeGlyphs(bytes) : null);
@@ -148,6 +154,7 @@ export class GlyphServer {
         this.ranges.set(key, null);
       })
       .finally(() => {
+        this.waiting--;
         if (!this.controller.signal.aborted) this.arrived();
       });
   }
