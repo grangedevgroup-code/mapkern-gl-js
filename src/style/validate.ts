@@ -136,6 +136,8 @@ export function validateStyle(style: unknown): StyleIssue[] {
       issues.push({ path: "terrain", message: "terrain must be { source, exaggeration? }" });
     } else if (isObject(sources) && (sources as Record<string, SourceSpec>)[t.source]?.type !== "dem") {
       issues.push({ path: "terrain.source", message: `terrain source "${t.source}" must be a dem source` });
+    } else if (t.relief !== undefined && !(typeof t.relief === "number" && t.relief >= 0 && t.relief <= 1)) {
+      issues.push({ path: "terrain.relief", message: "terrain.relief must be a number from 0 to 1" });
     }
   }
   return issues;
