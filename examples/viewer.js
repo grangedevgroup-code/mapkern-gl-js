@@ -67,6 +67,7 @@ export function createViewer(options = {}) {
     overlay,
     page = true,
     remember = page,
+    attributionControl = true,
     ...mapOptions
   } = options;
   const stored = memory(remember);
@@ -78,7 +79,12 @@ export function createViewer(options = {}) {
     maxPitch: 85,
     style: basemaps[selected].style,
     ...mapOptions,
+    attributionControl: false,
   });
+  if (attributionControl !== false) {
+    const custom = typeof attributionControl === "object" ? attributionControl : {};
+    map.addControl(new maplet.AttributionControl(custom), "bottom-left");
+  }
   const picker = basemaps.length > 1 ? new maplet.BasemapControl({ basemaps, selected }) : null;
   const terrainControl = terrain ? new maplet.TerrainControl({ source: terrain }) : null;
   if (picker) map.addControl(picker, "bottom-right");
