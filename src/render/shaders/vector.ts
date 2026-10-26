@@ -494,7 +494,9 @@ out highp uvec4 pickColor;
 out vec4 fragColor;
 #endif
 void main() {
+#ifndef WHOLE
   if (v_pos.x < u_clip.x || v_pos.y < u_clip.y || v_pos.x >= u_clip.z || v_pos.y >= u_clip.w) discard;
+#endif
 #ifdef PICK
   pickColor = uvec4(u_draw, v_feature, 0u, 1u);
 #else
