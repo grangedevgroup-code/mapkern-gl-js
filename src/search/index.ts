@@ -169,13 +169,18 @@ export class SearchIndex implements Geocoder {
     if (tokens.length === 0) return [];
     const limit = Math.max(1, options.limit ?? 8);
     const prefixLast = (options.autocomplete ?? true) && !/\s$/.test(query);
-    const matches = tokens.map((t, i) => this.match(t, prefixLast && i === tokens.length - 1));
+    const single = tokens.length === 1 && tokens[0]!.length === 1;
+    const matches = single ? [] : tokens.map((t, i) => this.match(t, prefixLast && i === tokens.length - 1));
     const kinds = options.kinds ? new Set(options.kinds.map((k) => SEARCH_KINDS.indexOf(k))) : null;
     const d = this.data;
     const scored: Scored[] = [];
-    for (const allowMissing of tokens.length >= 3 ? [0, 1] : [0]) {
-      this.collect(matches, allowMissing, kinds, options, scored);
-      if (scored.length > 0) break;
+    if (tokens.length === 1 && tokens[0]!.length === 1) {
+      if (!kinds || kinds.has(SEARCH_KINDS.indexOf("place"))) this.initial(tokens[0]!, options, scored);
+    } else {
+      for (const allowMissing of tokens.length >= 3 ? [0, 1] : [0]) {
+        this.collect(matches, allowMissing, kinds, options, scored);
+        if (scored.length > 0) break;
+      }
     }
     scored.sort((a, b) => b.score - a.score);
     const top = scored.slice(0, Math.max(limit * 6, 30));
@@ -195,6 +200,24 @@ export class SearchIndex implements Geocoder {
       if (out.length >= limit) break;
     }
     return out;
+  }
+
+  private initial(letter: string, options: SearchOptions, scored: Scored[]): void {
+    const d = this.data;
+    for (const e of this.places) {
+      const words = tokenize(this.text(d.name[e]!));
+      const text = words[0] === letter ? 1 : words.some((w) => w.startsWith(letter)) ? 0.9 : 0;
+      if (text === 0) continue;
+      const lon = d.lon[e]! / 1e7;
+      const lat = d.lat[e]! / 1e7;
+      if (options.bbox) {
+        const [w, s, east, n] = options.bbox;
+        if (lon < w || lon > east || lat < s || lat > n) continue;
+      }
+      const distance = options.near ? metres(options.near[0], options.near[1], lon, lat) : undefined;
+      const near = distance === undefined ? 0.5 : 1 / (1 + distance / (5000 * this.spread(e)));
+      scored.push({ entry: e, text, score: text * 0.3 + (d.rank[e]! / 255) * 0.5 + near * 0.2, distance });
+    }
   }
 
   private collect(
@@ -405,7 +428,7 @@ export class SearchIndex implements Geocoder {
 
   private spread(e: number): number {
     const d = this.data;
-    if (SEARCH_KINDS[d.kind[e]!] !== "place") return 1;
+    if (SEARCH_KINDS[d.kind[e]!] !== "place") return 1 + Math.max(0, d.rank[e]! - 100) / 25;
     const raw = d.category[e]! < d.categories.length ? d.categories[d.category[e]!]! : "";
     const zoom = PLACE_ZOOM[raw.slice(raw.indexOf("=") + 1)] ?? KIND_ZOOM.place;
     return 2 ** Math.max(0, 12 - zoom);
