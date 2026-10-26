@@ -43,14 +43,15 @@
       );
 
       let hovered;
-      const setHover = (id, on) => {
-        if (id !== undefined) map.setFeatureState({ source: "osm", sourceLayer: "building", id }, { hover: on });
+      const setHover = (feature, on) => {
+        if (feature?.id === undefined) return;
+        map.setFeatureState({ source: feature.source, sourceLayer: feature.sourceLayer, id: feature.id }, { hover: on });
       };
       map.on("mousemove", buildings, (event) => {
-        const id = event.features[0].id;
-        if (id === hovered) return;
+        const feature = event.features[0];
+        if (feature.id === hovered?.id && feature.source === hovered?.source) return;
         setHover(hovered, false);
-        hovered = id;
+        hovered = feature;
         setHover(hovered, true);
         const height = event.features[0].properties.height;
         status.textContent = height ? `Building, ${Math.round(height)} m tall` : "Building";
