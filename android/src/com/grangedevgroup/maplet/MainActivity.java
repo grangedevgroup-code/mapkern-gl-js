@@ -71,7 +71,7 @@ public class MainActivity extends Activity {
         }
 
         String path = getIntent().getStringExtra("path");
-        web.loadUrl(server.url() + (path != null ? path.replaceFirst("^/+", "") : ""));
+        web.loadUrl(server.url() + (path != null ? path.replaceFirst("^/+", "") : "app.html"));
     }
 
     private void goBack() {
