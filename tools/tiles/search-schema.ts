@@ -58,6 +58,29 @@ const KEPT = new Set([
   "type",
   "wikidata",
   "ref",
+  "iata",
+  "icao",
+]);
+
+const WORLD_PLACES = new Set([
+  "country",
+  "state",
+  "province",
+  "region",
+  "county",
+  "district",
+  "municipality",
+  "city",
+  "town",
+  "village",
+  "hamlet",
+  "borough",
+  "suburb",
+  "quarter",
+  "neighbourhood",
+  "island",
+  "archipelago",
+  "locality",
 ]);
 
 export function isNameKey(key: string): boolean {
@@ -113,4 +136,18 @@ export function isSearchRelation(tags: Tags): boolean {
   if (tags.type === "boundary" && tags.boundary === "administrative") return Boolean(tags.admin_level);
   if (tags.type === "multipolygon") return Boolean(tags.place) || categoryOf(tags) !== null;
   return false;
+}
+
+export function isWorldFeature(tags: Tags): boolean {
+  if (!tags.name) return false;
+  if (tags.place && WORLD_PLACES.has(tags.place)) return true;
+  if (tags.aeroway === "aerodrome" && (tags.iata || tags.icao)) return true;
+  return Boolean(tags.wikidata) && categoryOf(tags) !== null;
+}
+
+export function isWorldRelation(tags: Tags): boolean {
+  if (!tags.name) return false;
+  if (tags.type === "boundary" && tags.boundary === "administrative")
+    return tags.admin_level === "2" || tags.admin_level === "4";
+  return tags.type === "multipolygon" && isWorldFeature(tags);
 }
