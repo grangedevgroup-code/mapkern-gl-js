@@ -31,87 +31,6 @@ export const TERRAIN = {
   attribution: '<a href="https://mapterhorn.com/attribution">© Mapterhorn</a>',
 };
 
-const CSS = `
-.maplet-viewer-page {
-  position: absolute;
-  inset: 0;
-}
-.maplet-bottom-right > .maplet-scale {
-  position: absolute;
-  right: calc(100% + var(--maplet-margin));
-  bottom: 0;
-}
-.maplet-viewer-panel {
-  display: grid;
-  gap: 6px;
-  max-width: min(300px, calc(100vw - 96px));
-  padding: 10px 12px;
-  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  color: var(--maplet-ink, #10191d);
-}
-.maplet-viewer-panel h1 {
-  margin: 0;
-  font-size: 15px;
-}
-.maplet-viewer-panel p {
-  margin: 0;
-  color: #3d474b;
-}
-.maplet-viewer-panel output {
-  font-variant-numeric: tabular-nums;
-}
-.maplet-viewer-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-.maplet-viewer-panel .maplet-viewer-button,
-.maplet-viewer-file span {
-  display: inline-block;
-  padding: 5px 10px;
-  border: 1px solid #b9bdb7;
-  border-radius: 6px;
-  background: #ffffff;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-.maplet-viewer-file {
-  position: relative;
-}
-.maplet-viewer-file input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-.maplet-viewer-file input:focus-visible + span,
-.maplet-viewer-panel .maplet-viewer-button:focus-visible {
-  outline: 2px solid var(--maplet-focus, #2f6fdb);
-}
-`;
-
-const PAGE_CSS = `
-html,
-body {
-  margin: 0;
-  height: 100%;
-  overflow: hidden;
-  background: #11191f;
-}
-`;
-
-let styled = false;
-
-function addStyles(page) {
-  if (styled) return;
-  styled = true;
-  const style = document.createElement("style");
-  style.textContent = page ? PAGE_CSS + CSS : CSS;
-  document.head.appendChild(style);
-}
-
 function memory(enabled) {
   const prefix = `maplet-viewer:${location.pathname}:`;
   return {
@@ -133,7 +52,7 @@ function memory(enabled) {
 }
 
 function choose(basemaps, wanted) {
-  if (typeof wanted === "number" && Number.isInteger(wanted) && wanted >= 0 && wanted < basemaps.length) return wanted;
+  if (Number.isInteger(wanted) && wanted >= 0 && wanted < basemaps.length) return wanted;
   const named = basemaps.findIndex((b) => b.name === wanted);
   return named < 0 ? 0 : named;
 }
@@ -150,17 +69,11 @@ export function createViewer(options = {}) {
     remember = page,
     ...mapOptions
   } = options;
-  addStyles(page);
-  const element = typeof container === "string" ? document.getElementById(container) : container;
-  if (page && element) element.classList.add("maplet-viewer-page");
   const stored = memory(remember);
   const remembered = stored.get("basemap");
-  const selected = choose(
-    basemaps,
-    remembered !== null && basemaps.some((b) => b.name === remembered) ? remembered : basemap,
-  );
+  const selected = choose(basemaps, basemaps.some((b) => b.name === remembered) ? remembered : basemap);
   const map = new maplet.Map({
-    container: element ?? container,
+    container,
     hash: page,
     maxPitch: 85,
     style: basemaps[selected].style,
@@ -190,9 +103,7 @@ export function createViewer(options = {}) {
 }
 
 function addPanel(map, children) {
-  const el = document.createElement("div");
-  el.className = "maplet-control maplet-viewer-panel";
-  el.append(...children);
+  const el = element("div", { className: "maplet-control maplet-viewer-panel" }, ...children);
   map.addControl({ onAdd: () => el, onRemove: () => el.remove() }, "top-left");
   return el;
 }
