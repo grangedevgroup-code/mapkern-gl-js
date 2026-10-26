@@ -326,7 +326,7 @@ export class ImageSource implements MapSource {
     const signal = controller.signal;
     try {
       const params = resolveRequest(url, "image", this.ctx.transformRequest);
-      const result = await fetchBytes(params, signal, this.ctx.requestTimeoutMs, "image");
+      const result = await fetchBytes(params, signal, this.ctx.requestTimeoutMs, "image", this.ctx.diskCache);
       if (result.kind === "empty")
         throw new MapletError("source-error", `There is no image at ${url}`, { sourceId: this.id });
       const type = result.contentType.split(";")[0]?.trim() || "image/png";
