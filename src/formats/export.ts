@@ -9,12 +9,13 @@ function featuresOf(data: Input): Feature[] {
 }
 
 function xml(text: unknown): string {
-  return String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
+  let out = "";
+  for (const ch of String(text)) {
+    const c = ch.charCodeAt(0);
+    if (c < 0x20 && c !== 0x09 && c !== 0x0a && c !== 0x0d) continue;
+    out += ch === "&" ? "&amp;" : ch === "<" ? "&lt;" : ch === ">" ? "&gt;" : ch === '"' ? "&quot;" : ch;
+  }
+  return out;
 }
 
 function number(v: number): string {
