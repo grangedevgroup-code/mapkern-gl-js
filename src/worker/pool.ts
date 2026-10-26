@@ -1,4 +1,4 @@
-import { MapletError } from "../core/errors.ts";
+import { MapkernError } from "../core/errors.ts";
 
 export interface WorkerMessage {
   id: number;
@@ -64,8 +64,8 @@ export class WorkerPool {
     signal?: AbortSignal,
     affinity?: number,
   ): Promise<T> {
-    if (this.destroyed) return Promise.reject(new MapletError("worker", "The worker pool has been destroyed"));
-    if (!this.factory) return Promise.reject(new MapletError("worker", "Web Workers are not available"));
+    if (this.destroyed) return Promise.reject(new MapkernError("worker", "The worker pool has been destroyed"));
+    if (!this.factory) return Promise.reject(new MapkernError("worker", "Web Workers are not available"));
     if (signal?.aborted) return Promise.reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
     const index = affinity === undefined ? this.leastLoaded() : Math.abs(affinity) % this.size;
     const worker = this.worker(index);
@@ -97,7 +97,7 @@ export class WorkerPool {
     this.destroyed = true;
     for (const [id, entry] of [...this.pending]) {
       this.finish(id);
-      entry.reject(new MapletError("worker", "The worker pool has been destroyed"));
+      entry.reject(new MapkernError("worker", "The worker pool has been destroyed"));
     }
     for (const worker of this.workers) worker?.terminate();
     this.workers.fill(null);
@@ -129,7 +129,7 @@ export class WorkerPool {
     if (!entry) return;
     this.finish(message.id);
     if (message.error) {
-      const error = new MapletError("worker", message.error.message);
+      const error = new MapkernError("worker", message.error.message);
       entry.reject(error);
     } else {
       entry.resolve(message.result);
@@ -152,7 +152,7 @@ export class WorkerPool {
     for (const [id, entry] of [...this.pending]) {
       if (entry.worker !== index) continue;
       this.finish(id);
-      entry.reject(new MapletError("worker", `A map worker stopped: ${message}`, { crashes: this.crashes }));
+      entry.reject(new MapkernError("worker", `A map worker stopped: ${message}`, { crashes: this.crashes }));
     }
   }
 }
