@@ -3,6 +3,7 @@ import { parentPort, workerData } from "node:worker_threads";
 import type { BlobRef, BlockKinds, RelationMember, Tags } from "./osm-pbf.ts";
 import { readBlob, visitBlock } from "./osm-pbf.ts";
 import { isRelevantPoint, isRelevantRelation, isRelevantWay, keepTags } from "./schema.ts";
+import { isSearchPoint, isSearchRelation, isSearchWay, searchTags } from "./search-schema.ts";
 
 export interface PointRecord {
   id: number;
@@ -52,7 +53,14 @@ export type Result =
   | { kind: "missing"; index: number; kinds: BlockKinds; ids: Float64Array; lon: Int32Array; lat: Int32Array }
   | { kind: "error"; index: number; message: string };
 
-const fd = openSync((workerData as { path: string }).path, "r");
+export type Profile = "tiles" | "search";
+
+const options = workerData as { path: string; profile?: Profile };
+const fd = openSync(options.path, "r");
+const schema =
+  options.profile === "search"
+    ? { point: isSearchPoint, way: isSearchWay, relation: isSearchRelation, keep: searchTags }
+    : { point: isRelevantPoint, way: isRelevantWay, relation: isRelevantRelation, keep: keepTags };
 let region: Uint8Array | null = null;
 let members: Uint8Array | null = null;
 let missing: Uint8Array | null = null;
@@ -104,8 +112,8 @@ function run(task: Task): Result {
       const kinds = visitBlock(data, {
         relations: {
           relation(id, m, tags) {
-            if (!isRelevantRelation(tags)) return;
-            const kept = keepTags(tags);
+            if (!schema.relation(tags)) return;
+            const kept = schema.keep(tags);
             if (!kept) return;
             relations.push({ id, tags: kept, members: m.filter((x) => x.type === 1) });
           },
@@ -116,8 +124,8 @@ function run(task: Task): Result {
             if (id > maxId) maxId = id;
             if (lon < minLon || lon > maxLon || lat < minLat || lat > maxLat) return;
             grow.push(id, lon, lat);
-            if (tags && isRelevantPoint(tags)) {
-              const kept = keepTags(tags);
+            if (tags && schema.point(tags)) {
+              const kept = schema.keep(tags);
               if (kept) points.push({ id, lon, lat, tags: kept });
             }
           },
@@ -138,7 +146,7 @@ function run(task: Task): Result {
               if (!has(members, id)) return;
             } else {
               const member = has(members, id);
-              const relevant = isRelevantWay(tags);
+              const relevant = schema.way(tags);
               if (!member && !relevant) return;
               let inside = false;
               for (let i = 0; i < refs.length; i++) {
@@ -160,7 +168,7 @@ function run(task: Task): Result {
             refCount += refs.length;
             ids.push(id);
             offsets.push(refCount);
-            tagList.push(keepTags(tags));
+            tagList.push(schema.keep(tags));
           },
         },
       });
