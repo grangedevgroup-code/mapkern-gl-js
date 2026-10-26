@@ -7,7 +7,7 @@ import { after, test } from "node:test";
 import type { ByteRanges } from "../../src/formats/sqlite.ts";
 import { MBTilesArchive } from "../../src/sources/mbtiles.ts";
 
-const dir = mkdtempSync(join(tmpdir(), "maplet-mbtiles-"));
+const dir = mkdtempSync(join(tmpdir(), "mapkern-mbtiles-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
 
 class FileRanges implements ByteRanges {
