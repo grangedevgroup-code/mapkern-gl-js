@@ -99,7 +99,12 @@ const site = join(out, "site");
 cpSync(join(root, "_site"), site, { recursive: true });
 cpSync(join(android, "app.html"), join(site, "app.html"));
 for (const file of files(site)) {
-  const target = join(file.endsWith(".pmtiles") ? stored : packed, "assets", "site", relative(site, file));
+  const target = join(
+    file.endsWith(".pmtiles") || file.endsWith(".search") ? stored : packed,
+    "assets",
+    "site",
+    relative(site, file),
+  );
   mkdirSync(dirname(target), { recursive: true });
   cpSync(file, target);
 }
