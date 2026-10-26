@@ -75,8 +75,9 @@ test("an SQLite file that is not a GeoPackage is refused with a clear message", 
       (() => {
         const copy = gpkg.slice();
         const text = new TextDecoder("latin1").decode(copy);
-        const at = text.indexOf("gpkg_contents");
-        copy.set(new TextEncoder().encode("xxxx_contents"), at);
+        for (let at = text.indexOf("gpkg_contents"); at >= 0; at = text.indexOf("gpkg_contents", at + 1)) {
+          copy.set(new TextEncoder().encode("xxxx_contents"), at);
+        }
         return copy;
       })(),
     ),
