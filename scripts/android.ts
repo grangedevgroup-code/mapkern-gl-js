@@ -1,7 +1,7 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -58,10 +58,20 @@ function java(name: string): string {
 }
 
 function exec(file: string, list: string[], cwd = root): string {
-  const options = { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] } as const;
-  if (!file.endsWith(".bat")) return execFileSync(file, list, options);
+  const stdio: ("ignore" | "pipe" | "inherit")[] = ["ignore", "pipe", "inherit"];
+  if (!file.endsWith(".bat")) return execFileSync(file, list, { cwd, encoding: "utf8", stdio });
   const quote = (arg: string) => `"${arg.replace(/"/g, '""')}"`;
-  return execFileSync(quote(file), list.map(quote), { ...options, shell: true });
+  return execSync([file, ...list].map(quote).join(" "), { cwd, encoding: "utf8", stdio });
+}
+
+function files(dir: string): string[] {
+  const found: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) found.push(...files(path));
+    else found.push(path);
+  }
+  return found;
 }
 
 function sources(dir: string): string[] {
@@ -81,10 +91,16 @@ const adb = tool(join(sdk, "platform-tools"), "adb");
 
 exec(process.execPath, [join(root, "scripts", "site.ts")]);
 rmSync(out, { recursive: true, force: true });
-const assets = join(out, "assets", "site");
-mkdirSync(assets, { recursive: true });
-cpSync(join(root, "_site"), assets, { recursive: true });
-cpSync(join(android, "app.html"), join(assets, "app.html"));
+const packed = join(out, "packed");
+const stored = join(out, "stored");
+const site = join(out, "site");
+cpSync(join(root, "_site"), site, { recursive: true });
+cpSync(join(android, "app.html"), join(site, "app.html"));
+for (const file of files(site)) {
+  const target = join(file.endsWith(".pmtiles") ? stored : packed, "assets", "site", relative(site, file));
+  mkdirSync(dirname(target), { recursive: true });
+  cpSync(file, target);
+}
 
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string };
 const commit = exec("git", ["rev-parse", "--short", "HEAD"]).trim();
@@ -113,12 +129,10 @@ exec(aapt2, [
   "26",
   "--target-sdk-version",
   "36",
-  "-A",
-  join(out, "assets"),
-  "-0",
-  "pmtiles",
   resources,
 ]);
+exec(java("jar"), ["uf", unsigned, "-C", packed, "assets"]);
+if (existsSync(stored)) exec(java("jar"), ["uf0", unsigned, "-C", stored, "assets"]);
 
 const classes = join(out, "classes");
 mkdirSync(classes, { recursive: true });
