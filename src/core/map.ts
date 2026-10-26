@@ -157,6 +157,9 @@ const DEFAULT_TEXT: Record<UiText, string> = {
   flatView: "2D map",
   terrainView: "3D terrain from above",
   tiltedView: "Tilted 3D terrain",
+  search: "Search",
+  searchPlaceholder: "Search places and addresses",
+  noResults: "Nothing found",
 };
 
 export interface ScreenPosition {
