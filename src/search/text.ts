@@ -1,4 +1,8 @@
-const SHORT: Record<string, string> = {
+export function table<T>(entries: Record<string, T>): Record<string, T> {
+  return Object.assign(Object.create(null) as Record<string, T>, entries);
+}
+
+const SHORT: Record<string, string> = table({
   street: "st",
   avenue: "ave",
   av: "ave",
@@ -38,7 +42,7 @@ const SHORT: Record<string, string> = {
   eighth: "8th",
   ninth: "9th",
   tenth: "10th",
-};
+});
 
 const LONG = new Map<string, string[]>();
 for (const [long, short] of Object.entries(SHORT)) {
@@ -108,7 +112,7 @@ export function withinEdits(a: string, b: string, limit: number, length = b.leng
   return prev[m]! <= limit ? prev[m]! : -1;
 }
 
-const SYNONYMS: Record<string, string[]> = {
+const SYNONYMS: Record<string, string[]> = table({
   cafe: ["coffee"],
   fuel: ["gas", "petrol", "gas station"],
   fast_food: ["burger", "takeout"],
@@ -130,7 +134,7 @@ const SYNONYMS: Record<string, string[]> = {
   bank: ["atm"],
   post_office: ["post", "mail"],
   aerodrome: ["airport"],
-};
+});
 
 export function categoryWords(category: string): string[] {
   const value = category.slice(category.indexOf("=") + 1);
