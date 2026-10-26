@@ -1,22 +1,22 @@
 <!doctype html>
-<html lang="en" class="maplet-viewer">
+<html lang="en" class="mapkern-viewer">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Maplet with your own tiles</title>
+    <title>Mapkern with your own tiles</title>
     <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="../viewer.css" />
   </head>
   <body>
     <div id="map"></div>
     <script type="module">
-      import { BASEMAPS, createViewer, maplet } from "../viewer.js";
+      import { BASEMAPS, createViewer, mapkern } from "../viewer.js";
 
       const params = new URLSearchParams(location.search);
       const file = params.get("tiles") ?? "../../data/seattle.pmtiles";
 
       const { map } = createViewer({
-        basemaps: [{ name: "Your tiles", style: maplet.lightStyle({ url: file }) }, ...BASEMAPS],
+        basemaps: [{ name: "Your tiles", style: mapkern.lightStyle({ url: file }) }, ...BASEMAPS],
         center: [-122.335, 47.608],
         zoom: 12,
       });
