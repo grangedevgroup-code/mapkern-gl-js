@@ -78,7 +78,7 @@ function pixelCenter(z: number, x: number, y: number, i: number, j: number): [nu
 }
 
 async function build(tiff: Uint8Array, maxZoom: number, minZoom: number) {
-  const dir = mkdtempSync(join(tmpdir(), "maplet-dem-"));
+  const dir = mkdtempSync(join(tmpdir(), "mapkern-dem-"));
   try {
     writeFileSync(join(dir, "dem.tif"), tiff);
     const result = await buildDem({
