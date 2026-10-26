@@ -1,6 +1,7 @@
 export const SEARCH_KINDS = ["place", "address", "street", "poi"] as const;
 export type SearchKind = (typeof SEARCH_KINDS)[number];
 export const NONE = 0xffffffff;
+export const NO_CATEGORY = 0xffff;
 
 const MAGIC = 0x58534b4d;
 const VERSION = 1;
