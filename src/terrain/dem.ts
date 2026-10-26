@@ -41,18 +41,28 @@ export function unpackFor(encoding: DemEncoding | undefined): Unpack {
 }
 
 export function decodeDem(pixels: ArrayLike<number>, size: number, unpack: Unpack): DemGrid | null {
+  const [r, g, b, offset] = unpack;
+  return build(size, (x, y) => {
+    const p = (y * size + x) * 4;
+    return pixels[p + 3] === 255 ? pixels[p]! * r + pixels[p + 1]! * g + pixels[p + 2]! * b + offset : Number.NaN;
+  });
+}
+
+export function decodeElevations(values: ArrayLike<number>, size: number): DemGrid | null {
+  if (values.length < size * size) return null;
+  return build(size, (x, y) => values[y * size + x]!);
+}
+
+function build(size: number, sample: (x: number, y: number) => number): DemGrid | null {
   const stride = size + 2 * DEM_BORDER;
   const elevation = new Float32Array(stride * stride);
-  const [r, g, b, offset] = unpack;
   let min = Number.POSITIVE_INFINITY;
   let max = Number.NEGATIVE_INFINITY;
   let missing = 0;
   for (let y = 0; y < size; y++) {
     let o = (y + DEM_BORDER) * stride + DEM_BORDER;
-    let p = y * size * 4;
-    for (let x = 0; x < size; x++, o++, p += 4) {
-      const value =
-        pixels[p + 3] === 255 ? pixels[p]! * r + pixels[p + 1]! * g + pixels[p + 2]! * b + offset : Number.NaN;
+    for (let x = 0; x < size; x++, o++) {
+      const value = sample(x, y);
       if (value >= LOWEST_ELEVATION) {
         elevation[o] = value;
         if (value < min) min = value;
