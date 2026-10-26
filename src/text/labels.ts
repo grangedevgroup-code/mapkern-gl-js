@@ -150,6 +150,7 @@ export interface LabelHit {
 
 const FADE_MS = 180;
 const PLACE_INTERVAL = 120;
+const PLACE_BUDGET = 3;
 const STRIDE = 36;
 const GEOMETRY: Record<number, GeometryType> = { 0: "Unknown", 1: "Point", 2: "LineString", 3: "Polygon" };
 
