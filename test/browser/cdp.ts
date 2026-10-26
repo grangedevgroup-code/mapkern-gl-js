@@ -165,20 +165,28 @@ export class Browser {
   }
 
   async close(): Promise<void> {
+    const exited =
+      this.process.exitCode !== null || this.process.signalCode !== null
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => this.process.once("exit", () => resolve()));
+    const wait = (ms: number) => Promise.race([exited, new Promise((r) => setTimeout(r, ms))]);
     try {
       await Promise.race([this.send("Browser.close"), new Promise((r) => setTimeout(r, 3000))]);
     } catch {
       this.process.kill();
     }
     this.input.end();
-    await new Promise((r) => setTimeout(r, 300));
-    if (this.process.exitCode === null) this.process.kill();
-    for (let i = 0; i < 10; i++) {
+    await wait(5000);
+    if (this.process.exitCode === null && this.process.signalCode === null) {
+      this.process.kill();
+      await wait(3000);
+    }
+    for (let i = 0; i < 40; i++) {
       try {
         rmSync(this.profile, { recursive: true, force: true });
         break;
       } catch {
-        await new Promise((r) => setTimeout(r, 300));
+        await new Promise((r) => setTimeout(r, 250));
       }
     }
   }
