@@ -1,8 +1,9 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Readable, Writable } from "node:stream";
 
 interface Pending {
   resolve(value: unknown): void;
@@ -60,26 +61,40 @@ export function findChrome(): string | null {
 
 export class Browser {
   private readonly process: ChildProcess;
-  private readonly socket: WebSocket;
+  private readonly input: Writable;
   private readonly profile: string;
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
   private readonly handlers = new Map<string, Set<EventHandler>>();
+  private buffer = "";
 
-  private constructor(proc: ChildProcess, socket: WebSocket, profile: string) {
+  private constructor(proc: ChildProcess, profile: string) {
     this.process = proc;
-    this.socket = socket;
     this.profile = profile;
-    socket.addEventListener("message", (event) => this.onMessage(String(event.data)));
+    this.input = proc.stdio[3] as Writable;
+    const output = proc.stdio[4] as Readable;
+    output.setEncoding("utf8");
+    output.on("data", (chunk: string) => {
+      this.buffer += chunk;
+      let end = this.buffer.indexOf("\0");
+      while (end >= 0) {
+        const text = this.buffer.slice(0, end);
+        this.buffer = this.buffer.slice(end + 1);
+        if (text) this.onMessage(text);
+        end = this.buffer.indexOf("\0");
+      }
+    });
   }
 
   static async launch(options: LaunchOptions = {}): Promise<Browser> {
     const executable = options.executable ?? findChrome();
     if (!executable) throw new Error("Chrome or Chromium was not found. Set CHROME_PATH.");
-    const profile = mkdtempSync(join(tmpdir(), "maplet-chrome-"));
+    removeStaleProfiles();
+    const profile = mkdtempSync(join(tmpdir(), PROFILE_PREFIX));
     const args = [
       `--user-data-dir=${profile}`,
-      "--remote-debugging-port=0",
+      "--remote-debugging-pipe",
+      "--do-not-de-elevate",
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-extensions",
@@ -96,47 +111,25 @@ export class Browser {
       ...(options.args ?? []),
       "about:blank",
     ];
-    const proc = spawn(executable, args, { stdio: ["ignore", "ignore", "pipe"] });
+    const proc = spawn(executable, args, { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
     let stderr = "";
     proc.stderr?.on("data", (data: Buffer) => {
       stderr = (stderr + data.toString()).slice(-4000);
     });
-    const portFile = join(profile, "DevToolsActivePort");
-    const deadline = Date.now() + 30000;
-    let endpoint: string | null = null;
-    while (Date.now() < deadline) {
-      const m = /DevTools listening on (ws:\/\/\S+)/.exec(stderr);
-      if (m) {
-        endpoint = m[1]!;
-        break;
-      }
-      const contents = readPortFile(portFile);
-      if (contents !== null) {
-        const [portText, pathText] = contents.split(/\r?\n/);
-        const port = Number(portText);
-        if (
-          Number.isInteger(port) &&
-          port > 0 &&
-          port < 65536 &&
-          pathText &&
-          /^\/devtools\/browser\/[A-Za-z0-9-]+$/.test(pathText)
-        ) {
-          endpoint = `ws://127.0.0.1:${port}/devtools/browser/${pathText.slice("/devtools/browser/".length)}`;
-          break;
-        }
-      }
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    if (!endpoint) {
+    const browser = new Browser(proc, profile);
+    try {
+      await Promise.race([
+        browser.send("Browser.getVersion"),
+        new Promise((_, reject) => {
+          proc.once("exit", () => reject(new Error(`Chrome exited before it answered: ${stderr}`)));
+          setTimeout(() => reject(new Error(`Chrome did not answer on its debugging pipe: ${stderr}`)), 30000);
+        }),
+      ]);
+    } catch (error) {
       proc.kill();
-      throw new Error(`Chrome did not open a DevTools endpoint: ${stderr}`);
+      throw error;
     }
-    const socket = new WebSocket(endpoint);
-    await new Promise<void>((resolve, reject) => {
-      socket.addEventListener("open", () => resolve(), { once: true });
-      socket.addEventListener("error", () => reject(new Error("Could not connect to Chrome")), { once: true });
-    });
-    return new Browser(proc, socket, profile);
+    return browser;
   }
 
   send<T = Record<string, unknown>>(
@@ -149,7 +142,7 @@ export class Browser {
     if (sessionId) message.sessionId = sessionId;
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, method });
-      this.socket.send(JSON.stringify(message));
+      this.input.write(`${JSON.stringify(message)}\0`);
     });
   }
 
@@ -177,7 +170,7 @@ export class Browser {
     } catch {
       this.process.kill();
     }
-    this.socket.close();
+    this.input.end();
     await new Promise((r) => setTimeout(r, 300));
     if (this.process.exitCode === null) this.process.kill();
     for (let i = 0; i < 10; i++) {
@@ -311,12 +304,16 @@ export class Page {
   }
 }
 
-function readPortFile(path: string): string | null {
-  try {
-    return readFileSync(path, "utf8");
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ENOENT" || code === "EBUSY" || code === "EPERM" || code === "EACCES") return null;
-    throw error;
+const PROFILE_PREFIX = "maplet-chrome-";
+
+function removeStaleProfiles(): void {
+  const root = tmpdir();
+  const old = Date.now() - 60 * 60 * 1000;
+  for (const name of readdirSync(root)) {
+    if (!name.startsWith(PROFILE_PREFIX)) continue;
+    const path = join(root, name);
+    try {
+      if (statSync(path).mtimeMs < old) rmSync(path, { recursive: true, force: true });
+    } catch {}
   }
 }
