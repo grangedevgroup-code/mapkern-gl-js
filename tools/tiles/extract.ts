@@ -1,6 +1,6 @@
 import { availableParallelism } from "node:os";
 import { Worker } from "node:worker_threads";
-import type { PointRecord, RelationRecord, Result, ShareMessage, Task, WayBatch } from "./extract-worker.ts";
+import type { PointRecord, Profile, RelationRecord, Result, ShareMessage, Task, WayBatch } from "./extract-worker.ts";
 import type { BlobRef, Tags } from "./osm-pbf.ts";
 import { indexBlobs } from "./osm-pbf.ts";
 
@@ -21,18 +21,19 @@ export interface RegionData {
 export interface ExtractOptions {
   threads?: number;
   log?: (message: string) => void;
+  profile?: Profile;
 }
 
 type Kind = "nodes" | "ways" | "missing";
 
 class Pool {
   private readonly workers: Worker[];
-  constructor(path: string, size: number) {
+  constructor(path: string, size: number, profile: Profile) {
     const url = new URL(
       import.meta.url.endsWith(".ts") ? "./extract-worker.ts" : "./extract-worker.js",
       import.meta.url,
     );
-    this.workers = Array.from({ length: size }, () => new Worker(url, { workerData: { path } }));
+    this.workers = Array.from({ length: size }, () => new Worker(url, { workerData: { path, profile } }));
   }
 
   share(message: ShareMessage): void {
@@ -208,7 +209,8 @@ export async function extractRegion(
     Math.round(bbox[2] * 1e7),
     Math.round(bbox[3] * 1e7),
   ];
-  const pool = new Pool(path, threads);
+  const profile = options.profile ?? "tiles";
+  const pool = new Pool(path, threads, profile);
   try {
     const kinds = new Array<{ nodes: boolean; ways: boolean; relations: boolean }>(blobs.length);
     const nodeParts = new Array<{ ids: Float64Array; lon: Int32Array; lat: Int32Array }>(blobs.length);
@@ -272,8 +274,10 @@ export async function extractRegion(
     const extra = bitmap(maxWayId);
     let extraCount = 0;
     for (const rel of relations) {
-      if (rel.tags.type === "boundary" && rel.tags.boundary === "administrative") continue;
-      if (!rel.members.some((m) => sortedHas(ways.ids, m.ref))) continue;
+      const admin = rel.tags.type === "boundary" && rel.tags.boundary === "administrative";
+      if (profile === "tiles" && admin) continue;
+      const wide = profile === "search" && admin && Number(rel.tags.admin_level) <= 4;
+      if (!wide && !rel.members.some((m) => sortedHas(ways.ids, m.ref))) continue;
       for (const m of rel.members) {
         if (!sortedHas(ways.ids, m.ref) && !hasBit(extra.bits, m.ref)) {
           setBit(extra.bits, m.ref);
