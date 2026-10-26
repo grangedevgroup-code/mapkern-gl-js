@@ -331,7 +331,7 @@ export class Page {
   }
 }
 
-const PROFILE_PREFIX = "maplet-chrome-";
+const PROFILE_PREFIX = "mapkern-chrome-";
 
 function removeStaleProfiles(): void {
   const root = tmpdir();
