@@ -219,7 +219,7 @@ if (install) {
   if (targets.length === 0) throw new Error("No Android device is connected");
   for (const serial of targets) {
     exec(adb, ["-s", serial, "install", "-r", apk]);
-    exec(adb, ["-s", serial, "shell", "pm", "clear", PACKAGE]);
+    if (args.includes("--clear")) exec(adb, ["-s", serial, "shell", "pm", "clear", PACKAGE]);
     if (run) exec(adb, ["-s", serial, "shell", "am", "start", "-n", `${PACKAGE}/.MainActivity`]);
     console.log(`Installed on ${serial}`);
   }
