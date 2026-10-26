@@ -270,19 +270,21 @@ export function indexRegion(
       if (!rings.length || !Number.isInteger(level)) continue;
       const { outer, inner } = splitRings(rings);
       const all = [...outer, ...inner];
-      const b = all.map((r) => ringBounds(r));
-      areas.push({
-        name: rel.tags.name!,
-        level,
-        rings: all,
-        outer: all.map((_, i) => i < outer.length),
-        bbox: [
-          Math.min(...b.map((r) => r.x0)),
-          Math.min(...b.map((r) => r.y0)),
-          Math.max(...b.map((r) => r.x1)),
-          Math.max(...b.map((r) => r.y1)),
-        ],
-      });
+      const bounds: [number, number, number, number] = [
+        Number.POSITIVE_INFINITY,
+        Number.POSITIVE_INFINITY,
+        Number.NEGATIVE_INFINITY,
+        Number.NEGATIVE_INFINITY,
+      ];
+      for (const r of all) {
+        const b = ringBounds(r);
+        bounds[0] = Math.min(bounds[0], b.x0);
+        bounds[1] = Math.min(bounds[1], b.y0);
+        bounds[2] = Math.max(bounds[2], b.x1);
+        bounds[3] = Math.max(bounds[3], b.y1);
+      }
+      if (bounds[0] > maxLon || bounds[2] < minLon || bounds[1] > maxLat || bounds[3] < minLat) continue;
+      areas.push({ name: rel.tags.name!, level, rings: all, outer: all.map((_, i) => i < outer.length), bbox: bounds });
     } else {
       if (rings.length) polygonPois.push({ tags: rel.tags, rings });
     }
