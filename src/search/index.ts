@@ -1,5 +1,5 @@
 import type { SearchData, SearchKind } from "./format.ts";
-import { decodeSearchData, NONE, SEARCH_KINDS, SearchIndexError } from "./format.ts";
+import { decodeSearchData, NO_CATEGORY, NONE, SEARCH_KINDS, SearchIndexError } from "./format.ts";
 import { expandPrefix, isNumber, tokenize, withinEdits } from "./text.ts";
 
 export interface SearchResult {
@@ -124,8 +124,8 @@ export class SearchIndex implements Geocoder {
       categories.set(i, [categoryLabel(c), ...(SYNONYMS[value] ?? [])].join(" "));
     });
     this.categoryVocab = new Vocabulary(categories);
-    this.byContext = new Groups(data.context);
-    this.byCategory = new Groups(data.category);
+    this.byContext = new Groups(data.context, NONE);
+    this.byCategory = new Groups(data.category, NO_CATEGORY);
   }
 
   static fromBytes(bytes: ArrayBuffer | Uint8Array): SearchIndex {
@@ -138,7 +138,7 @@ export class SearchIndex implements Geocoder {
     else if (source instanceof ArrayBuffer) bytes = new Uint8Array(source);
     else if (typeof Blob !== "undefined" && source instanceof Blob) bytes = new Uint8Array(await source.arrayBuffer());
     else {
-      const response = await fetch(String(source), { signal: options.signal });
+      const response = await fetch(String(source), { signal: options.signal ?? null });
       if (!response.ok) throw new SearchIndexError(`could not load the search index (HTTP ${response.status})`);
       bytes = new Uint8Array(await response.arrayBuffer());
     }
@@ -250,9 +250,9 @@ export class SearchIndex implements Geocoder {
           if (!kinds.includes(kind)) continue;
           const distance = this.distanceTo(e, lon, lat);
           if (distance > (options.radius ?? REVERSE_RADIUS[kind])) continue;
-          let list2 = best.get(kind);
-          if (!list2) best.set(kind, (list2 = []));
-          list2.push({ entry: e, distance });
+          const found = best.get(kind);
+          if (found) found.push({ entry: e, distance });
+          else best.set(kind, [{ entry: e, distance }]);
         }
       }
     }
@@ -476,17 +476,17 @@ class Groups {
   private readonly start: Uint32Array;
   private readonly entries: Uint32Array;
 
-  constructor(keys: Uint32Array | Uint16Array) {
+  constructor(keys: Uint32Array | Uint16Array, none: number) {
     let max = 0;
-    for (const k of keys) if (k !== NONE && k > max) max = k;
+    for (const k of keys) if (k !== none && k > max) max = k;
     this.start = new Uint32Array(max + 2);
-    for (const k of keys) if (k !== NONE) this.start[k + 1]!++;
+    for (const k of keys) if (k !== none) this.start[k + 1]!++;
     for (let i = 1; i < this.start.length; i++) this.start[i]! += this.start[i - 1]!;
     const fill = this.start.slice(0, max + 1);
     this.entries = new Uint32Array(this.start[max + 1]!);
     for (let e = 0; e < keys.length; e++) {
       const k = keys[e]!;
-      if (k !== NONE) this.entries[fill[k]!++] = e;
+      if (k !== none) this.entries[fill[k]!++] = e;
     }
   }
 
