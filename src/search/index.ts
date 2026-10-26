@@ -472,6 +472,34 @@ class Vocabulary {
   }
 }
 
+class Groups {
+  private readonly start: Uint32Array;
+  private readonly entries: Uint32Array;
+
+  constructor(keys: Uint32Array | Uint16Array) {
+    let max = 0;
+    for (const k of keys) if (k !== NONE && k > max) max = k;
+    this.start = new Uint32Array(max + 2);
+    for (const k of keys) if (k !== NONE) this.start[k + 1]!++;
+    for (let i = 1; i < this.start.length; i++) this.start[i]! += this.start[i - 1]!;
+    const fill = this.start.slice(0, max + 1);
+    this.entries = new Uint32Array(this.start[max + 1]!);
+    for (let e = 0; e < keys.length; e++) {
+      const k = keys[e]!;
+      if (k !== NONE) this.entries[fill[k]!++] = e;
+    }
+  }
+
+  count(key: number): number {
+    return key + 1 < this.start.length ? this.start[key + 1]! - this.start[key]! : 0;
+  }
+
+  each(key: number, visit: (entry: number) => void): void {
+    if (key + 1 >= this.start.length) return;
+    for (let i = this.start[key]!; i < this.start[key + 1]!; i++) visit(this.entries[i]!);
+  }
+}
+
 function categoryLabel(category: string): string {
   return category.slice(category.indexOf("=") + 1).replace(/_/g, " ");
 }
