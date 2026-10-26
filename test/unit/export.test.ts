@@ -125,7 +125,8 @@ test("GPX keeps points as waypoints and lines and area outlines as tracks", () =
     tracks.map((f) => f.properties?.name),
     ["shape 1", "shape 2", "shape 3", "shape 4"],
   );
-  assert.deepEqual(tracks[1]!.geometry, { type: "LineString", coordinates: shapes[2]!.coordinates[0] });
+  const park = shapes[2] as Extract<Geometry, { type: "Polygon" }>;
+  assert.deepEqual(tracks[1]!.geometry, { type: "LineString", coordinates: park.coordinates[0] });
 });
 
 test("CSV keeps every property and the geometry as WKT, or as coordinates for points", () => {
