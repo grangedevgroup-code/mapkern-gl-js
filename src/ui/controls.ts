@@ -837,7 +837,7 @@ const TILTED = 5;
 
 export class TerrainControl extends Emitter<TerrainEvents> implements Control {
   readonly defaultPosition: ControlPosition = "bottom-right";
-  private readonly source: string | DemSourceSpec;
+  private source: string | DemSourceSpec;
   private readonly exaggeration: number;
   private readonly relief: number;
   private readonly pitch: number;
