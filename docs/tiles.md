@@ -1,6 +1,6 @@
 # Tiles
 
-`mapkern-tiles` turns an OpenStreetMap download into a single `.pmtiles` file with vector tiles for zoom 0 to 14. The built-in `lightStyle` is made to draw these tiles, but you can style them any way you like. It also makes [elevation tiles](#elevation) from GeoTIFF files.
+`mapkern-tiles` turns an OpenStreetMap download into a single `.pmtiles` file with vector tiles for zoom 0 to 14. The built-in `lightStyle` is made to draw these tiles, but you can style them any way you like. It also makes [elevation tiles](#elevation) from GeoTIFF files and a [search index](#search-index) for finding places and addresses.
 
 ## Making a file
 
