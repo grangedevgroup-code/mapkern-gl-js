@@ -57,9 +57,9 @@ const HELP = `Build a vector tile archive (.pmtiles) from an OpenStreetMap .osm.
 turn elevation GeoTIFFs into elevation tiles, or convert an MBTiles file to PMTiles.
 
 Usage:
-  maplet-tiles --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.pmtiles>
-  maplet-tiles dem <file.tif>... --output <file.pmtiles>
-  maplet-tiles convert <file.mbtiles> <file.pmtiles>
+  mapkern-tiles --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.pmtiles>
+  mapkern-tiles dem <file.tif>... --output <file.pmtiles>
+  mapkern-tiles convert <file.mbtiles> <file.pmtiles>
 
 Options:
   --input     OpenStreetMap PBF file, for example a Geofabrik extract
@@ -191,7 +191,7 @@ async function main(): Promise<void> {
       type: "baselayer",
       version: "1.0.0",
       format: "pbf",
-      scheme: "maplet-osm-1",
+      scheme: "mapkern-osm-1",
       bounds: bbox,
       center,
       minzoom: 0,
