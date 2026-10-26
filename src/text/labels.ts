@@ -290,6 +290,11 @@ export class LabelRenderer {
     const moving = cameraVersion !== this.seenCamera;
     this.seenCamera = cameraVersion;
     if (
+      this.job &&
+      (this.job.layers.length !== inputs.length || inputs.some((input, i) => input.layer !== this.job!.layers[i]))
+    )
+      this.job = null;
+    if (
       !this.job &&
       (structure !== this.placedStructure ||
         this.pendingGlyphs ||
