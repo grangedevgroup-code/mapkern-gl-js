@@ -84,7 +84,7 @@ interface Pending {
   expires: number;
 }
 
-const DB_NAME = "maplet-cache";
+const DB_NAME = "mapkern-cache";
 const DATA = "data";
 const INDEX = "index";
 const FLUSH_MS = 400;
