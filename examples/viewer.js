@@ -31,7 +31,7 @@ export const TERRAIN = {
   attribution: '<a href="https://mapterhorn.com/attribution">© Mapterhorn</a>',
 };
 
-export const SEARCH = new URL("../data/seattle.search", import.meta.url).href;
+export const SEARCH = new URL("../data/places.search", import.meta.url).href;
 
 export function lazyGeocoder(source) {
   let loading = null;
@@ -112,7 +112,7 @@ export function createViewer(options = {}) {
   const searchControl = search
     ? new mapkern.SearchControl({ geocoder: typeof search.search === "function" ? search : lazyGeocoder(search) })
     : null;
-  if (searchControl) map.addControl(searchControl, "top-left");
+  if (searchControl) map.addControl(searchControl, "bottom-right");
   picker?.on("change", (event) => stored.set("basemap", event.basemap.name));
   terrainControl?.on("viewchange", (event) => stored.set("view", event.view));
   const start = stored.get("view") ?? view;
