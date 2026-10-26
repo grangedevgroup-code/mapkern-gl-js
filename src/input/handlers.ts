@@ -273,7 +273,7 @@ export class InputHandlers {
     };
     this.pointers.set(e.pointerId, pointer);
     const target = e.target as Element | null;
-    const onMarker = typeof target?.closest === "function" && target.closest(".maplet-marker") !== null;
+    const onMarker = typeof target?.closest === "function" && target.closest(".mapkern-marker") !== null;
     if (!onMarker && !this.capture(e.pointerId)) {
       this.pointers.delete(e.pointerId);
       return;
@@ -694,7 +694,7 @@ export class InputHandlers {
         return;
       }
       const box = this.host.element.ownerDocument.createElement("div");
-      box.className = "maplet-boxzoom";
+      box.className = "mapkern-boxzoom";
       this.host.element.appendChild(box);
       mode.box = box;
       this.host.boxZoom("start", [mode.startX, mode.startY], [x, y], e);
