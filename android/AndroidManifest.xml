@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.grangedevgroup.maplet"
+    package="com.grangedevgroup.mapkern"
     android:versionCode="@VERSION_CODE@"
     android:versionName="@VERSION_NAME@">
 
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
-        android:label="Maplet"
+        android:label="Mapkern"
         android:icon="@mipmap/icon"
         android:usesCleartextTraffic="true"
         android:hardwareAccelerated="true"
