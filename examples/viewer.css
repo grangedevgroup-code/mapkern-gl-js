@@ -11,6 +11,24 @@ html.maplet-viewer #map {
   inset: 0;
 }
 
+.maplet-map {
+  --maplet-viewer-button: 32px;
+}
+
+@media (pointer: coarse) {
+  .maplet-map {
+    --maplet-viewer-button: 44px;
+  }
+}
+
+.maplet-bottom-left {
+  max-width: calc(100% - 3 * var(--maplet-margin) - var(--maplet-viewer-button));
+}
+
+.maplet-bottom-left > .maplet-attribution {
+  border-radius: 6px;
+}
+
 .maplet-bottom-right > .maplet-scale {
   position: absolute;
   right: calc(100% + var(--maplet-margin));
@@ -43,6 +61,11 @@ html.maplet-viewer #map {
 
 .maplet-viewer-panel output {
   font-variant-numeric: tabular-nums;
+}
+
+.maplet-viewer-panel input[type="range"] {
+  width: 100%;
+  margin: 0;
 }
 
 .maplet-viewer-row {
