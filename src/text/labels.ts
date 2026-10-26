@@ -1093,6 +1093,7 @@ export class LabelRenderer {
           }
           if (!isLine) break;
         }
+        yield;
       }
     }
     for (const [key, label] of this.labels) {
