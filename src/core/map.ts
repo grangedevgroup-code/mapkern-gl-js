@@ -2395,12 +2395,12 @@ export class MapletMap extends Emitter<MapEvents> {
       for (const source of style.sources.values()) {
         if (source.uploadPending(deadline, now)) moreUploads = true;
       }
+      this.updateTerrain(style, progress);
       const predicted = this.predicted();
       for (const source of style.sources.values()) {
         if (source.setLayers) source.setLayers(style.layers.filter((l) => l.source === source.id));
         source.update(this.transform, now, predicted);
       }
-      this.updateTerrain(style, progress);
       if (moreUploads) animating = true;
       for (const layer of style.layers) if (layer.settle(now)) animating = true;
       const labelsBusy = this.painter.render({
