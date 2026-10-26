@@ -82,6 +82,15 @@ interface TerrainGeometry {
 
 const POINT_MARGIN = 0.125;
 const DRAPED: ReadonlySet<string> = new Set(["background", "raster", "hillshade", "fill", "line", "circle", "heatmap"]);
+const SCREEN_SIZED: ReadonlySet<string> = new Set(["hillshade", "line", "circle", "heatmap"]);
+const RESTING_ZOOM_STEP = 0.05;
+const MOVING_ZOOM_STEP = 0.25;
+
+function drapeFollowsZoom(layer: StyleLayer): boolean {
+  if (layer.usesZoom || SCREEN_SIZED.has(layer.type)) return true;
+  if (layer.type !== "fill" && layer.type !== "background") return false;
+  return Boolean((layer.spec as { paint?: { pattern?: unknown } }).paint?.pattern);
+}
 const DRAPE_CACHE_BYTES = 32 * 1024 * 1024;
 
 interface PickSetup {
