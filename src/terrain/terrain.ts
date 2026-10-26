@@ -65,6 +65,7 @@ export class Terrain {
       maxZoom: Math.min(MAX_SLOT_ZOOM, Math.ceil(transform.maxZoom)),
       round: true,
     });
+    cover.sort((a, b) => a.distance - b.distance);
     const slots: TerrainSlot[] = [];
     let lowest = Number.POSITIVE_INFINITY;
     for (const c of cover) {
