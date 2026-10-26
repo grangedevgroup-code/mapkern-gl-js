@@ -80,6 +80,7 @@ export function createViewer(options = {}) {
     basemaps = BASEMAPS,
     basemap,
     terrain = TERRAIN,
+    search = SEARCH,
     view,
     overlay,
     page = true,
