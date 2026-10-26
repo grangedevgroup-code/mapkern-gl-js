@@ -9,7 +9,8 @@ export type FeatureFormat =
   | "flatgeobuf"
   | "wkt"
   | "cot"
-  | "geopackage";
+  | "geopackage"
+  | "gml";
 
 export const FEATURE_FORMATS: readonly FeatureFormat[] = [
   "geojson",
@@ -23,4 +24,5 @@ export const FEATURE_FORMATS: readonly FeatureFormat[] = [
   "wkt",
   "cot",
   "geopackage",
+  "gml",
 ];
