@@ -156,38 +156,27 @@ export class SearchIndex implements Geocoder {
     const kinds = options.kinds ? new Set(options.kinds.map((k) => SEARCH_KINDS.indexOf(k))) : null;
     const d = this.data;
     let anchor = -1;
+    let smallest = Number.POSITIVE_INFINITY;
     for (let i = 0; i < matches.length; i++) {
       const m = matches[i]!;
-      if (m.terms.length === 0) continue;
-      if (anchor < 0 || m.postings < matches[anchor]!.postings) anchor = i;
-    }
-    const candidates = new Map<number, number>();
-    if (anchor >= 0) {
-      for (const { term, quality } of matches[anchor]!.terms) {
-        for (let p = d.termStart[term]!; p < d.termStart[term + 1]!; p++) {
-          const e = d.postings[p]!;
-          if ((candidates.get(e) ?? 0) < quality) candidates.set(e, quality);
-        }
-      }
-      const others = matches[anchor]!;
-      if (others.categories.size) {
-        for (let e = 0; e < this.size; e++) {
-          const q = others.categories.get(d.category[e]!);
-          if (q && (candidates.get(e) ?? 0) < q * 0.8) candidates.set(e, q * 0.8);
-        }
-      }
-    } else {
-      anchor = matches.findIndex((m) => m.categories.size > 0);
-      if (anchor < 0) return [];
-      const cats = matches[anchor]!.categories;
-      for (let e = 0; e < this.size; e++) {
-        const q = cats.get(d.category[e]!);
-        if (q) candidates.set(e, q * 0.8);
+      let count = m.postings;
+      for (const c of m.contexts.keys()) count += this.byContext.count(c);
+      for (const c of m.categories.keys()) count += this.byCategory.count(c);
+      if (count > 0 && count < smallest) {
+        smallest = count;
+        anchor = i;
       }
     }
+    if (anchor < 0) return [];
+    const candidates = new Set<number>();
+    const a = matches[anchor]!;
+    for (const { term } of a.terms)
+      for (let p = d.termStart[term]!; p < d.termStart[term + 1]!; p++) candidates.add(d.postings[p]!);
+    for (const c of a.contexts.keys()) this.byContext.each(c, (e) => candidates.add(e));
+    for (const c of a.categories.keys()) this.byCategory.each(c, (e) => candidates.add(e));
     const allowMissing = tokens.length >= 3 ? 1 : 0;
     const scored: Scored[] = [];
-    for (const [e, first] of candidates) {
+    for (const e of candidates) {
       if (kinds && !kinds.has(d.kind[e]!)) continue;
       const lon = d.lon[e]! / 1e7;
       const lat = d.lat[e]! / 1e7;
@@ -195,15 +184,16 @@ export class SearchIndex implements Geocoder {
         const [w, s, east, n] = options.bbox;
         if (lon < w || lon > east || lat < s || lat > n) continue;
       }
-      let total = first;
+      let total = 0;
       let missing = 0;
-      for (let i = 0; i < matches.length; i++) {
-        if (i === anchor) continue;
-        const q = this.quality(matches[i]!, e);
-        if (q === 0) missing++;
-        total += q;
+      let direct = false;
+      for (const m of matches) {
+        const q = this.quality(m, e);
+        if (q.value === 0) missing++;
+        if (q.direct) direct = true;
+        total += q.value;
       }
-      if (missing > allowMissing) continue;
+      if (missing > allowMissing || !direct) continue;
       const text = total / matches.length;
       const distance = options.near ? metres(options.near[0], options.near[1], lon, lat) : undefined;
       const near = distance === undefined ? 0.5 : 1 / (1 + distance / 5000);
