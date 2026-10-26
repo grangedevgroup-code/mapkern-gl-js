@@ -302,6 +302,14 @@ export class StyleLayer {
     return this.stateUse;
   }
 
+  get usesZoom(): boolean {
+    if (this.zoomRevision !== this.revision) {
+      this.zoomRevision = this.revision;
+      this.zoomUse = [...this.paint.values()].some((c) => c.zoomDependent);
+    }
+    return this.zoomUse;
+  }
+
   isVisible(zoom: number): boolean {
     return this.visible && (this.minZoom <= 0 || zoom >= this.minZoom) && zoom < this.maxZoom;
   }
