@@ -201,6 +201,8 @@ export class LabelRenderer {
   private lastPlacement = Number.NEGATIVE_INFINITY;
   private placedStructure = "";
   private placedCamera = -1;
+  private seenCamera = -1;
+  private job: { steps: Generator<undefined, void, undefined>; structure: string; camera: number } | null = null;
   private texture: WebGLTexture | null = null;
   private vao: WebGLVertexArrayObject | null = null;
   private vertexBuffer: WebGLBuffer | null = null;
