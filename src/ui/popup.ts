@@ -214,6 +214,7 @@ export class Popup extends Emitter<PopupEvents> {
     body.replaceChildren();
     body.style.maxWidth = this.maxWidth;
     if (this.content) body.appendChild(this.content.cloneNode(true));
+    body.classList.toggle("maplet-popup-closable", this.options.closeButton !== false);
     if (this.options.closeButton !== false) {
       const doc = body.ownerDocument;
       const close = doc.createElement("button");
