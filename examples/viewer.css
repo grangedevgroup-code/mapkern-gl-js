@@ -1,0 +1,81 @@
+html.maplet-viewer,
+html.maplet-viewer body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #11191f;
+}
+
+html.maplet-viewer #map {
+  position: absolute;
+  inset: 0;
+}
+
+.maplet-bottom-right > .maplet-scale {
+  position: absolute;
+  right: calc(100% + var(--maplet-margin));
+  bottom: 0;
+}
+
+.maplet-viewer-panel {
+  display: grid;
+  gap: 6px;
+  max-width: min(300px, calc(100vw - 96px));
+  padding: 10px 12px;
+  font:
+    14px / 1.4 system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  color: var(--maplet-ink, #10191d);
+}
+
+.maplet-viewer-panel h1 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.maplet-viewer-panel p {
+  margin: 0;
+  color: #3d474b;
+}
+
+.maplet-viewer-panel output {
+  font-variant-numeric: tabular-nums;
+}
+
+.maplet-viewer-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.maplet-viewer-panel .maplet-viewer-button,
+.maplet-viewer-file span {
+  display: inline-block;
+  padding: 5px 10px;
+  border: 1px solid #b9bdb7;
+  border-radius: 6px;
+  background: #ffffff;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.maplet-viewer-file {
+  position: relative;
+}
+
+.maplet-viewer-file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.maplet-viewer-file input:focus-visible + span,
+.maplet-viewer-panel .maplet-viewer-button:focus-visible {
+  outline: 2px solid var(--maplet-focus, #2f6fdb);
+}
