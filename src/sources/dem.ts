@@ -9,7 +9,7 @@ import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileLoader, TileStats } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
 import type { DemReply } from "../worker/dem-task.ts";
-import { NO_OFFSCREEN, readPixels } from "../worker/dem-task.ts";
+import { isRawElevation, NO_OFFSCREEN, readPixels } from "../worker/dem-task.ts";
 import type { MapSource, SourceContext } from "./source.ts";
 import { tileEvents } from "./source.ts";
 import type { TileSet } from "./tilejson.ts";
@@ -253,6 +253,9 @@ async function decodeElevation(
   signal: AbortSignal,
   key: number,
 ): Promise<DemReply | null> {
+  if (isRawElevation(bytes)) {
+    return ctx.workers().send<DemReply | null>("dem", { raw: bytes, unpack }, [bytes], signal, key);
+  }
   let source = bytes;
   if (workerDecodes !== false) {
     const spare = workerDecodes === undefined ? bytes.slice(0) : null;
