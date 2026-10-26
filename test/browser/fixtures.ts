@@ -31,17 +31,28 @@ export function demHeight(X: number, Y: number): number | null {
   return 6000 * Math.exp(-(dx * dx + dy * dy) / 1e10);
 }
 
+export function ridgeHeight(X: number, _Y: number): number {
+  const meters = X * EARTH_CIRCUMFERENCE;
+  return 2500 + 700 * Math.sin((2 * Math.PI * meters) / 900);
+}
+
 const demCache = new Map<string, Buffer>();
 
-function demTile(z: number, x: number, y: number, size = 256): Buffer {
-  const key = `${z}/${x}/${y}`;
+function demTile(
+  z: number,
+  x: number,
+  y: number,
+  size = 256,
+  height: (X: number, Y: number) => number | null = demHeight,
+): Buffer {
+  const key = `${height === demHeight ? "dem" : "ridges"}:${z}/${x}/${y}`;
   const cached = demCache.get(key);
   if (cached) return cached;
   const n = 2 ** z;
   const rgba = new Uint8Array(size * size * 4);
   for (let j = 0; j < size; j++) {
     for (let i = 0; i < size; i++) {
-      const h = demHeight((x + (i + 0.5) / size) / n, (y + (j + 0.5) / size) / n);
+      const h = height((x + (i + 0.5) / size) / n, (y + (j + 0.5) / size) / n);
       if (h === null) continue;
       const v = h + 32768;
       const whole = Math.floor(v);
@@ -114,6 +125,13 @@ export const fixtureRoute: Route = async (req, res, url) => {
     res.end(Buffer.from(body));
     return true;
   }
+  const missing = /^\/fixture\/placeholder\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(path);
+  if (missing) {
+    const [z, x, y] = [Number(missing[1]), Number(missing[2]), Number(missing[3])];
+    res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" });
+    res.end(z <= 2 ? tile(z, x, y) : placeholderTile());
+    return true;
+  }
   const dem = /^\/fixture\/dem\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(path);
   if (dem) {
     const [z, x, y] = [Number(dem[1]), Number(dem[2]), Number(dem[3])];
@@ -125,6 +143,18 @@ export const fixtureRoute: Route = async (req, res, url) => {
     }
     res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" });
     res.end(demTile(z, x, y));
+    return true;
+  }
+  const ridges = /^\/fixture\/ridges\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(path);
+  if (ridges) {
+    const [z, x, y] = [Number(ridges[1]), Number(ridges[2]), Number(ridges[3])];
+    if (z > 12 || x >= 2 ** z || y >= 2 ** z) {
+      res.writeHead(404);
+      res.end();
+      return true;
+    }
+    res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" });
+    res.end(demTile(z, x, y, 256, ridgeHeight));
     return true;
   }
   if (path === "/fixture/sprite.json") {
@@ -216,4 +246,24 @@ function spriteSheet(): Buffer {
     }
   }
   return encodePng(32, 16, rgba);
+}
+
+let placeholder: Buffer | null = null;
+
+function placeholderTile(): Buffer {
+  if (placeholder) return placeholder;
+  const size = 256;
+  const rgba = new Uint8Array(size * size * 4);
+  for (let py = 0; py < size; py++) {
+    for (let px = 0; px < size; px++) {
+      const i = (py * size + px) * 4;
+      const ink = Math.abs(px - py) < 6 || Math.abs(px + py - size) < 6;
+      rgba[i] = ink ? 0 : 255;
+      rgba[i + 1] = 0;
+      rgba[i + 2] = ink ? 0 : 255;
+      rgba[i + 3] = 255;
+    }
+  }
+  placeholder = encodePng(size, size, rgba);
+  return placeholder;
 }
