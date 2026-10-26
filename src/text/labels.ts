@@ -708,12 +708,12 @@ export class LabelRenderer {
     };
   }
 
-  private place(
+  private *placement(
     transform: Transform,
     inputs: readonly SymbolLayerInput[],
     now: number,
     terrain: LabelTerrain | null,
-  ): void {
+  ): Generator<undefined, void, undefined> {
     const grid = new CollisionGrid(transform.width, transform.height);
     const placed = new Map<string, [number, number][]>();
     const visible = new Set<string>();
