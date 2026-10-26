@@ -5,6 +5,7 @@ import { esriJsonToGeoJSON, isEsriJson } from "./esrijson.ts";
 import type { FeatureFormat } from "./feature-format.ts";
 import { flatgeobufToGeoJSON, isFlatGeobuf } from "./flatgeobuf.ts";
 import { geopackageToGeoJSON, isGeoPackage } from "./geopackage.ts";
+import { gmlToGeoJSON, isGml } from "./gml.ts";
 import { gpxToGeoJSON } from "./gpx.ts";
 import { kmlToGeoJSON } from "./kml.ts";
 import { shapefileToGeoJSON } from "./shapefile.ts";
@@ -38,6 +39,8 @@ export async function bytesToGeoJSON(bytes: Uint8Array, name = "", format?: Feat
       return gpxToGeoJSON(text.decode(bytes));
     case "cot":
       return cotToGeoJSON(text.decode(bytes));
+    case "gml":
+      return gmlToGeoJSON(text.decode(bytes));
     case "csv":
       return csvToGeoJSON(text.decode(bytes));
     case "wkt":
@@ -63,6 +66,7 @@ function detect(bytes: Uint8Array, name: string): FeatureFormat {
   if (head.startsWith("<")) {
     if (/<gpx[\s>]/i.test(head) || ext === "gpx") return "gpx";
     if (ext === "cot" || isCot(head)) return "cot";
+    if (ext === "gml" || isGml(head)) return "gml";
     return "kml";
   }
   if (head.startsWith("{") || head.startsWith("[")) return "geojson";
@@ -130,6 +134,7 @@ async function fromZip(bytes: Uint8Array): Promise<FeatureCollection> {
   }
   for (const entry of [...byExt("geojson"), ...byExt("json")]) add(jsonToGeoJSON(text.decode(await read(entry))));
   for (const entry of byExt("gpx")) add(gpxToGeoJSON(text.decode(await read(entry))));
+  for (const entry of byExt("gml")) add(gmlToGeoJSON(text.decode(await read(entry))));
   for (const entry of byExt("fgb")) add(flatgeobufToGeoJSON(await read(entry)));
   for (const entry of byExt("gpkg")) add(await geopackageToGeoJSON(await read(entry)));
   for (const entry of byExt("csv")) add(csvToGeoJSON(text.decode(await read(entry))));
@@ -139,7 +144,7 @@ async function fromZip(bytes: Uint8Array): Promise<FeatureCollection> {
   }
   if (features.length === 0 && kml.length === 0 && byExt("shp").length === 0) {
     throw new FormatError(
-      "The ZIP file has no map data in it (looked for KML, Shapefile, GeoJSON, GPX, FlatGeobuf, GeoPackage, CSV and CoT)",
+      "The ZIP file has no map data in it (looked for KML, Shapefile, GeoJSON, GPX, GML, FlatGeobuf, GeoPackage, CSV and CoT)",
     );
   }
   return { type: "FeatureCollection", features };
