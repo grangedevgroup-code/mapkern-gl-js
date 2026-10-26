@@ -82,6 +82,8 @@ export class Transform {
   private nearZ = 1;
   private elevationMeters = 0;
   private groundMeters = 0;
+  private peakMeters = Number.NEGATIVE_INFINITY;
+  private peakPx = 0;
   private elevationPx = 0;
   private groundPx = 0;
   private pad: Padding = { ...NO_PADDING };
@@ -185,6 +187,7 @@ export class Transform {
     t.pitchDeg = this.pitchDeg;
     t.elevationMeters = this.elevationMeters;
     t.groundMeters = this.groundMeters;
+    t.peakMeters = this.peakMeters;
     t.pad = { ...this.pad };
     t.limits = this.limits ? { ...this.limits } : null;
     t.dirty = true;
@@ -348,6 +351,13 @@ export class Transform {
     this.dirty = true;
   }
 
+  setPeak(meters: number): void {
+    const value = Number.isFinite(meters) ? meters : Number.NEGATIVE_INFINITY;
+    if (value === this.peakMeters) return;
+    this.peakMeters = value;
+    this.dirty = true;
+  }
+
   setElevationKeepCamera(meters: number): void {
     if (!Number.isFinite(meters) || meters === this.elevationMeters) return;
     this.update();
@@ -430,6 +440,9 @@ export class Transform {
       this.cy * ws + Math.cos(bearing) * horizontal,
       camHeight + this.elevationPx,
     ];
+    this.peakPx = Number.isFinite(this.peakMeters)
+      ? Math.max(this.groundPx, Math.min(this.peakMeters * ppm, this.cameraPos[2] - 1))
+      : this.groundPx;
   }
 
   groundMatrix(refX: number, refY: number, width: number, height: number, out: Float32Array): Float32Array {
@@ -573,6 +586,15 @@ export class Transform {
       this.unprojectClamped(w, h, g),
       this.unprojectClamped(0, h, g),
     ];
+    const top = this.peakPx;
+    if (top > g + 0.5) {
+      pts.push(
+        this.unprojectClamped(0, 0, top),
+        this.unprojectClamped(w, 0, top),
+        this.unprojectClamped(w, h, top),
+        this.unprojectClamped(0, h, top),
+      );
+    }
     return convexHull(pts);
   }
 
@@ -592,7 +614,7 @@ export class Transform {
     const bearing = this.bearingDeg * DEG;
     const dirX = Math.sin(pitch) * Math.sin(bearing);
     const dirY = -Math.sin(pitch) * Math.cos(bearing);
-    const baseDepth = (cam[2] - this.groundPx) * Math.cos(pitch);
+    const baseDepth = (cam[2] - this.peakPx) * Math.cos(pitch);
     const minDepth = this.nearZ;
     let minX = Infinity,
       maxX = -Infinity;
