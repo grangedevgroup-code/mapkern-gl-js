@@ -64,6 +64,18 @@ final class AssetServer {
         return "http://127.0.0.1:" + socket.getLocalPort() + "/";
     }
 
+    private static ServerSocket open(int port) throws IOException {
+        ServerSocket server = new ServerSocket();
+        try {
+            server.setReuseAddress(true);
+            server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 64);
+            return server;
+        } catch (IOException e) {
+            server.close();
+            throw e;
+        }
+    }
+
     void stop() {
         running = false;
         try {
