@@ -834,10 +834,9 @@ const TERRAIN_SOURCE = "maplet-terrain";
 const VIEWS: readonly TerrainView[] = ["flat", "terrain", "tilted"];
 
 function demSource(source: string | DemSourceSpec | undefined): string | DemSourceSpec {
-  if (typeof source === "string" ? source === "" : source?.type !== "dem") {
-    throw new MapletError("invalid-option", "TerrainControl needs a dem source or the id of one");
-  }
-  return typeof source === "string" ? source : { ...source };
+  if (typeof source === "string" && source !== "") return source;
+  if (typeof source === "object" && source !== null && source.type === "dem") return { ...source };
+  throw new MapletError("invalid-option", "TerrainControl needs a dem source or the id of one");
 }
 const VIEW_TEXT: Record<TerrainView, UiText> = { flat: "flatView", terrain: "terrainView", tilted: "tiltedView" };
 const TILTED = 5;
