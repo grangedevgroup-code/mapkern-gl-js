@@ -126,6 +126,7 @@ export function createViewer(options = {}) {
     map,
     basemaps: picker,
     terrain: terrainControl,
+    search: searchControl,
     panel: (...children) => addPanel(map, children),
   };
 }
