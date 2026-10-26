@@ -1,5 +1,9 @@
-import { deflateSync } from "node:zlib";
-import { tokenize } from "../../src/search/text.ts";
+import { once } from "node:events";
+import { createReadStream, createWriteStream } from "node:fs";
+import { createInterface } from "node:readline";
+import { pipeline } from "node:stream/promises";
+import { createGunzip, createGzip, deflateSync } from "node:zlib";
+import { table, tokenize } from "../../src/search/text.ts";
 import { writeSearchFile } from "../../src/search/write.ts";
 import type { RegionData } from "./extract.ts";
 import type { Ring } from "./geometry.ts";
@@ -7,7 +11,7 @@ import { joinWays, pointInRing, ringBounds, simplify, splitRings } from "./geome
 import type { Tags } from "./osm-pbf.ts";
 import { categoryOf, hasAddress, isNameKey, streetClass } from "./search-schema.ts";
 
-const PLACE_RANK: Record<string, number> = {
+const PLACE_RANK: Record<string, number> = table({
   country: 250,
   state: 230,
   province: 230,
@@ -26,9 +30,9 @@ const PLACE_RANK: Record<string, number> = {
   locality: 70,
   isolated_dwelling: 50,
   farm: 40,
-};
+});
 
-const POI_RANK: Record<string, number> = {
+const POI_RANK: Record<string, number> = table({
   "aeroway=aerodrome": 170,
   "amenity=university": 140,
   "amenity=hospital": 140,
@@ -49,9 +53,9 @@ const POI_RANK: Record<string, number> = {
   "public_transport=platform": 30,
   "highway=bus_stop": 30,
   "public_transport=stop_position": 20,
-};
+});
 
-const STREET_RANK: Record<string, number> = {
+const STREET_RANK: Record<string, number> = table({
   motorway: 130,
   trunk: 120,
   primary: 110,
@@ -62,10 +66,10 @@ const STREET_RANK: Record<string, number> = {
   living_street: 60,
   pedestrian: 60,
   road: 60,
-};
+});
 
-const NEAREST_PLACE: Record<string, number> = { city: 15000, town: 8000, village: 4000, hamlet: 2000 };
-const CONTEXT_ABOVE: Record<string, number> = {
+const NEAREST_PLACE: Record<string, number> = table({ city: 15000, town: 8000, village: 4000, hamlet: 2000 });
+const CONTEXT_ABOVE: Record<string, number> = table({
   country: 3,
   state: 2,
   province: 2,
@@ -78,7 +82,7 @@ const CONTEXT_ABOVE: Record<string, number> = {
   village: 0,
   island: 0,
   archipelago: 0,
-};
+});
 const GROUP_GAP = 0.02;
 
 interface Area {
@@ -89,6 +93,8 @@ interface Area {
   outer: boolean[];
   bbox: [number, number, number, number];
 }
+
+export const ENTRY_VERSION = 1;
 
 export interface Entry {
   osm: number;
@@ -652,4 +658,29 @@ export function stitch(chains: Float64Array[]): Ring[] {
     if (ring.length >= 8) rings.push(Float64Array.from(ring));
   }
   return rings;
+}
+
+export async function saveEntries(path: string, entries: Entry[]): Promise<void> {
+  const out = createGzip({ level: 1 });
+  const done = pipeline(out, createWriteStream(path));
+  for (const e of entries) {
+    const line = JSON.stringify({ ...e, shape: e.shape?.map((p) => Array.from(p)) ?? null, tokens: [...e.tokens] });
+    if (!out.write(`${line}\n`)) await once(out, "drain");
+  }
+  out.end();
+  await done;
+}
+
+export async function loadEntries(path: string): Promise<Entry[]> {
+  const entries: Entry[] = [];
+  const lines = createInterface({
+    input: createReadStream(path).pipe(createGunzip()),
+    crlfDelay: Number.POSITIVE_INFINITY,
+  });
+  for await (const line of lines) {
+    if (!line) continue;
+    const e = JSON.parse(line) as Omit<Entry, "shape" | "tokens"> & { shape: number[][] | null; tokens: string[] };
+    entries.push({ ...e, shape: e.shape?.map((p) => Float64Array.from(p)) ?? null, tokens: new Set(e.tokens) });
+  }
+  return entries;
 }
