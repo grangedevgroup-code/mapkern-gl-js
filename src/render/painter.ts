@@ -51,6 +51,7 @@ export interface FrameInput {
   readonly sun?: SunLook | null;
   readonly now: number;
   readonly cameraVersion: number;
+  readonly moving?: boolean;
 }
 
 export interface PickBox {
