@@ -283,3 +283,60 @@ test("collected entries survive the build cache", async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+function pointsOnly(points: { lon: number; lat: number; tags: Tags }[]): RegionData {
+  return {
+    bbox: [-180, -90, 180, 90],
+    warnings: [],
+    nodeIds: new Float64Array(0),
+    nodeLon: new Int32Array(0),
+    nodeLat: new Int32Array(0),
+    points: points.map((p, i) => ({
+      id: i + 1,
+      lon: Math.round(p.lon * 1e7),
+      lat: Math.round(p.lat * 1e7),
+      tags: p.tags,
+    })),
+    wayIds: new Float64Array(0),
+    wayOffsets: Uint32Array.of(0),
+    wayRefs: new Float64Array(0),
+    wayTags: [],
+    relations: [],
+  };
+}
+
+test("airport codes beat a village of the same name, main names beat other languages, cities beat their state", async () => {
+  const world = await SearchIndex.load(
+    writeSearchIndex(
+      [-180, -90, 180, 90],
+      collectEntries(
+        pointsOnly([
+          {
+            lon: -118.41,
+            lat: 33.94,
+            tags: {
+              aeroway: "aerodrome",
+              iata: "LAX",
+              icao: "KLAX",
+              name: "Los Angeles International Airport",
+              wikidata: "Q8731",
+            },
+          },
+          { lon: 7.73, lat: 46.39, tags: { place: "village", name: "Lax" } },
+          { lon: 3.38, lat: 6.45, tags: { place: "city", name: "Lagos", population: "15000000" } },
+          {
+            lon: 102.5,
+            lat: 18.2,
+            tags: { place: "country", name: "ປະເທດລາວ", "name:en": "Laos", "name:gl": "Lagos" },
+          },
+          { lon: -46.63, lat: -23.55, tags: { place: "city", name: "São Paulo", population: "11450000" } },
+          { lon: -48.5, lat: -22.2, tags: { place: "state", name: "São Paulo", population: "46000000" } },
+        ]),
+      ),
+    ),
+  );
+  assert.equal((await world.search("LAX"))[0]?.name, "Los Angeles International Airport");
+  assert.equal((await world.search("lagos"))[0]?.name, "Lagos");
+  assert.equal((await world.search("laos"))[0]?.name, "ປະເທດລາວ");
+  assert.equal((await world.search("sao paulo"))[0]?.category, "city");
+});
