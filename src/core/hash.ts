@@ -1,4 +1,4 @@
-import type { MapletMap } from "./map.ts";
+import type { MapkernMap } from "./map.ts";
 
 export interface HashPosition {
   zoom: number;
@@ -57,13 +57,13 @@ export function writeHash(hash: string, name: string | null, value: string): str
 }
 
 export class MapHash {
-  private readonly map: MapletMap;
+  private readonly map: MapkernMap;
   private readonly name: string | null;
   private readonly view: Window;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private written = "";
 
-  constructor(map: MapletMap, name: string | null) {
+  constructor(map: MapkernMap, name: string | null) {
     this.map = map;
     this.name = name;
     this.view = map.getContainer().ownerDocument.defaultView ?? window;
