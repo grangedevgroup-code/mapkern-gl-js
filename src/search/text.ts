@@ -78,13 +78,14 @@ export function isNumber(token: string): boolean {
   return c >= 48 && c <= 57;
 }
 
-export function withinEdits(a: string, b: string, limit: number): number {
+let rows = [new Int32Array(64), new Int32Array(64), new Int32Array(64)];
+
+export function withinEdits(a: string, b: string, limit: number, length = b.length): number {
   const n = a.length;
-  const m = b.length;
+  const m = Math.min(length, b.length);
   if (Math.abs(n - m) > limit) return -1;
-  let prev = new Array<number>(m + 1);
-  let cur = new Array<number>(m + 1);
-  let before = new Array<number>(m + 1);
+  if (rows[0]!.length <= m) rows = [new Int32Array(m * 2), new Int32Array(m * 2), new Int32Array(m * 2)];
+  let [prev, cur, before] = rows as [Int32Array, Int32Array, Int32Array];
   for (let j = 0; j <= m; j++) prev[j] = j;
   for (let i = 1; i <= n; i++) {
     cur[0] = i;
