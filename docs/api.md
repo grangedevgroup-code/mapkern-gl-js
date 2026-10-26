@@ -367,6 +367,32 @@ class HomeButton {
 map.addControl(new HomeButton(), "top-left");
 ```
 
+## Search
+
+Mapkern finds places, addresses, streets and businesses in a search index you build yourself from OpenStreetMap data (see [Tiles](tiles.md#search-index)), so there is no search service to pay for and it works offline. Load the file, then ask it questions:
+
+```js
+const index = await mapkern.SearchIndex.load("olympia.search");
+
+index.search("1065 washington st se", { near: map.getCenter() });
+index.search("coffee lacey");
+index.reverse([-122.9007, 47.0379]);
+```
+
+`search(text, options)` returns the best matches first. Each result has a `name`, a `context` such as "Olympia, Washington 98501, United States", the two joined as `label`, a `kind` (`place`, `address`, `street` or `poi`), a `category` such as `cafe` or `city`, a `center`, and a `zoom` that suits it. Addresses also carry `address.number` and `address.street`. It copes with partial words while someone is still typing, small typos ("olimpia"), common short forms ("st", "ave", "nw"), names in other languages, and category words, so "coffee" finds cafés and "gas" finds fuel stations. The options are `near` (a `[lng, lat]` that nearer places win from), `bbox`, `kinds`, `limit` (8) and `autocomplete: false` to match only whole words.
+
+`reverse([lng, lat])` tells you what is at a spot: the nearest address, business, street and town, in that order, each with its `distance` in meters. Pass `kinds` to ask for one kind only, and `radius` to change how far it looks.
+
+`SearchControl` puts a search button on the map. Pressing it opens a box beside the button that suggests matches as you type; picking one by touch, click or the arrow keys and Enter flies there and drops a pin:
+
+```js
+const search = new mapkern.SearchControl({ geocoder: index });
+map.addControl(search);
+search.on("result", ({ result }) => console.log(result.label));
+```
+
+It sits in the bottom-right corner unless you say otherwise; added last, it lands above the zoom buttons. `geocoder` can be anything with a `search(text, options)` method that returns results, or a promise of them, so the same box works with your own server. The other options are `limit`, `kinds`, `marker: false`, `flyTo: false`, `proximity: false` to stop preferring places near the view, and `placeholder`. `open()`, `query(text)`, `select(result)` and `clear()` drive it from code, and it fires `results`, `result`, `clear` and `error`.
+
 ## Markers and popups
 
 ```js
