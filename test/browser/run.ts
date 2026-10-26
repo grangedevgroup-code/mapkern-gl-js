@@ -3757,7 +3757,7 @@ const specs: Spec[] = [
         });
       const camera = () =>
         page.evaluate<{ zoom: number; bearing: number; pitch: number; lng: number; lat: number }>(
-          "({ zoom: window.map.getZoom(), bearing: window.map.getBearing(), pitch: window.map.getPitch(), lng: window.map.getCenter().lng, lat: window.map.getCenter().lat })",
+          "({ zoom: window.map.getZoom(), bearing: window.map.getBearing(), pitch: window.map.getPitch(), lng: window.map.getCenter()[0], lat: window.map.getCenter()[1] })",
         );
       const drag = async (from: [number, number][], step: (i: number) => [number, number][], count: number) => {
         await touch("touchStart", from);
