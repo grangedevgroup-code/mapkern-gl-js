@@ -31,6 +31,23 @@ export const TERRAIN = {
   attribution: '<a href="https://mapterhorn.com/attribution">© Mapterhorn</a>',
 };
 
+export const SEARCH = new URL("../data/seattle.search", import.meta.url).href;
+
+export function lazyGeocoder(source) {
+  let loading = null;
+  const index = () => {
+    loading ??= mapkern.SearchIndex.load(source).catch((error) => {
+      loading = null;
+      throw error;
+    });
+    return loading;
+  };
+  return {
+    search: async (query, options) => (await index()).search(query, options),
+    reverse: async (position, options) => (await index()).reverse(position, options),
+  };
+}
+
 function memory(enabled) {
   const prefix = `mapkern-viewer:${location.pathname}:`;
   return {
