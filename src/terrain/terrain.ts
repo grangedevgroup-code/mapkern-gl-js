@@ -18,6 +18,26 @@ export interface TerrainSlot {
 const FULL: Rect = { x0: 0, y0: 0, x1: 1, y1: 1 };
 const MAX_SLOT_ZOOM = 22;
 
+export function highestClearZoom(requested: number, lowest: number, clear: (zoom: number) => boolean): number | null {
+  const step = 1 / 32;
+  let above = requested;
+  while (above > lowest) {
+    const z = Math.max(lowest, above - step);
+    if (clear(z)) {
+      let low = z;
+      let high = above;
+      for (let i = 0; i < 6; i++) {
+        const mid = (low + high) / 2;
+        if (clear(mid)) low = mid;
+        else high = mid;
+      }
+      return low;
+    }
+    above = z;
+  }
+  return null;
+}
+
 export function metersToWorld(meters: number, worldY: number): number {
   return (meters * Math.cosh(Math.PI * (1 - 2 * worldY))) / EARTH_CIRCUMFERENCE;
 }
@@ -25,6 +45,7 @@ export function metersToWorld(meters: number, worldY: number): number {
 export class Terrain {
   readonly source: DemSource;
   exaggeration: number;
+  relief = 0;
   slots: TerrainSlot[] = [];
   private lowest = 0;
 
