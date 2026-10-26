@@ -1,4 +1,4 @@
-import { MapletError } from "../core/errors.ts";
+import { MapkernError } from "../core/errors.ts";
 import {
   clampLatitude,
   EARTH_CIRCUMFERENCE,
@@ -67,7 +67,7 @@ export async function resolveTileSet(
     const params = resolveRequest(spec.url, "source", transformRequest);
     const result = await fetchBytes(params, signal, timeoutMs, "source", store).catch((error: unknown) => {
       if (signal.aborted) throw error;
-      throw new MapletError(
+      throw new MapkernError(
         "source-error",
         `Could not load TileJSON for source "${sourceId}" from ${spec.url}`,
         { sourceId },
@@ -75,7 +75,7 @@ export async function resolveTileSet(
       );
     });
     if (result.kind === "empty") {
-      throw new MapletError("source-error", `TileJSON for source "${sourceId}" was not found at ${spec.url}`, {
+      throw new MapkernError("source-error", `TileJSON for source "${sourceId}" was not found at ${spec.url}`, {
         sourceId,
       });
     }
@@ -84,13 +84,18 @@ export async function resolveTileSet(
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("not an object");
       raw = parsed as Record<string, unknown>;
     } catch (error) {
-      throw new MapletError("source-error", `TileJSON for source "${sourceId}" is not valid JSON`, { sourceId }, error);
+      throw new MapkernError(
+        "source-error",
+        `TileJSON for source "${sourceId}" is not valid JSON`,
+        { sourceId },
+        error,
+      );
     }
     base = params.url;
   }
   const tilesValue = spec.tiles ?? raw.tiles;
   if (!Array.isArray(tilesValue) || tilesValue.length === 0 || !tilesValue.every((t) => typeof t === "string")) {
-    throw new MapletError("source-error", `Source "${sourceId}" needs a non-empty "tiles" list of URL templates`, {
+    throw new MapkernError("source-error", `Source "${sourceId}" needs a non-empty "tiles" list of URL templates`, {
       sourceId,
     });
   }
