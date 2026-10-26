@@ -1,6 +1,6 @@
 # Styles
 
-A style tells Maplet what data to load and how to draw it. You pass it to the map as an object, or as the URL of a JSON file.
+A style tells Mapkern what data to load and how to draw it. You pass it to the map as an object, or as the URL of a JSON file.
 
 ```js
 const style = {
@@ -17,7 +17,7 @@ const style = {
 
 A style can also set `center`, `zoom`, `bearing` and `pitch`. The map uses them when you don't pass those options yourself. With `terrain` it raises the ground in 3D, see [Terrain](#terrain), `sprite` loads a sheet of icons, see [Icons](#icons), and `glyphs` draws labels in fonts from a font server, see [Fonts](#fonts).
 
-Maplet checks the whole style before drawing it. If something is wrong you get a single `error` event that lists every problem, like `layers[2].paint.colour: "colour" is not a property of fill layers`. `validateStyle(style)` runs the same check without a map.
+Mapkern checks the whole style before drawing it. If something is wrong you get a single `error` event that lists every problem, like `layers[2].paint.colour: "colour" is not a property of fill layers`. `validateStyle(style)` runs the same check without a map.
 
 ## Sources
 
@@ -32,7 +32,7 @@ roads: { type: "vector", tiles: ["https://example.com/tiles/{z}/{x}/{y}.pbf"], m
 
 The other options are `minZoom` and `maxZoom` (0 and 14 unless the file says otherwise), `bounds` as `[west, south, east, north]` to skip requests outside an area, `scheme: "tms"` for tile sets numbered from the south, `attribution` for the credit line, and `promoteId` to use one of the feature's properties as its id. `promoteId` is a property name, or an object such as `{ "buildings": "osm_id", "roads": "ref" }` to pick a different property in each source layer. Anything you set in the style wins over what the file says.
 
-When you zoom past `maxZoom`, Maplet keeps drawing the last level, scaled up.
+When you zoom past `maxZoom`, Mapkern keeps drawing the last level, scaled up.
 
 ### Raster tiles
 
@@ -48,9 +48,9 @@ Raster sources take the same options as vector ones, minus `promoteId`, plus `ti
 dem: { type: "dem", url: "terrain.pmtiles" }
 ```
 
-Elevation tiles are PNG or WebP images with a height for every pixel, packed into the red, green and blue channels. Maplet uses them to shade hills with a [hillshade](#hillshade) layer. `encoding` says how the heights are packed. The two common ways are `"terrarium"`, the default, and `"mapbox"`. For anything else, give the numbers yourself: `{ red, green, blue, offset }` means height in meters = red × R + green × G + blue × B + offset, with R, G and B from 0 to 255. Terrarium is `{ red: 256, green: 1, blue: 1 / 256, offset: -32768 }` and mapbox is `{ red: 6553.6, green: 25.6, blue: 0.1, offset: -10000 }`.
+Elevation tiles are PNG or WebP images with a height for every pixel, packed into the red, green and blue channels. Mapkern uses them to shade hills with a [hillshade](#hillshade) layer. `encoding` says how the heights are packed. The two common ways are `"terrarium"`, the default, and `"mapbox"`. For anything else, give the numbers yourself: `{ red, green, blue, offset }` means height in meters = red × R + green × G + blue × B + offset, with R, G and B from 0 to 255. Terrarium is `{ red: 256, green: 1, blue: 1 / 256, offset: -32768 }` and mapbox is `{ red: 6553.6, green: 25.6, blue: 0.1, offset: -10000 }`.
 
-Fully transparent pixels mean there's no data, and so do heights below -11,000 m, deeper than any place on Earth. That catches Terrarium files that mark missing data as black. Heights are used as they're stored, usually meters above sea level, and Maplet doesn't convert between vertical datums.
+Fully transparent pixels mean there's no data, and so do heights below -11,000 m, deeper than any place on Earth. That catches Terrarium files that mark missing data as black. Heights are used as they're stored, usually meters above sea level, and Mapkern doesn't convert between vertical datums.
 
 The other options work as for raster tiles, except that `tileSize` is 512 and `maxZoom` 15 unless you say otherwise. Tiles have to be square.
 
@@ -62,7 +62,7 @@ The other options work as for raster tiles, except that `tileSize` is 512 and `m
 stations: { type: "geojson", data: "stations.geojson" }
 ```
 
-`data` is a GeoJSON object or a URL. Maplet cuts the data into tiles in a worker, so the page stays responsive while it works. You can change the data later with [`setData()`](api.md#geojson).
+`data` is a GeoJSON object or a URL. Mapkern cuts the data into tiles in a worker, so the page stays responsive while it works. You can change the data later with [`setData()`](api.md#geojson).
 
 A few options control how the tiles are made. `maxZoom` (18) is the last zoom level that gets its own tiles. `tolerance` (0.375) is how far, in pixels, lines and polygons may be simplified when zoomed out; 0 keeps every point. `buffer` (64) is how far each tile reaches past its edge, in pixels of a 512 pixel tile. Raise it if you draw very wide lines or big circles and see them cut off at tile edges. `attribution` and `promoteId` work as for vector tiles, except that `promoteId` is always a single property name here. `generateId: true` numbers the features 0, 1, 2 and so on, in the order they appear, which is handy for [feature state](api.md#highlighting-features) when the data has no ids of its own.
 
@@ -87,7 +87,7 @@ clusterProperties: {
 
 The operator can be any expression that combines two values, written with `["accumulated"]` for the total so far and `["get", name]` for the next value, such as `[["concat", ["accumulated"], ", ", ["get", "names"]], ["get", "name"]]`.
 
-Despite the name, a GeoJSON source reads other formats too: KML and KMZ, GPX, CSV, TopoJSON, Shapefiles (zipped together with their `.dbf`, `.prj` and `.cpg` files), FlatGeobuf, WKT and Cursor on Target (CoT) events, including TAK data packages zipped with them. Maplet works out the format from the file itself, so `data: "trails.gpx"` or `data: "parcels.zip"` just works. If it guesses wrong, set `format` to one of `geojson`, `topojson`, `kml`, `kmz`, `gpx`, `csv`, `shapefile`, `flatgeobuf`, `wkt` or `cot`.
+Despite the name, a GeoJSON source reads other formats too: KML and KMZ, GPX, CSV, TopoJSON, Shapefiles (zipped together with their `.dbf`, `.prj` and `.cpg` files), FlatGeobuf, WKT and Cursor on Target (CoT) events, including TAK data packages zipped with them. Mapkern works out the format from the file itself, so `data: "trails.gpx"` or `data: "parcels.zip"` just works. If it guesses wrong, set `format` to one of `geojson`, `topojson`, `kml`, `kmz`, `gpx`, `csv`, `shapefile`, `flatgeobuf`, `wkt` or `cot`.
 
 A few notes on what comes through:
 
@@ -273,7 +273,7 @@ Raises polygons into 3D shapes, usually buildings. Walls are shaded by the direc
 | --- | --- | --- |
 | `hideOutlines` | see below | Leaves out a shape that holds other shapes of the layer, so a detailed building shows its parts |
 
-OpenStreetMap maps a detailed building, like the Space Needle, as an outline with parts inside it: legs, floors, a roof. The outline carries the height of the whole building, so drawn as well, it wraps the parts in one plain block. Tiles usually keep both. With `hideOutlines`, Maplet leaves out a shape when other shapes of the layer fit inside it, both in footprint and in height, cover at least half of it and reach most of its height. A low podium with a separate tower on top stays, because the tower is taller than the podium, and so does a building where only the ground floor is mapped as a part.
+OpenStreetMap maps a detailed building, like the Space Needle, as an outline with parts inside it: legs, floors, a roof. The outline carries the height of the whole building, so drawn as well, it wraps the parts in one plain block. Tiles usually keep both. With `hideOutlines`, Mapkern leaves out a shape when other shapes of the layer fit inside it, both in footprint and in height, cover at least half of it and reach most of its height. A low podium with a separate tower on top stays, because the tower is taller than the podium, and so does a building where only the ground floor is mapped as a part.
 
 It's on for tile layers named `building` or `buildings` and off for everything else, such as your own GeoJSON. Set it to `true` or `false` to choose yourself.
 
@@ -351,7 +351,7 @@ Labels use fonts installed on the device, so `font` lists CSS font families like
 glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
 ```
 
-`font` then names fonts on that server, like `["Noto Sans Bold"]`, and Maplet loads them 256 characters at a time as labels need them. The map waits for them before it counts as `idle`. Chinese, Japanese and Korean, and scripts whose letters join or change shape, like Arabic or Hindi, still use the device's fonts. They're shaped properly that way and don't need large downloads. Characters the server doesn't have fall back to the device too, and the weight and slant come from the font name, so `Noto Sans Bold Italic` falls back to a bold italic sans-serif.
+`font` then names fonts on that server, like `["Noto Sans Bold"]`, and Mapkern loads them 256 characters at a time as labels need them. The map waits for them before it counts as `idle`. Chinese, Japanese and Korean, and scripts whose letters join or change shape, like Arabic or Hindi, still use the device's fonts. They're shaped properly that way and don't need large downloads. Characters the server doesn't have fall back to the device too, and the weight and slant come from the font name, so `Noto Sans Bold Italic` falls back to a bold italic sans-serif.
 
 ## Icons
 
@@ -361,7 +361,7 @@ Icons come from images you add with [`map.addImage`](api.md#images), or from a s
 { version: 1, sprite: "https://example.com/sprites/streets", sources: { ... }, layers: [ ... ] }
 ```
 
-Maplet loads `streets.json` and `streets.png`, or `streets@2x.json` and `streets@2x.png` on high-density screens when they exist. The JSON maps each name to `{ x, y, width, height, pixelRatio, sdf }`. To use several sheets, give a list instead, `[{ id: "roads", url: "..." }, { id: "poi", url: "..." }]`, and refer to icons as `roads:shield` or `poi:cafe`. A sheet with the id `default` keeps plain names.
+Mapkern loads `streets.json` and `streets.png`, or `streets@2x.json` and `streets@2x.png` on high-density screens when they exist. The JSON maps each name to `{ x, y, width, height, pixelRatio, sdf }`. To use several sheets, give a list instead, `[{ id: "roads", url: "..." }, { id: "poi", url: "..." }]`, and refer to icons as `roads:shield` or `poi:cafe`. A sheet with the id `default` keeps plain names.
 
 The `image` expression checks that an image exists, which is handy for a fallback: `["coalesce", ["image", ["get", "kind"]], ["image", "dot"]]` shows a generic dot for kinds you have no icon for.
 
@@ -375,7 +375,7 @@ Anything CSS accepts: `#2f6fdb`, `#2f6fdb80`, `rgb(47, 111, 219)`, `rgba(47, 111
 
 ## Expressions
 
-An expression is an array that starts with the name of an operation. Maplet works out its value for each feature and zoom level.
+An expression is an array that starts with the name of an operation. Mapkern works out its value for each feature and zoom level.
 
 ```js
 ["get", "name"]
@@ -385,7 +385,7 @@ An expression is an array that starts with the name of an operation. Maplet work
 
 The first one reads a property. The second picks a color by road class, with white for everything else. The third makes something 1 pixel wide at zoom 10 and 8 pixels wide at zoom 16, growing smoothly in between.
 
-An array that starts with a name Maplet doesn't know, like `["sum", 1, 2]`, is reported as an error rather than quietly ignored. To use a list of values as it is, wrap it: `["literal", ["a", "b"]]`. The labels in `match` and the list in `in` are the exceptions, and can be written plainly.
+An array that starts with a name Mapkern doesn't know, like `["sum", 1, 2]`, is reported as an error rather than quietly ignored. To use a list of values as it is, wrap it: `["literal", ["a", "b"]]`. The labels in `match` and the list in `in` are the exceptions, and can be written plainly.
 
 `interpolate` also takes `["exponential", 1.5]` for a curve that speeds up, and `["cubic-bezier", x1, y1, x2, y2]` like a CSS easing. It works on numbers and colors. `step` jumps instead of blending:
 
@@ -417,7 +417,7 @@ A few of these deserve an example:
 ["case", ["boolean", ["feature-state", "selected"], false], "#d33", "#888"]
 ```
 
-`number-format` also takes `min-fraction-digits` and `max-fraction-digits`, and leaves out `locale` to use the reader's own. `feature-state` reads the state your code [sets on a feature](api.md#highlighting-features), and works in paint properties only. `is-supported-script` is there for styles written for other map libraries and always returns `true`, since Maplet draws every script the browser can.
+`number-format` also takes `min-fraction-digits` and `max-fraction-digits`, and leaves out `locale` to use the reader's own. `feature-state` reads the state your code [sets on a feature](api.md#highlighting-features), and works in paint properties only. `is-supported-script` is there for styles written for other map libraries and always returns `true`, since Mapkern draws every script the browser can.
 
 A filter is just an expression that comes out true or false:
 
@@ -479,7 +479,7 @@ On steep slopes the roofs of 3D buildings follow the slope instead of staying fl
 
 ## Sky
 
-When you tilt the map far enough to look toward the horizon, or tilt it while zoomed out near a pole, the sky shows above the map, with a haze over the distant ground so the map fades into it instead of ending at a hard line. Maplet picks a pale sky for light styles and a night sky for dark ones. To choose your own, add `sky` to the style:
+When you tilt the map far enough to look toward the horizon, or tilt it while zoomed out near a pole, the sky shows above the map, with a haze over the distant ground so the map fades into it instead of ending at a hard line. Mapkern picks a pale sky for light styles and a night sky for dark ones. To choose your own, add `sky` to the style:
 
 ```js
 sky: {
@@ -509,24 +509,24 @@ With `shade` on, which it is unless you set it to `false`, the sun also lights t
 
 ## Styles from MapLibre and Mapbox
 
-Styles written for MapLibre GL JS or Mapbox GL JS, the ones with `"version": 8`, load as they are. Pass the object or its URL to the map, and Maplet turns it into its own style on the way in:
+Styles written for MapLibre GL JS or Mapbox GL JS, the ones with `"version": 8`, load as they are. Pass the object or its URL to the map, and Mapkern turns it into its own style on the way in:
 
 ```js
-const map = new maplet.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/liberty" });
+const map = new mapkern.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/liberty" });
 ```
 
-Property names lose their prefix and move to camel case, so `fill-color` becomes `color` and `text-halo-width` becomes `haloWidth`, `fill-extrusion` layers become `extrusion` layers, and a layer that borrows from another with `ref` gets its type, source, filter and layout. Filters and property functions in the older format, like `["==", "class", "park"]` or `{ "stops": [[5, 1], [10, 4]] }`, become expressions, `{name}` in a label becomes `["get", "name"]`, and relative addresses are read from where the style lives. Where the two formats disagree on a default, such as the text size or the tile size of raster sources, Maplet uses the one the style was written for. A MapLibre `sky` becomes the [sky](#sky) as it is, and a Mapbox `fog` gives the sky its colors. Labels are drawn in the style's own fonts from its `glyphs` server, see [Fonts](#fonts). A style without one uses the device's fonts, with `text-font` picking the family, weight and slant.
+Property names lose their prefix and move to camel case, so `fill-color` becomes `color` and `text-halo-width` becomes `haloWidth`, `fill-extrusion` layers become `extrusion` layers, and a layer that borrows from another with `ref` gets its type, source, filter and layout. Filters and property functions in the older format, like `["==", "class", "park"]` or `{ "stops": [[5, 1], [10, 4]] }`, become expressions, `{name}` in a label becomes `["get", "name"]`, and relative addresses are read from where the style lives. Where the two formats disagree on a default, such as the text size or the tile size of raster sources, Mapkern uses the one the style was written for. A MapLibre `sky` becomes the [sky](#sky) as it is, and a Mapbox `fog` gives the sky its colors. Labels are drawn in the style's own fonts from its `glyphs` server, see [Fonts](#fonts). A style without one uses the device's fonts, with `text-font` picking the family, weight and slant.
 
-A few things can't be drawn yet: patterns on lines and patterns that change per feature, `line-gradient`, icons and point labels lying flat on tilted maps (`icon-pitch-alignment: "map"`) and the globe projection. When a style uses them, Maplet leaves out that property, or the layer when nothing else would make sense, and draws the rest. The `styleload` event lists what was left out in `event.skipped`. Addresses starting with `mapbox://` need Mapbox's own servers and are left out too.
+A few things can't be drawn yet: patterns on lines and patterns that change per feature, `line-gradient`, icons and point labels lying flat on tilted maps (`icon-pitch-alignment: "map"`) and the globe projection. When a style uses them, Mapkern leaves out that property, or the layer when nothing else would make sense, and draws the rest. The `styleload` event lists what was left out in `event.skipped`. Addresses starting with `mapbox://` need Mapbox's own servers and are left out too.
 
-`maplet.importStyle(style, url)` does the same conversion without a map and returns `{ style, skipped }`, if you'd like to look at the result or keep it.
+`mapkern.importStyle(style, url)` does the same conversion without a map and returns `{ style, skipped }`, if you'd like to look at the result or keep it.
 
 ## The built-in style
 
-`lightStyle()` gives you a complete street map style for tiles made with `maplet-tiles`:
+`lightStyle()` gives you a complete street map style for tiles made with `mapkern-tiles`:
 
 ```js
-const style = maplet.lightStyle({ url: "seattle.pmtiles" });
+const style = mapkern.lightStyle({ url: "seattle.pmtiles" });
 ```
 
 Tall buildings stand up in 3D from zoom 12, and all the others join them at zoom 13. Pass `buildings: "flat"` to keep them flat or `buildings: false` to leave them out, and `labels: false` to drop the labels. Give it `elevation` with the URL of an elevation file to shade the hills, and add `terrain: true`, or an exaggeration like `terrain: 1.5`, to raise them in 3D. You can choose label fonts with `font`, and replace the credit line with `attribution`. If your tiles come from a URL template instead of a file, pass `tiles` (and `maxZoom` if it isn't 14).
