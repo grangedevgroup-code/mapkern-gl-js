@@ -35,7 +35,9 @@ export function csvToGeoJSON(text: string): FeatureCollection {
   const wktIndex = find(WKT_NAMES);
   const gridIndex = find(GRID_NAMES);
   if (wktIndex < 0 && gridIndex < 0 && (latIndex < 0 || lonIndex < 0)) {
-    throw new CsvError("The CSV file needs latitude and longitude columns, an MGRS column, or a WKT geometry column");
+    throw new CsvError(
+      "The CSV file needs latitude and longitude columns, an MGRS column, or a WKT or WKB geometry column",
+    );
   }
   const features: Feature[] = [];
   for (const row of rows) {
