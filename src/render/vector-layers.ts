@@ -73,7 +73,10 @@ const PICKING: ReadonlyMap<ProgramSource, ProgramSource> = new Map(
 const EXTRUSION_TERRAIN: ProgramSource = { ...extrusionShader, defines: ["TERRAIN"] };
 const EXTRUSION_TERRAIN_PICK: ProgramSource = { ...extrusionShader, defines: ["PICK", "TERRAIN"] };
 
-export const WARM_VARIANTS: readonly ProgramSource[] = [EXTRUSION_TERRAIN];
+const EXTRUSION_WHOLE: ProgramSource = { ...extrusionShader, defines: ["WHOLE"] };
+const EXTRUSION_TERRAIN_WHOLE: ProgramSource = { ...extrusionShader, defines: ["TERRAIN", "WHOLE"] };
+
+export const WARM_VARIANTS: readonly ProgramSource[] = [EXTRUSION_TERRAIN, EXTRUSION_TERRAIN_WHOLE];
 
 function screenOffset(layer: StyleLayer, bearing: number, zoom: number): [number, number] {
   const [x, y] = pairOf(layer.paintValue<unknown>("translate", { zoom }));
