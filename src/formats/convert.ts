@@ -1,4 +1,5 @@
 import type { Feature, FeatureCollection } from "../geo/geojson.ts";
+import { cotToGeoJSON, isCot } from "./cot.ts";
 import { csvToGeoJSON } from "./csv.ts";
 import type { FeatureFormat } from "./feature-format.ts";
 import { flatgeobufToGeoJSON, isFlatGeobuf } from "./flatgeobuf.ts";
@@ -31,6 +32,8 @@ export async function bytesToGeoJSON(bytes: Uint8Array, name = "", format?: Feat
       return kmlToGeoJSON(text.decode(bytes));
     case "gpx":
       return gpxToGeoJSON(text.decode(bytes));
+    case "cot":
+      return cotToGeoJSON(text.decode(bytes));
     case "csv":
       return csvToGeoJSON(text.decode(bytes));
     case "wkt":
@@ -52,6 +55,7 @@ function detect(bytes: Uint8Array, name: string): FeatureFormat {
   const head = text.decode(bytes.subarray(0, 1024)).replace(/^﻿/, "").trimStart();
   if (head.startsWith("<")) {
     if (/<gpx[\s>]/i.test(head) || ext === "gpx") return "gpx";
+    if (ext === "cot" || isCot(head)) return "cot";
     return "kml";
   }
   if (head.startsWith("{") || head.startsWith("[")) return "geojson";
@@ -121,9 +125,13 @@ async function fromZip(bytes: Uint8Array): Promise<FeatureCollection> {
   for (const entry of byExt("gpx")) add(gpxToGeoJSON(text.decode(await read(entry))));
   for (const entry of byExt("fgb")) add(flatgeobufToGeoJSON(await read(entry)));
   for (const entry of byExt("csv")) add(csvToGeoJSON(text.decode(await read(entry))));
+  for (const entry of [...byExt("cot"), ...byExt("xml")]) {
+    const source = text.decode(await read(entry));
+    if (isCot(source)) add(cotToGeoJSON(source));
+  }
   if (features.length === 0 && kml.length === 0 && byExt("shp").length === 0) {
     throw new FormatError(
-      "The ZIP file has no map data in it (looked for KML, Shapefile, GeoJSON, GPX, FlatGeobuf and CSV)",
+      "The ZIP file has no map data in it (looked for KML, Shapefile, GeoJSON, GPX, FlatGeobuf, CSV and CoT)",
     );
   }
   return { type: "FeatureCollection", features };
