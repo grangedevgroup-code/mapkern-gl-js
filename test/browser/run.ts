@@ -4943,6 +4943,90 @@ const specs: Spec[] = [
       }
     },
   },
+  {
+    name: "the search box lists matches, picks one by keyboard, flies there and drops a pin",
+    async run({ page, base, shot }) {
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { zoom: 3 });
+      const state = await page.evaluate<{
+        options: string[];
+        context: string[];
+        expanded: string | null;
+        center: number[];
+        zoom: number;
+        input: string;
+        pins: number;
+        picked: string | null;
+        empty: string;
+        failed: string;
+        near: number[] | null;
+        stale: string[];
+      }>(`(async () => {
+        const places = [
+          { id: 0, kind: "place", name: "Olympia", label: "Olympia, Washington", context: "Washington", category: "city", center: [-122.9, 47.04], zoom: 11, score: 1 },
+          { id: 1, kind: "street", name: "Olympia Avenue", label: "Olympia Avenue, Seattle", context: "Seattle", category: "residential", center: [-122.3, 47.6], zoom: 16, score: 0.8 },
+        ];
+        let near = null;
+        let slow = null;
+        const geocoder = {
+          search(query, options) {
+            near = options.near;
+            if (query === "broken") throw new Error("offline");
+            if (query === "sl") return new Promise((r) => { slow = () => r(places); });
+            return query.startsWith("oly") ? places : [];
+          },
+        };
+        const control = new mapkern.SearchControl({ geocoder });
+        let picked = null;
+        control.on("result", (e) => (picked = e.result.name));
+        map.addControl(control);
+        const input = document.querySelector(".mapkern-search-input");
+        const type = async (text) => {
+          input.value = text;
+          input.dispatchEvent(new Event("input"));
+          await new Promise((r) => setTimeout(r, 20));
+        };
+        await type("oly");
+        const options = [...document.querySelectorAll(".mapkern-search-results [role=option] .mapkern-search-name")].map((e) => e.textContent);
+        const context = [...document.querySelectorAll(".mapkern-search-results .mapkern-search-context")].map((e) => e.textContent);
+        const expanded = input.getAttribute("aria-expanded");
+        const key = (k) => input.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }));
+        key("ArrowDown");
+        key("ArrowDown");
+        key("Enter");
+        await map.once("moveend");
+        const center = map.getCenter();
+        const zoom = map.getZoom();
+        const pins = document.querySelectorAll(".mapkern-marker").length;
+        await type("nothing here");
+        const empty = document.querySelector(".mapkern-search-results")?.textContent ?? "";
+        await type("broken");
+        const failed = document.querySelector(".mapkern-search-results")?.textContent ?? "";
+        const pending = control.query("sl");
+        await type("oly");
+        slow();
+        await pending;
+        const stale = [...document.querySelectorAll(".mapkern-search-results [role=option] .mapkern-search-name")].map((e) => e.textContent);
+        return { options, context, expanded, center, zoom, input: input.value, pins, picked, empty, failed, near, stale };
+      })()`);
+      await shot("search");
+      if (JSON.stringify(state.options) !== '["Olympia","Olympia Avenue"]')
+        fail(`wrong list: ${JSON.stringify(state)}`);
+      if (JSON.stringify(state.context) !== '["Washington","Seattle"]') fail(`wrong context: ${JSON.stringify(state)}`);
+      if (state.expanded !== "true") fail(`the box should say its list is open: ${JSON.stringify(state)}`);
+      if (state.picked !== "Olympia Avenue" || state.input !== "Olympia Avenue, Seattle")
+        fail(`arrow down twice and Enter should pick the second match: ${JSON.stringify(state)}`);
+      if (Math.abs(state.center[0]! + 122.3) > 1e-6 || Math.abs(state.zoom - 16) > 1e-6)
+        fail(`the map should fly to the pick: ${JSON.stringify(state)}`);
+      if (state.pins !== 1) fail(`one pin should mark the pick: ${JSON.stringify(state)}`);
+      if (state.empty !== "Nothing found") fail(`no matches should say so: ${JSON.stringify(state)}`);
+      if (state.failed !== "Search is not available")
+        fail(`a failing geocoder should say so: ${JSON.stringify(state)}`);
+      if (!state.near || Math.abs(state.near[0]! + 122.3) > 1e-6)
+        fail(`search should prefer places near the view: ${JSON.stringify(state)}`);
+      if (JSON.stringify(state.stale) !== '["Olympia","Olympia Avenue"]')
+        fail(`a slow answer to an older query must not replace newer results: ${JSON.stringify(state)}`);
+    },
+  },
 ];
 
 async function main(): Promise<void> {
