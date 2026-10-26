@@ -57,6 +57,7 @@ export class RasterSource implements MapSource {
       this.ctx.transformRequest,
       this.ctx.requestTimeoutMs,
       signal,
+      this.ctx.diskCache,
     );
     if (signal.aborted) return;
     this.tileSet = set;
@@ -123,6 +124,8 @@ export class RasterSource implements MapSource {
           resolveRequest(url, "tile", ctx.transformRequest),
           signal,
           ctx.requestTimeoutMs,
+          "tile",
+          ctx.diskCache,
         );
         if (result.kind === "empty") return null;
         const fingerprint = placeholders.note(tile, result.data);
