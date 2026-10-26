@@ -421,7 +421,8 @@ export class ExtrusionBuilder {
     this.extent = extent;
   }
 
-  addPolygon(rings: Int32Array[], feature: number): void {
+  addPolygon(polygon: Int32Array[], feature: number): void {
+    const rings = insideTile(polygon, this.extent);
     if (rings.length === 0) return;
     const outward = ringArea(rings[0]!) >= 0 ? 1 : -1;
     const coords = this.coords;
