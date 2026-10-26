@@ -132,7 +132,8 @@ export type UiText =
   | "tiltedView"
   | "search"
   | "searchPlaceholder"
-  | "noResults";
+  | "noResults"
+  | "searchFailed";
 
 const NEAR_SAMPLES = 8;
 const PREFETCH_MARGIN = 1.4;
@@ -160,6 +161,7 @@ const DEFAULT_TEXT: Record<UiText, string> = {
   search: "Search",
   searchPlaceholder: "Search places and addresses",
   noResults: "Nothing found",
+  searchFailed: "Search is not available",
 };
 
 export interface ScreenPosition {
