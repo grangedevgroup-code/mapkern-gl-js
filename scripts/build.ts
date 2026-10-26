@@ -27,10 +27,10 @@ export async function buildAll(options: BuildOptions = {}): Promise<void> {
     legalComments: "none",
   });
   const workerCode = worker.outputFiles[0]!.text;
-  writeFileSync(join(dist, "maplet-worker.js"), workerCode);
+  writeFileSync(join(dist, "mapkern-worker.js"), workerCode);
   const define = {
-    MAPLET_WORKER_SOURCE: JSON.stringify(workerCode),
-    MAPLET_VERSION: JSON.stringify(pkg.version),
+    MAPKERN_WORKER_SOURCE: JSON.stringify(workerCode),
+    MAPKERN_VERSION: JSON.stringify(pkg.version),
   };
   const common = {
     absWorkingDir: root,
@@ -42,13 +42,13 @@ export async function buildAll(options: BuildOptions = {}): Promise<void> {
     logLevel: "warning" as const,
   };
   await Promise.all([
-    build({ ...common, format: "esm", outfile: "dist/maplet.js", sourcemap: true }),
-    build({ ...common, format: "esm", outfile: "dist/maplet.min.js", minify: true, sourcemap: true }),
+    build({ ...common, format: "esm", outfile: "dist/mapkern.js", sourcemap: true }),
+    build({ ...common, format: "esm", outfile: "dist/mapkern.min.js", minify: true, sourcemap: true }),
     build({
       ...common,
       format: "iife",
-      globalName: "maplet",
-      outfile: "dist/maplet.global.js",
+      globalName: "mapkern",
+      outfile: "dist/mapkern.global.js",
       minify: true,
       sourcemap: true,
     }),
@@ -72,7 +72,7 @@ export async function buildAll(options: BuildOptions = {}): Promise<void> {
     build({ ...tools, entryPoints: ["tools/tiles/extract-worker.ts"], outfile: "dist/tiles/extract-worker.js" }),
   ]);
   const { CSS } = await import("../src/ui/css.ts");
-  writeFileSync(join(dist, "maplet.css"), `${CSS.trim()}\n`);
+  writeFileSync(join(dist, "mapkern.css"), `${CSS.trim()}\n`);
   if (options.types !== false) {
     rmSync(join(dist, "types"), { recursive: true, force: true });
     const tsc = join(root, "node_modules", "typescript", "bin", "tsc");
