@@ -329,8 +329,12 @@ export function collectEntries(data: RegionData, log: (message: string) => void 
   const entries: Entry[] = [];
   const nameTokens = (tags: Tags): Set<string> => {
     const out = new Set<string>();
-    for (const key in tags) if (isNameKey(key)) for (const t of tokenize(tags[key]!)) out.add(t);
-    for (const code of [tags.iata, tags.icao]) if (code) for (const t of tokenize(code)) out.add(t);
+    for (const key of MAIN_NAMES) if (tags[key]) for (const t of tokenize(tags[key])) out.add(t);
+    for (const key in tags) {
+      if (MAIN_NAMES.includes(key) || !isNameKey(key)) continue;
+      for (const t of tokenize(tags[key]!)) if (!out.has(t)) out.add(OTHER_NAME + t);
+    }
+    for (const code of [tags.iata, tags.icao]) if (code) for (const t of tokenize(code)) out.add(CODE_WORD + t);
     return out;
   };
   const addressOf = (tags: Tags): { number: string; street: string } | null => {
