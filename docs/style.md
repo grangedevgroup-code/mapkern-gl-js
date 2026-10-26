@@ -52,7 +52,7 @@ Elevation tiles are PNG or WebP images with a height for every pixel, packed int
 
 Fully transparent pixels mean there's no data, and so do heights below -11,000 m, deeper than any place on Earth. That catches Terrarium files that mark missing data as black. Heights are used as they're stored, usually meters above sea level, and Mapkern doesn't convert between vertical datums.
 
-The other options work as for raster tiles, except that `tileSize` is 512 and `maxZoom` 15 unless you say otherwise. Tiles have to be square.
+The other options work as for raster tiles, except that `tileSize` is 512 and `maxZoom` 15 unless you say otherwise. Tiles have to be square. DTED, SRTM `.hgt` and GeoTIFF elevation files work too, through [`openElevationFile`](api.md#tile-files-from-the-users-computer).
 
 `map.getSource("dem").elevationAt([lng, lat])` gives you the height at a place, in meters. It reads the tiles that are loaded at that moment, so it returns `null` for places off screen or without data.
 
