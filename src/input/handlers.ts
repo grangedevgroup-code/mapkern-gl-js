@@ -506,7 +506,9 @@ export class InputHandlers {
       angle: Math.atan2(b.y - a.y, b.x - a.x),
       midX: (a.x + b.x) / 2,
       midY: (a.y + b.y) / 2,
+      x0: a.x,
       y0: a.y,
+      x1: b.x,
       y1: b.y,
     };
   }
