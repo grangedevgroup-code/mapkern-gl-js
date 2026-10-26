@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { SearchIndex, SearchIndexSet } from "../../src/search/index.ts";
 import { tokenize, withinEdits } from "../../src/search/text.ts";
 import type { RegionData } from "../../tools/tiles/extract.ts";
 import type { Tags } from "../../tools/tiles/osm-pbf.ts";
-import { collectEntries, stitch, writeSearchIndex } from "../../tools/tiles/search.ts";
+import { collectEntries, loadEntries, saveEntries, stitch, writeSearchIndex } from "../../tools/tiles/search.ts";
 
 function town(): RegionData {
   const nodes: [number, number, number][] = [];
@@ -258,4 +261,25 @@ test("border pieces of any length are stitched into one closed ring", () => {
   assert.equal(rings.length, 1);
   assert.equal(rings[0]!.length, n * 4 + 2);
   assert.equal(rings[0]![0], rings[0]![rings[0]!.length - 2]);
+});
+
+test("words that are also built-in object names are ordinary words", () => {
+  assert.deepEqual(tokenize("Constructor Road toString"), ["constructor", "rd", "tostring"]);
+});
+
+test("collected entries survive the build cache", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "mapkern-search-"));
+  try {
+    const entries = collectEntries(town());
+    await saveEntries(join(dir, "town.jsonl.gz"), entries);
+    const back = await loadEntries(join(dir, "town.jsonl.gz"));
+    assert.equal(back.length, entries.length);
+    assert.deepEqual(
+      back.map((e) => [e.osm, e.name, e.context, [...e.tokens]]),
+      entries.map((e) => [e.osm, e.name, e.context, [...e.tokens]]),
+    );
+    assert.deepEqual(writeSearchIndex(BOX, back), writeSearchIndex(BOX, entries));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
