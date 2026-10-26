@@ -925,6 +925,22 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
     return this;
   }
 
+  setSource(source: string | DemSourceSpec): this {
+    const next = demSource(source);
+    const map = this.map;
+    if (map) {
+      const active = map.getTerrain() !== null;
+      if (active) map.setTerrain(null);
+      if (typeof this.source !== "string" && map.getSource(TERRAIN_SOURCE)) map.removeSource(TERRAIN_SOURCE);
+      this.source = next;
+      if (active || this.wanted) this.apply();
+      this.render();
+    } else {
+      this.source = next;
+    }
+    return this;
+  }
+
   private apply(): boolean {
     const map = this.map;
     if (!map) return false;
