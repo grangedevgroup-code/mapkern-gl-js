@@ -1,23 +1,23 @@
 # Tiles
 
-`maplet-tiles` turns an OpenStreetMap download into a single `.pmtiles` file with vector tiles for zoom 0 to 14. The built-in `lightStyle` is made to draw these tiles, but you can style them any way you like. It also makes [elevation tiles](#elevation) from GeoTIFF files.
+`mapkern-tiles` turns an OpenStreetMap download into a single `.pmtiles` file with vector tiles for zoom 0 to 14. The built-in `lightStyle` is made to draw these tiles, but you can style them any way you like. It also makes [elevation tiles](#elevation) from GeoTIFF files.
 
 ## Making a file
 
 Get an extract in `.osm.pbf` format first. [Geofabrik](https://download.geofabrik.de/) has one for every country and many smaller regions, and the smallest one that covers your area will be the quickest to work with. Then give the builder the area you want as `west,south,east,north`:
 
 ```sh
-npx maplet-tiles --input washington-latest.osm.pbf --bbox=-122.45,47.48,-122.22,47.74 --output seattle.pmtiles
+npx mapkern-tiles --input washington-latest.osm.pbf --bbox=-122.45,47.48,-122.22,47.74 --output seattle.pmtiles
 ```
 
 Keep the `=` after `--bbox`. Without it, a box that starts with a minus sign gets mistaken for another option.
 
 You can also pass `--maxzoom` (14 by default, 16 at most), `--name` to label the file, and `--threads` to limit how many cores it uses. Inside a clone of this repository, `npm run tiles -- <options>` does the same thing.
 
-Already have tiles in an MBTiles file? Maplet can show those directly, but a PMTiles file loads faster from a web server. To convert one:
+Already have tiles in an MBTiles file? Mapkern can show those directly, but a PMTiles file loads faster from a web server. To convert one:
 
 ```sh
-npx maplet-tiles convert roads.mbtiles roads.pmtiles
+npx mapkern-tiles convert roads.mbtiles roads.pmtiles
 ```
 
 The builder reads the whole download but only keeps what's inside your box, so the time depends mostly on the size of the download. A city cut from a state or country extract takes seconds to a few minutes. The Seattle and Tacoma area cut from the 19 GB North America file took 13 minutes on a 4-core desktop and came out at 137 MB. Memory use depends on how much is inside the box, not on the size of the download.
@@ -27,7 +27,7 @@ Big downloads sometimes arrive damaged. If the builder finds a broken part, it w
 To use the result, put it on a web server that supports range requests (most static hosts do) and load it:
 
 ```js
-const map = new maplet.Map({ container: "map", style: maplet.lightStyle({ url: "seattle.pmtiles" }) });
+const map = new mapkern.Map({ container: "map", style: mapkern.lightStyle({ url: "seattle.pmtiles" }) });
 ```
 
 ## What's inside
@@ -60,10 +60,10 @@ Lines and shapes are simplified to what each zoom level can show, and below zoom
 
 ## Elevation
 
-`maplet-tiles dem` turns elevation GeoTIFFs into a file for hillshading and 3D terrain:
+`mapkern-tiles dem` turns elevation GeoTIFFs into a file for hillshading and 3D terrain:
 
 ```sh
-npx maplet-tiles dem rainier.tif --output terrain.pmtiles
+npx mapkern-tiles dem rainier.tif --output terrain.pmtiles
 ```
 
 Give it one file or several. Where they overlap, the first one wins. The files can be in longitude and latitude, UTM or Web Mercator, and compressed with deflate, LZW or PackBits, or not compressed. Heights in feet are converted to meters, and pixels marked as no-data stay empty, so the map knows there's nothing there.
@@ -78,4 +78,4 @@ A 1536 by 1536 pixel file at about 13 m per pixel takes six seconds and comes ou
 
 ## Credit
 
-OpenStreetMap data is shared under the [Open Database License](https://www.openstreetmap.org/copyright), which asks you to credit "© OpenStreetMap contributors" wherever the map is shown. The builder stores that line in the file and Maplet puts it in the corner of the map for you.
+OpenStreetMap data is shared under the [Open Database License](https://www.openstreetmap.org/copyright), which asks you to credit "© OpenStreetMap contributors" wherever the map is shown. The builder stores that line in the file and Mapkern puts it in the corner of the map for you.
