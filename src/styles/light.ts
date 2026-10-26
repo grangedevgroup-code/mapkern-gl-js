@@ -1,5 +1,5 @@
 import { deepClone } from "../core/clone.ts";
-import { MapletError } from "../core/errors.ts";
+import { MapkernError } from "../core/errors.ts";
 import type { DemSourceSpec, Expression, LayerSpec, StyleSpec, TerrainSpec } from "../style/types.ts";
 
 export interface LightStyleOptions {
@@ -641,11 +641,11 @@ export function lightStyle(options: LightStyleOptions = {}): StyleSpec {
     );
     if (options.terrain) terrain = { source: "dem", exaggeration: options.terrain === true ? 1 : options.terrain };
   } else if (options.terrain) {
-    throw new MapletError("invalid-option", "lightStyle needs an elevation file for terrain");
+    throw new MapkernError("invalid-option", "lightStyle needs an elevation file for terrain");
   }
   return {
     version: 1,
-    name: "Maplet Light",
+    name: "Mapkern Light",
     sources,
     layers,
     ...(terrain ? { terrain } : {}),
