@@ -1,4 +1,4 @@
-import { MapletError } from "../core/errors.ts";
+import { MapkernError } from "../core/errors.ts";
 
 export type Anchor =
   | "center"
@@ -55,14 +55,14 @@ export function toOffset(value: unknown, name: string): Offset {
     const { x, y } = value as { x?: unknown; y?: unknown };
     if (Number.isFinite(x) && Number.isFinite(y)) return [x as number, y as number];
   }
-  throw new MapletError("invalid-option", `${name} must be [x, y] or { x, y } in pixels`);
+  throw new MapkernError("invalid-option", `${name} must be [x, y] or { x, y } in pixels`);
 }
 
 export function anchorOffsets(offset: OffsetLike | Partial<Record<Anchor, OffsetLike>> | undefined): AnchorOffsets {
   const out = {} as AnchorOffsets;
   if (offset === undefined || typeof offset === "number") {
     const n = offset ?? 0;
-    if (!Number.isFinite(n)) throw new MapletError("invalid-option", "offset must be a finite number of pixels");
+    if (!Number.isFinite(n)) throw new MapkernError("invalid-option", "offset must be a finite number of pixels");
     const d = n / Math.SQRT2;
     out.center = [0, 0];
     out.top = [0, n];
