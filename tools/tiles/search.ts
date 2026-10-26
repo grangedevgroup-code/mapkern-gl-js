@@ -73,7 +73,6 @@ const STREET_RANK: Record<string, number> = {
 
 const NEAREST_PLACE: Record<string, number> = { city: 15000, town: 8000, village: 4000, hamlet: 2000 };
 const OWN_LOCALITY = new Set(["city", "town", "village", "county", "state", "province", "region", "country", "island"]);
-const CELL = 0.002;
 const GROUP_GAP = 0.02;
 
 interface Area {
@@ -84,7 +83,8 @@ interface Area {
   bbox: [number, number, number, number];
 }
 
-interface Entry {
+export interface Entry {
+  osm: number;
   kind: number;
   rank: number;
   category: string | null;
@@ -100,113 +100,81 @@ interface Entry {
 
 type Slot = 0 | 1 | 2 | 3;
 const SLOT_OF_LEVEL: Record<number, Slot> = { 2: 3, 4: 2, 6: 1, 7: 0, 8: 0 };
+const BAND = 0.05;
+const COARSE = 1;
 
-class AreaGrid {
-  private readonly cols: number;
-  private readonly rows: number;
-  private readonly inside: Int32Array[];
-  private readonly edges: Map<number, number[]>[];
-
-  private readonly bbox: [number, number, number, number];
+class AreaIndex {
   private readonly areas: Area[];
+  private readonly coarse = new Map<number, number[]>();
+  private readonly bands: Map<number, Float64Array>[] = [];
 
-  constructor(bbox: [number, number, number, number], areas: Area[]) {
-    this.bbox = bbox;
+  constructor(areas: Area[]) {
     this.areas = areas;
-    this.cols = Math.max(1, Math.ceil((bbox[2] - bbox[0]) / CELL));
-    this.rows = Math.max(1, Math.ceil((bbox[3] - bbox[1]) / CELL));
-    this.inside = [0, 1, 2, 3].map(() => new Int32Array(this.cols * this.rows).fill(-1));
-    this.edges = [0, 1, 2, 3].map(() => new Map<number, number[]>());
-    for (let i = 0; i < areas.length; i++) this.add(areas[i]!, i);
+    for (let i = 0; i < areas.length; i++) {
+      const a = areas[i]!;
+      const lists = new Map<number, number[]>();
+      for (const ring of a.rings) {
+        for (let k = 0, j = ring.length - 2; k < ring.length; j = k, k += 2) {
+          const x0 = ring[j]!;
+          const y0 = ring[j + 1]!;
+          const x1 = ring[k]!;
+          const y1 = ring[k + 1]!;
+          if (y0 === y1) continue;
+          const from = Math.floor(Math.min(y0, y1) / BAND);
+          const to = Math.floor(Math.max(y0, y1) / BAND);
+          for (let b = from; b <= to; b++) {
+            const list = lists.get(b);
+            if (list) list.push(x0, y0, x1, y1);
+            else lists.set(b, [x0, y0, x1, y1]);
+          }
+        }
+      }
+      const bands = new Map<number, Float64Array>();
+      for (const [b, list] of lists) bands.set(b, Float64Array.from(list));
+      this.bands.push(bands);
+      for (let x = Math.floor(a.bbox[0] / COARSE); x <= Math.floor(a.bbox[2] / COARSE); x++) {
+        for (let y = Math.floor(a.bbox[1] / COARSE); y <= Math.floor(a.bbox[3] / COARSE); y++) {
+          const key = coarseKey(x, y);
+          const list = this.coarse.get(key);
+          if (list) list.push(i);
+          else this.coarse.set(key, [i]);
+        }
+      }
+    }
   }
 
   lookup(lon: number, lat: number): (Area | null)[] {
-    const col = Math.floor((lon - this.bbox[0]) / CELL);
-    const row = Math.floor((lat - this.bbox[1]) / CELL);
     const out: (Area | null)[] = [null, null, null, null];
-    for (let s = 0; s < 4; s++) {
-      if (col < 0 || row < 0 || col >= this.cols || row >= this.rows) {
-        out[s] = this.exact(s, lon, lat, null);
-        continue;
-      }
-      const cell = row * this.cols + col;
-      const edge = this.edges[s]!.get(cell);
-      const filled = this.inside[s]![cell]!;
-      if (edge) out[s] = this.exact(s, lon, lat, filled >= 0 ? [...edge, filled] : edge);
-      else out[s] = filled >= 0 ? this.areas[filled]! : null;
+    for (const i of this.coarse.get(coarseKey(Math.floor(lon / COARSE), Math.floor(lat / COARSE))) ?? []) {
+      const a = this.areas[i]!;
+      const slot = SLOT_OF_LEVEL[a.level];
+      if (slot === undefined) continue;
+      const best = out[slot];
+      if (best && best.level >= a.level) continue;
+      if (lon < a.bbox[0] || lon > a.bbox[2] || lat < a.bbox[1] || lat > a.bbox[3]) continue;
+      if (this.contains(i, lon, lat)) out[slot] = a;
     }
     return out;
   }
 
-  private exact(slot: number, lon: number, lat: number, candidates: number[] | null): Area | null {
-    let best: Area | null = null;
-    const list = candidates ?? this.areas.map((_, i) => i);
-    for (const i of list) {
-      const a = this.areas[i]!;
-      if (SLOT_OF_LEVEL[a.level] !== slot) continue;
-      if (lon < a.bbox[0] || lon > a.bbox[2] || lat < a.bbox[1] || lat > a.bbox[3]) continue;
-      if (!contains(a, lon, lat)) continue;
-      if (!best || a.level > best.level) best = a;
+  contains(index: number, lon: number, lat: number): boolean {
+    const edges = this.bands[index]!.get(Math.floor(lat / BAND));
+    if (!edges) return false;
+    let inside = false;
+    for (let k = 0; k < edges.length; k += 4) {
+      const y0 = edges[k + 1]!;
+      const y1 = edges[k + 3]!;
+      if (y0 > lat === y1 > lat) continue;
+      const x0 = edges[k]!;
+      const x = x0 + ((lat - y0) / (y1 - y0)) * (edges[k + 2]! - x0);
+      if (x > lon) inside = !inside;
     }
-    return best;
-  }
-
-  private add(area: Area, index: number): void {
-    const slot = SLOT_OF_LEVEL[area.level];
-    if (slot === undefined) return;
-    const inside = this.inside[slot]!;
-    const edges = this.edges[slot]!;
-    const [w, s] = this.bbox;
-    const markEdge = (col: number, row: number) => {
-      if (col < 0 || row < 0 || col >= this.cols || row >= this.rows) return;
-      const cell = row * this.cols + col;
-      const list = edges.get(cell);
-      if (!list) edges.set(cell, [index]);
-      else if (list[list.length - 1] !== index) list.push(index);
-    };
-    for (const ring of area.rings) {
-      for (let i = 0; i + 3 < ring.length; i += 2) {
-        const x0 = ring[i]!;
-        const y0 = ring[i + 1]!;
-        const x1 = ring[i + 2]!;
-        const y1 = ring[i + 3]!;
-        const steps = Math.max(1, Math.ceil((Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) / CELL) * 2));
-        for (let k = 0; k <= steps; k++) {
-          const t = k / steps;
-          markEdge(Math.floor((x0 + (x1 - x0) * t - w) / CELL), Math.floor((y0 + (y1 - y0) * t - s) / CELL));
-        }
-      }
-    }
-    const rowFrom = Math.max(0, Math.floor((area.bbox[1] - s) / CELL));
-    const rowTo = Math.min(this.rows - 1, Math.floor((area.bbox[3] - s) / CELL));
-    for (let row = rowFrom; row <= rowTo; row++) {
-      const y = s + (row + 0.5) * CELL;
-      const xs: number[] = [];
-      for (const ring of area.rings) {
-        for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
-          const yi = ring[i + 1]!;
-          const yj = ring[j + 1]!;
-          if (yi > y !== yj > y) xs.push(ring[i]! + ((y - yi) / (yj - yi)) * (ring[j]! - ring[i]!));
-        }
-      }
-      xs.sort((a, b) => a - b);
-      for (let k = 0; k + 1 < xs.length; k += 2) {
-        const from = Math.max(0, Math.ceil((xs[k]! - w) / CELL - 0.5));
-        const to = Math.min(this.cols - 1, Math.floor((xs[k + 1]! - w) / CELL - 0.5));
-        for (let col = from; col <= to; col++) {
-          const cell = row * this.cols + col;
-          const prev = inside[cell]!;
-          if (prev < 0 || this.areas[prev]!.level < area.level) inside[cell] = index;
-        }
-      }
-    }
+    return inside;
   }
 }
 
-function contains(area: Area, lon: number, lat: number): boolean {
-  let inside = false;
-  for (const ring of area.rings) if (pointInRing(lon, lat, ring)) inside = !inside;
-  return inside;
+function coarseKey(x: number, y: number): number {
+  return (x + 400) * 1000 + (y + 200);
 }
 
 export function indexRegion(
@@ -265,13 +233,13 @@ export function indexRegion(
   };
 
   const areas: Area[] = [];
-  const polygonPois: { tags: Tags; rings: Ring[] }[] = [];
+  const polygonPois: { tags: Tags; rings: Ring[]; osm: number }[] = [];
   for (const rel of data.relations) {
     const rings = ringsOf(rel.members);
     if (rel.tags.type === "boundary") {
       const level = Number(rel.tags.admin_level);
       if (!rings.length || !Number.isInteger(level)) continue;
-      const { outer, inner } = splitRings(rings);
+      const { outer, inner } = splitRings(rings.map((r) => simplify(r, 0.0002, true)).filter((r) => r.length >= 8));
       const all = [...outer, ...inner];
       const bounds: [number, number, number, number] = [
         Number.POSITIVE_INFINITY,
@@ -289,10 +257,10 @@ export function indexRegion(
       if (bounds[0] > maxLon || bounds[2] < minLon || bounds[1] > maxLat || bounds[3] < minLat) continue;
       areas.push({ name: rel.tags.name!, level, rings: all, outer: all.map((_, i) => i < outer.length), bbox: bounds });
     } else {
-      if (rings.length) polygonPois.push({ tags: rel.tags, rings });
+      if (rings.length) polygonPois.push({ tags: rel.tags, rings, osm: rel.id * 4 + 2 });
     }
   }
-  const grid = new AreaGrid(data.bbox, areas);
+  const grid = new AreaIndex(areas);
   log(`administrative areas: ${areas.length.toLocaleString()}`);
 
   const places = data.points.filter((p) => p.tags.place && p.tags.name && NEAREST_PLACE[p.tags.place]);
@@ -353,13 +321,14 @@ export function indexRegion(
     if (!hasAddress(tags)) return null;
     return { number: tags["addr:housenumber"]!, street: tags["addr:street"] ?? tags["addr:place"]! };
   };
-  const addFeature = (tags: Tags, lon: number, lat: number) => {
+  const addFeature = (tags: Tags, lon: number, lat: number, osm: number) => {
     if (!inRegion(lon, lat)) return;
     const address = addressOf(tags);
     const category = tags.name ? categoryOf(tags) : null;
     if (tags.name && tags.place) {
       const rank = (PLACE_RANK[tags.place] ?? 60) + Math.min(40, Math.log10(Number(tags.population) || 1) * 6);
       entries.push({
+        osm,
         kind: 0,
         rank: Math.min(255, rank),
         category: `place=${tags.place}`,
@@ -377,6 +346,7 @@ export function indexRegion(
     if (tags.name && category) {
       const tokens = nameTokens(tags);
       entries.push({
+        osm,
         kind: 3,
         rank: (POI_RANK[category] ?? 70) + (tags.wikidata ? 30 : 0),
         category,
@@ -394,6 +364,7 @@ export function indexRegion(
     if (address) {
       const tokens = new Set<string>([...tokenize(address.number), ...tokenize(address.street)]);
       entries.push({
+        osm,
         kind: 1,
         rank: 50,
         category: null,
@@ -409,38 +380,39 @@ export function indexRegion(
     }
   };
 
-  for (const p of data.points) addFeature(p.tags, p.lon / 1e7, p.lat / 1e7);
+  for (const p of data.points) addFeature(p.tags, p.lon / 1e7, p.lat / 1e7, p.id * 4);
 
-  const streets = new Map<string, { tags: Tags; lines: Float64Array[] }[]>();
-  const group = (key: string, tags: Tags, pts: Float64Array) => {
+  const streets = new Map<string, { tags: Tags; lines: Float64Array[]; osm: number }[]>();
+  const group = (key: string, tags: Tags, pts: Float64Array, osm: number) => {
     const list = streets.get(key);
-    if (list) list.push({ tags, lines: [pts] });
-    else streets.set(key, [{ tags, lines: [pts] }]);
+    if (list) list.push({ tags, lines: [pts], osm });
+    else streets.set(key, [{ tags, lines: [pts], osm }]);
   };
   for (let w = 0; w < data.wayIds.length; w++) {
     const tags = data.wayTags[w];
     if (!tags) continue;
     const pts = line(wayRefs(w));
     if (pts.length < 2) continue;
+    const osm = data.wayIds[w]! * 4 + 1;
     if (streetClass(tags)) {
-      group(tags.name ?? tags.ref!, tags, pts);
+      group(tags.name ?? tags.ref!, tags, pts, osm);
       continue;
     }
     if (tags.waterway && tags.name && !tags.place) {
-      group(`\u0001${tags.waterway}\u0001${tags.name}`, tags, pts);
+      group(`\u0001${tags.waterway}\u0001${tags.name}`, tags, pts, osm);
       continue;
     }
     const refs = wayRefs(w);
     const closed = refs.length >= 4 && refs[0] === refs[refs.length - 1];
     if (!closed && !hasAddress(tags)) continue;
     const [lon, lat] = centerOf([pts]);
-    addFeature(tags, lon, lat);
+    addFeature(tags, lon, lat, data.wayIds[w]! * 4 + 1);
   }
   for (const poi of polygonPois) {
     const { outer } = splitRings(poi.rings);
     if (!outer.length) continue;
     const [lon, lat] = centerOf(outer);
-    addFeature(poi.tags, lon, lat);
+    addFeature(poi.tags, lon, lat, poi.osm);
   }
 
   for (const [key, ways] of streets) {
@@ -457,6 +429,7 @@ export function indexRegion(
       if (!tags.name) for (const t of tokenize(name)) tokens.add(t);
       const best = group.reduce((r, g) => Math.max(r, STREET_RANK[g.tags.highway ?? ""] ?? 40), 40);
       entries.push({
+        osm: group[0]!.osm,
         kind: waterway ? 3 : 2,
         rank: waterway ? (POI_RANK[`waterway=${tags.waterway}`] ?? 80) : best,
         category: waterway ? `waterway=${tags.waterway}` : `highway=${streetClass(tags)}`,
@@ -472,14 +445,22 @@ export function indexRegion(
     }
   }
 
-  for (const a of areas) {
+  const placesByName = new Map<string, Entry[]>();
+  for (const e of entries) {
+    if (e.kind !== 0) continue;
+    const list = placesByName.get(e.name);
+    if (list) list.push(e);
+    else placesByName.set(e.name, [e]);
+  }
+  areas.forEach((a, index) => {
     const type = a.level === 2 ? "country" : a.level === 4 ? "state" : a.level === 6 ? "county" : null;
-    if (!type) continue;
+    if (!type) return;
     const outer = a.rings.filter((_, i) => a.outer[i]);
     const [lon, lat] = centerOf(outer);
-    if (entries.some((e) => e.kind === 0 && e.name === a.name && contains(a, e.lon, e.lat))) continue;
+    if (placesByName.get(a.name)?.some((e) => grid.contains(index, e.lon, e.lat))) return;
     const parent = a.level > 2 ? contextOf(lon, lat, null, a.name, a.level === 4 ? 2 : 1) : "";
     entries.push({
+      osm: a.osm,
       kind: 0,
       rank: PLACE_RANK[type]!,
       category: `place=${type}`,
@@ -492,7 +473,7 @@ export function indexRegion(
       shape: null,
       tokens: new Set(tokenize(a.name)),
     });
-  }
+  });
 
   return pack(data.bbox, entries, areas.length, log);
 }
