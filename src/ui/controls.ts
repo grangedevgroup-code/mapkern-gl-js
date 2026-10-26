@@ -851,11 +851,7 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
 
   constructor(options: TerrainControlOptions) {
     super();
-    const source = options?.source;
-    if (typeof source === "string" ? source === "" : source?.type !== "dem") {
-      throw new MapletError("invalid-option", "TerrainControl needs a dem source or the id of one");
-    }
-    this.source = typeof source === "string" ? source : { ...source };
+    this.source = demSource(options?.source);
     this.exaggeration = options.exaggeration ?? 1;
     this.relief = options.relief ?? 0.5;
     this.pitch = Math.max(TILTED * 2, options.pitch ?? 60);
