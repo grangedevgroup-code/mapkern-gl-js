@@ -1,12 +1,12 @@
 export const CSS = `
-.maplet-map {
+.mapkern-map {
   position: relative;
   overflow: hidden;
   -webkit-tap-highlight-color: transparent;
   font: 12px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  color: var(--maplet-ink, #10191d);
+  color: var(--mapkern-ink, #10191d);
 }
-.maplet-canvas-container {
+.mapkern-canvas-container {
   position: absolute;
   inset: 0;
   touch-action: none;
@@ -15,42 +15,42 @@ export const CSS = `
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
-.maplet-canvas-container:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--maplet-focus, #2f6fdb);
+.mapkern-canvas-container:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--mapkern-focus, #2f6fdb);
 }
-.maplet-canvas {
+.mapkern-canvas {
   position: absolute;
   left: 0;
   top: 0;
 }
-.maplet-map {
-  --maplet-margin: var(--maplet-control-margin, 10px);
+.mapkern-map {
+  --mapkern-margin: var(--mapkern-control-margin, 10px);
 }
-.maplet-corner {
+.mapkern-corner {
   position: absolute;
   z-index: 2;
   display: flex;
-  gap: var(--maplet-margin);
-  margin: var(--maplet-margin);
-  max-width: calc(100% - 2 * var(--maplet-margin));
+  gap: var(--mapkern-margin);
+  margin: var(--mapkern-margin);
+  max-width: calc(100% - 2 * var(--mapkern-margin));
   pointer-events: none;
 }
-.maplet-top-left { top: 0; left: 0; flex-direction: column; align-items: flex-start; }
-.maplet-top-right { top: 0; right: 0; flex-direction: column; align-items: flex-end; }
-.maplet-bottom-left { bottom: 0; left: 0; flex-direction: column; align-items: flex-start; }
-.maplet-bottom-right { bottom: 0; right: 0; flex-direction: column; align-items: flex-end; }
-.maplet-bottom-right > .maplet-attribution {
-  margin: 0 calc(-1 * var(--maplet-margin)) calc(-1 * var(--maplet-margin)) 0;
-  max-width: calc(100% + var(--maplet-margin));
+.mapkern-top-left { top: 0; left: 0; flex-direction: column; align-items: flex-start; }
+.mapkern-top-right { top: 0; right: 0; flex-direction: column; align-items: flex-end; }
+.mapkern-bottom-left { bottom: 0; left: 0; flex-direction: column; align-items: flex-start; }
+.mapkern-bottom-right { bottom: 0; right: 0; flex-direction: column; align-items: flex-end; }
+.mapkern-bottom-right > .mapkern-attribution {
+  margin: 0 calc(-1 * var(--mapkern-margin)) calc(-1 * var(--mapkern-margin)) 0;
+  max-width: calc(100% + var(--mapkern-margin));
 }
-.maplet-control {
+.mapkern-control {
   pointer-events: auto;
-  background: var(--maplet-control-bg, #ffffff);
+  background: var(--mapkern-control-bg, #ffffff);
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(16, 25, 29, 0.14), 0 2px 10px rgba(16, 25, 29, 0.08);
   overflow: hidden;
 }
-.maplet-control button {
+.mapkern-control button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -63,21 +63,21 @@ export const CSS = `
   color: inherit;
   cursor: pointer;
 }
-.maplet-control button + button {
+.mapkern-control button + button {
   border-top: 1px solid rgba(16, 25, 29, 0.08);
 }
-.maplet-control button:hover:not(:disabled) {
+.mapkern-control button:hover:not(:disabled) {
   background: rgba(16, 25, 29, 0.06);
 }
-.maplet-control button:focus-visible {
-  outline: 2px solid var(--maplet-focus, #2f6fdb);
+.mapkern-control button:focus-visible {
+  outline: 2px solid var(--mapkern-focus, #2f6fdb);
   outline-offset: -2px;
 }
-.maplet-control button:disabled {
+.mapkern-control button:disabled {
   opacity: 0.35;
   cursor: default;
 }
-.maplet-control svg {
+.mapkern-control svg {
   width: 18px;
   height: 18px;
   fill: none;
@@ -87,17 +87,17 @@ export const CSS = `
   stroke-linejoin: round;
   pointer-events: none;
 }
-.maplet-compass svg {
+.mapkern-compass svg {
   transition: transform 80ms linear;
 }
-.maplet-basemaps {
+.mapkern-basemaps {
   position: relative;
   overflow: visible;
 }
-.maplet-basemaps > button {
+.mapkern-basemaps > button {
   border-radius: 8px;
 }
-.maplet-basemaps-menu {
+.mapkern-basemaps-menu {
   position: absolute;
   right: calc(100% + 8px);
   bottom: 0;
@@ -106,13 +106,13 @@ export const CSS = `
   min-width: 140px;
   padding: 4px;
   border-radius: 8px;
-  background: var(--maplet-control-bg, #ffffff);
+  background: var(--mapkern-control-bg, #ffffff);
   box-shadow: 0 1px 2px rgba(16, 25, 29, 0.14), 0 2px 10px rgba(16, 25, 29, 0.08);
 }
-.maplet-basemaps.maplet-open .maplet-basemaps-menu {
+.mapkern-basemaps.mapkern-open .mapkern-basemaps-menu {
   display: flex;
 }
-.maplet-control .maplet-basemaps-menu button {
+.mapkern-control .mapkern-basemaps-menu button {
   width: auto;
   height: 36px;
   justify-content: flex-start;
@@ -122,51 +122,51 @@ export const CSS = `
   font-size: 13px;
   white-space: nowrap;
 }
-.maplet-control .maplet-basemaps-menu button + button {
+.mapkern-control .mapkern-basemaps-menu button + button {
   border-top: 0;
 }
-.maplet-control .maplet-basemaps-menu button[aria-checked="true"] {
+.mapkern-control .mapkern-basemaps-menu button[aria-checked="true"] {
   font-weight: 600;
   background: rgba(47, 111, 219, 0.12);
 }
-.maplet-control .maplet-terrain-button {
+.mapkern-control .mapkern-terrain-button {
   font: inherit;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
 }
-.maplet-terrain-label {
+.mapkern-terrain-label {
   display: block;
   transition: transform 160ms ease;
 }
-.maplet-tilted .maplet-terrain-label {
+.mapkern-tilted .mapkern-terrain-label {
   transform: perspective(24px) rotateX(28deg);
 }
 @media (pointer: coarse) {
-  .maplet-map {
-    --maplet-margin: var(--maplet-control-margin, 16px);
+  .mapkern-map {
+    --mapkern-margin: var(--mapkern-control-margin, 16px);
   }
-  .maplet-control button {
+  .mapkern-control button {
     width: 44px;
     height: 44px;
   }
-  .maplet-control svg {
+  .mapkern-control svg {
     width: 22px;
     height: 22px;
   }
-  .maplet-control .maplet-basemaps-menu button {
+  .mapkern-control .mapkern-basemaps-menu button {
     height: 44px;
     font-size: 15px;
   }
-  .maplet-control .maplet-terrain-button {
+  .mapkern-control .mapkern-terrain-button {
     font-size: 14px;
   }
-  .maplet-scale {
+  .mapkern-scale {
     font-size: 12px;
     line-height: 18px;
   }
 }
-.maplet-attribution {
+.mapkern-attribution {
   pointer-events: auto;
   box-sizing: border-box;
   max-width: 100%;
@@ -180,63 +180,63 @@ export const CSS = `
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.maplet-attribution:empty {
+.mapkern-attribution:empty {
   display: none;
 }
-.maplet-attribution:hover,
-.maplet-attribution:focus-within {
+.mapkern-attribution:hover,
+.mapkern-attribution:focus-within {
   white-space: normal;
 }
-.maplet-attribution a {
+.mapkern-attribution a {
   color: inherit;
   text-decoration: none;
 }
-.maplet-attribution a:hover,
-.maplet-attribution a:focus-visible {
+.mapkern-attribution a:hover,
+.mapkern-attribution a:focus-visible {
   text-decoration: underline;
 }
-.maplet-scale {
+.mapkern-scale {
   pointer-events: none;
   font-size: 11px;
   line-height: 16px;
   color: #10191d;
   white-space: nowrap;
 }
-.maplet-scale > div {
+.mapkern-scale > div {
   box-sizing: border-box;
   padding: 0 6px;
   border: 2px solid rgba(16, 25, 29, 0.7);
   border-top: 0;
   background: rgba(255, 255, 255, 0.7);
 }
-.maplet-scale-both {
+.mapkern-scale-both {
   padding: 1px 6px 4px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.7);
 }
-.maplet-scale-both > .maplet-scale-label {
+.mapkern-scale-both > .mapkern-scale-label {
   padding: 0;
   border: 0;
   background: none;
 }
-.maplet-scale-both > .maplet-scale-line {
+.mapkern-scale-both > .mapkern-scale-line {
   height: 5px;
   margin-top: 1px;
   padding: 0;
   border-color: rgba(16, 25, 29, 0.85);
   background: none;
 }
-.maplet-logo {
+.mapkern-logo {
   pointer-events: none;
   line-height: 0;
   opacity: 0.6;
 }
-.maplet-logo svg {
+.mapkern-logo svg {
   display: block;
-  width: 80px;
+  width: 94px;
   height: 26px;
 }
-.maplet-popup {
+.mapkern-popup {
   position: absolute;
   top: 0;
   left: 0;
@@ -245,20 +245,20 @@ export const CSS = `
   pointer-events: none;
   will-change: transform;
 }
-.maplet-popup-content {
+.mapkern-popup-content {
   pointer-events: auto;
   position: relative;
   box-sizing: border-box;
   padding: 10px 12px;
   border-radius: 8px;
-  background: var(--maplet-control-bg, #ffffff);
+  background: var(--mapkern-control-bg, #ffffff);
   box-shadow: 0 2px 12px rgba(16, 25, 29, 0.18);
   overflow-wrap: break-word;
 }
-.maplet-popup-content.maplet-popup-closable {
+.mapkern-popup-content.mapkern-popup-closable {
   padding-right: 30px;
 }
-.maplet-popup-close {
+.mapkern-popup-close {
   position: absolute;
   top: 3px;
   right: 3px;
@@ -273,102 +273,102 @@ export const CSS = `
   font: 18px/24px system-ui, sans-serif;
   cursor: pointer;
 }
-.maplet-popup-close:hover {
+.mapkern-popup-close:hover {
   background: rgba(16, 25, 29, 0.06);
 }
-.maplet-popup-close:focus-visible {
-  outline: 2px solid var(--maplet-focus, #2f6fdb);
+.mapkern-popup-close:focus-visible {
+  outline: 2px solid var(--mapkern-focus, #2f6fdb);
   outline-offset: -2px;
 }
-.maplet-popup-tip {
+.mapkern-popup-tip {
   flex: none;
   width: 0;
   height: 0;
   border: 8px solid transparent;
   z-index: 1;
 }
-.maplet-popup-anchor-top,
-.maplet-popup-anchor-top-left,
-.maplet-popup-anchor-top-right {
+.mapkern-popup-anchor-top,
+.mapkern-popup-anchor-top-left,
+.mapkern-popup-anchor-top-right {
   flex-direction: column;
 }
-.maplet-popup-anchor-bottom,
-.maplet-popup-anchor-bottom-left,
-.maplet-popup-anchor-bottom-right {
+.mapkern-popup-anchor-bottom,
+.mapkern-popup-anchor-bottom-left,
+.mapkern-popup-anchor-bottom-right {
   flex-direction: column-reverse;
 }
-.maplet-popup-anchor-left {
+.mapkern-popup-anchor-left {
   flex-direction: row;
 }
-.maplet-popup-anchor-right {
+.mapkern-popup-anchor-right {
   flex-direction: row-reverse;
 }
-.maplet-popup-anchor-center .maplet-popup-tip {
+.mapkern-popup-anchor-center .mapkern-popup-tip {
   display: none;
 }
-.maplet-popup-anchor-top .maplet-popup-tip {
+.mapkern-popup-anchor-top .mapkern-popup-tip {
   align-self: center;
   border-top: none;
-  border-bottom-color: var(--maplet-control-bg, #ffffff);
+  border-bottom-color: var(--mapkern-control-bg, #ffffff);
 }
-.maplet-popup-anchor-top-left .maplet-popup-tip {
+.mapkern-popup-anchor-top-left .mapkern-popup-tip {
   align-self: flex-start;
   border-top: none;
   border-left: none;
-  border-bottom-color: var(--maplet-control-bg, #ffffff);
+  border-bottom-color: var(--mapkern-control-bg, #ffffff);
 }
-.maplet-popup-anchor-top-right .maplet-popup-tip {
+.mapkern-popup-anchor-top-right .mapkern-popup-tip {
   align-self: flex-end;
   border-top: none;
   border-right: none;
-  border-bottom-color: var(--maplet-control-bg, #ffffff);
+  border-bottom-color: var(--mapkern-control-bg, #ffffff);
 }
-.maplet-popup-anchor-bottom .maplet-popup-tip {
+.mapkern-popup-anchor-bottom .mapkern-popup-tip {
   align-self: center;
   border-bottom: none;
-  border-top-color: var(--maplet-control-bg, #ffffff);
+  border-top-color: var(--mapkern-control-bg, #ffffff);
 }
-.maplet-popup-anchor-bottom-left .maplet-popup-tip {
+.mapkern-popup-anchor-bottom-left .mapkern-popup-tip {
   align-self: flex-start;
   border-bottom: none;
   border-left: none;
-  border-top-color: var(--maplet-control-bg, #ffffff);
+  border-top-color: var(--mapkern-control-bg, #ffffff);
 }
-.maplet-popup-anchor-bottom-right .maplet-popup-tip {
+.mapkern-popup-anchor-bottom-right .mapkern-popup-tip {
   align-self: flex-end;
   border-bottom: none;
   border-right: none;
-  border-top-color: var(--maplet-control-bg, #ffffff);
+  border-top-color: var(--mapkern-control-bg, #ffffff);
 }
-.maplet-popup-anchor-left .maplet-popup-tip {
+.mapkern-popup-anchor-left .mapkern-popup-tip {
   align-self: center;
   border-left: none;
-  border-right-color: var(--maplet-control-bg, #ffffff);
+  border-right-color: var(--mapkern-control-bg, #ffffff);
 }
-.maplet-popup-anchor-right .maplet-popup-tip {
+.mapkern-popup-anchor-right .mapkern-popup-tip {
   align-self: center;
   border-right: none;
-  border-left-color: var(--maplet-control-bg, #ffffff);
+  border-left-color: var(--mapkern-control-bg, #ffffff);
 }
-.maplet-popup-anchor-top-left .maplet-popup-content {
+.mapkern-popup-anchor-top-left .mapkern-popup-content {
   border-top-left-radius: 0;
 }
-.maplet-popup-anchor-top-right .maplet-popup-content {
+.mapkern-popup-anchor-top-right .mapkern-popup-content {
   border-top-right-radius: 0;
 }
-.maplet-popup-anchor-bottom-left .maplet-popup-content {
+.mapkern-popup-anchor-bottom-left .mapkern-popup-content {
   border-bottom-left-radius: 0;
 }
-.maplet-popup-anchor-bottom-right .maplet-popup-content {
+.mapkern-popup-anchor-bottom-right .mapkern-popup-content {
   border-bottom-right-radius: 0;
 }
-.maplet-debug {
+.mapkern-debug {
   position: absolute;
   top: 0;
   left: 0;
   pointer-events: none;
 }
-.maplet-cooperative {
+.mapkern-cooperative {
   position: absolute;
   inset: 0;
   z-index: 4;
@@ -384,96 +384,96 @@ export const CSS = `
   opacity: 0;
   transition: opacity 200ms ease;
 }
-.maplet-cooperative.maplet-visible {
+.mapkern-cooperative.mapkern-visible {
   opacity: 1;
 }
-.maplet-pseudo-fullscreen {
+.mapkern-pseudo-fullscreen {
   position: fixed !important;
   inset: 0 !important;
   width: 100% !important;
   height: 100% !important;
   z-index: 99999;
 }
-.maplet-geolocate-button.maplet-waiting svg {
-  animation: maplet-pulse 1.2s ease-in-out infinite;
+.mapkern-geolocate-button.mapkern-waiting svg {
+  animation: mapkern-pulse 1.2s ease-in-out infinite;
 }
-.maplet-geolocate-button.maplet-active {
-  color: var(--maplet-focus, #2f6fdb);
+.mapkern-geolocate-button.mapkern-active {
+  color: var(--mapkern-focus, #2f6fdb);
 }
-.maplet-geolocate-button.maplet-background {
+.mapkern-geolocate-button.mapkern-background {
   color: rgba(47, 111, 219, 0.55);
 }
-.maplet-geolocate-button.maplet-error {
+.mapkern-geolocate-button.mapkern-error {
   color: #d9473f;
 }
-.maplet-user-location {
+.mapkern-user-location {
   width: 16px;
   height: 16px;
   box-sizing: border-box;
   border: 2px solid #ffffff;
   border-radius: 50%;
-  background: var(--maplet-focus, #2f6fdb);
+  background: var(--mapkern-focus, #2f6fdb);
   box-shadow: 0 0 0 1px rgba(16, 25, 29, 0.25), 0 1px 4px rgba(16, 25, 29, 0.35);
 }
-.maplet-user-accuracy {
+.mapkern-user-accuracy {
   box-sizing: border-box;
   border: 1px solid rgba(47, 111, 219, 0.35);
   border-radius: 50%;
   background: rgba(47, 111, 219, 0.14);
   pointer-events: none;
 }
-@keyframes maplet-pulse {
+@keyframes mapkern-pulse {
   50% {
     opacity: 0.35;
   }
 }
-.maplet-boxzoom {
+.mapkern-boxzoom {
   position: absolute;
   top: 0;
   left: 0;
   z-index: 2;
   box-sizing: border-box;
-  border: 2px dashed var(--maplet-focus, #2f6fdb);
+  border: 2px dashed var(--mapkern-focus, #2f6fdb);
   background: rgba(47, 111, 219, 0.12);
   pointer-events: none;
 }
-.maplet-marker {
+.mapkern-marker {
   position: absolute;
   top: 0;
   left: 0;
   z-index: 1;
   will-change: transform;
 }
-.maplet-marker[role="button"] {
+.mapkern-marker[role="button"] {
   cursor: pointer;
 }
-.maplet-marker:focus-visible {
-  outline: 2px solid var(--maplet-focus, #2f6fdb);
+.mapkern-marker:focus-visible {
+  outline: 2px solid var(--mapkern-focus, #2f6fdb);
   outline-offset: 2px;
   border-radius: 4px;
 }
-.maplet-marker-draggable {
+.mapkern-marker-draggable {
   cursor: grab;
 }
-.maplet-marker-dragging {
+.mapkern-marker-dragging {
   cursor: grabbing;
 }
-.maplet-marker-pin {
+.mapkern-marker-pin {
   line-height: 0;
 }
-.maplet-marker-pin svg {
+.mapkern-marker-pin svg {
   display: block;
   overflow: visible;
   filter: drop-shadow(0 1px 2px rgba(16, 25, 29, 0.35));
 }
 @media (prefers-reduced-motion: reduce) {
-  .maplet-compass svg {
+  .mapkern-compass svg {
     transition: none;
   }
-  .maplet-geolocate-button.maplet-waiting svg {
+  .mapkern-geolocate-button.mapkern-waiting svg {
     animation: none;
   }
-  .maplet-cooperative {
+  .mapkern-cooperative {
     transition: none;
   }
 }
@@ -482,13 +482,13 @@ export const CSS = `
 let injected = false;
 
 export function injectStyles(doc: Document): void {
-  if (injected || doc.querySelector("style[data-maplet]")) return;
+  if (injected || doc.querySelector("style[data-mapkern]")) return;
   injected = true;
   const adoptable =
     "adoptedStyleSheets" in doc && typeof CSSStyleSheet !== "undefined" && "replaceSync" in CSSStyleSheet.prototype;
   if (adoptable && adopt(doc)) return;
   const style = doc.createElement("style");
-  style.setAttribute("data-maplet", "");
+  style.setAttribute("data-mapkern", "");
   style.textContent = CSS;
   doc.head.appendChild(style);
 }
