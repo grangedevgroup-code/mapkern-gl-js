@@ -1,41 +1,41 @@
-html.maplet-viewer,
-html.maplet-viewer body {
+html.mapkern-viewer,
+html.mapkern-viewer body {
   margin: 0;
   height: 100%;
   overflow: hidden;
   background: #11191f;
 }
 
-html.maplet-viewer #map {
+html.mapkern-viewer #map {
   position: absolute;
   inset: 0;
 }
 
-.maplet-map {
-  --maplet-viewer-button: 32px;
+.mapkern-map {
+  --mapkern-viewer-button: 32px;
 }
 
 @media (pointer: coarse) {
-  .maplet-map {
-    --maplet-viewer-button: 44px;
+  .mapkern-map {
+    --mapkern-viewer-button: 44px;
   }
 }
 
-.maplet-bottom-left {
-  max-width: calc(100% - 3 * var(--maplet-margin) - var(--maplet-viewer-button));
+.mapkern-bottom-left {
+  max-width: calc(100% - 3 * var(--mapkern-margin) - var(--mapkern-viewer-button));
 }
 
-.maplet-bottom-left > .maplet-attribution {
+.mapkern-bottom-left > .mapkern-attribution {
   border-radius: 6px;
 }
 
-.maplet-bottom-right > .maplet-scale {
+.mapkern-bottom-right > .mapkern-scale {
   position: absolute;
-  right: calc(100% + var(--maplet-margin));
+  right: calc(100% + var(--mapkern-margin));
   bottom: 0;
 }
 
-.maplet-viewer-panel {
+.mapkern-viewer-panel {
   display: grid;
   gap: 6px;
   max-width: min(300px, calc(100vw - 96px));
@@ -46,37 +46,37 @@ html.maplet-viewer #map {
     "Segoe UI",
     Roboto,
     sans-serif;
-  color: var(--maplet-ink, #10191d);
+  color: var(--mapkern-ink, #10191d);
 }
 
-.maplet-viewer-panel h1 {
+.mapkern-viewer-panel h1 {
   margin: 0;
   font-size: 15px;
 }
 
-.maplet-viewer-panel p {
+.mapkern-viewer-panel p {
   margin: 0;
   color: #3d474b;
 }
 
-.maplet-viewer-panel output {
+.mapkern-viewer-panel output {
   font-variant-numeric: tabular-nums;
 }
 
-.maplet-viewer-panel input[type="range"] {
+.mapkern-viewer-panel input[type="range"] {
   width: 100%;
   margin: 0;
 }
 
-.maplet-viewer-row {
+.mapkern-viewer-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }
 
-.maplet-viewer-panel .maplet-viewer-button,
-.maplet-viewer-file span {
+.mapkern-viewer-panel .mapkern-viewer-button,
+.mapkern-viewer-file span {
   display: inline-block;
   padding: 5px 10px;
   border: 1px solid #b9bdb7;
@@ -87,18 +87,18 @@ html.maplet-viewer #map {
   cursor: pointer;
 }
 
-.maplet-viewer-file {
+.mapkern-viewer-file {
   position: relative;
 }
 
-.maplet-viewer-file input {
+.mapkern-viewer-file input {
   position: absolute;
   width: 1px;
   height: 1px;
   opacity: 0;
 }
 
-.maplet-viewer-file input:focus-visible + span,
-.maplet-viewer-panel .maplet-viewer-button:focus-visible {
-  outline: 2px solid var(--maplet-focus, #2f6fdb);
+.mapkern-viewer-file input:focus-visible + span,
+.mapkern-viewer-panel .mapkern-viewer-button:focus-visible {
+  outline: 2px solid var(--mapkern-focus, #2f6fdb);
 }
