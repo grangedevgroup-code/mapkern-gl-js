@@ -1,48 +1,46 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="maplet-viewer">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Heatmap</title>
     <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
-    <style>
-      html,
-      body {
-        margin: 0;
-        height: 100%;
-        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      }
-      #map {
-        position: absolute;
-        inset: 0;
-      }
-    </style>
+    <link rel="stylesheet" href="../viewer.css" />
   </head>
   <body>
     <div id="map"></div>
     <script type="module">
-      import * as maplet from "../../dist/maplet.js";
+      import { BASEMAPS, beforeLabels, createViewer, maplet } from "../viewer.js";
 
       const params = new URLSearchParams(location.search);
       const tiles = params.get("tiles") ?? "../../data/seattle.pmtiles";
-      const style = maplet.lightStyle({ url: tiles, buildings: "flat" });
-      const below = style.layers.findIndex((layer) => layer.id === "road-label");
-      style.layers.splice(below < 0 ? style.layers.length : below, 0, {
-        id: "poi-heat",
-        type: "heatmap",
-        source: "osm",
-        sourceLayer: "poi",
-        maxZoom: 17,
-        paint: {
-          radius: ["interpolate", ["linear"], ["zoom"], 12, 6, 16, 22],
-          intensity: ["interpolate", ["linear"], ["zoom"], 12, 0.15, 16, 0.45],
-          opacity: ["interpolate", ["linear"], ["zoom"], 15, 0.9, 17, 0],
-          weight: ["match", ["get", "class"], "shop", 1.5, "amenity", 1.2, 0.8],
+
+      const { map } = createViewer({
+        basemaps: [{ name: "Seattle", style: maplet.lightStyle({ url: tiles, buildings: "flat" }) }, ...BASEMAPS],
+        center: [-122.3375, 47.6105],
+        zoom: 14.6,
+        overlay(map) {
+          if (map.getLayer("poi-heat")) return;
+          const shared = map.getSource("osm")?.type === "vector";
+          if (!shared && !map.getSource("places")) map.addSource("places", { type: "vector", url: tiles });
+          map.addLayer(
+            {
+              id: "poi-heat",
+              type: "heatmap",
+              source: shared ? "osm" : "places",
+              sourceLayer: "poi",
+              maxZoom: 17,
+              paint: {
+                radius: ["interpolate", ["linear"], ["zoom"], 12, 6, 16, 22],
+                intensity: ["interpolate", ["linear"], ["zoom"], 12, 0.15, 16, 0.45],
+                opacity: ["interpolate", ["linear"], ["zoom"], 15, 0.9, 17, 0],
+                weight: ["match", ["get", "class"], "shop", 1.5, "amenity", 1.2, 0.8],
+              },
+            },
+            beforeLabels(map),
+          );
         },
       });
-
-      const map = new maplet.Map({ container: "map", style, center: [-122.3375, 47.6105], zoom: 14.6 });
-      map.addControl(new maplet.NavigationControl());
       window.map = map;
     </script>
   </body>
