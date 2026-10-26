@@ -211,7 +211,7 @@ function writeEvent(feature: Feature, now: Date, stale: Date, index: number): st
   if (!at || at.length < 2) return null;
   const sidcType = typeof props.sidc === "string" ? sidcToCotType(props.sidc) : null;
   const type = typeof props.type === "string" && props.type ? props.type : (shapeType ?? sidcType ?? "a-u-G");
-  const uid = feature.id ?? props.uid ?? `maplet-${now.getTime().toString(36)}-${index}`;
+  const uid = feature.id ?? props.uid ?? `mapkern-${now.getTime().toString(36)}-${index}`;
   const how = typeof props.how === "string" ? props.how : "h-g-i-g-o";
   const callsign = props.callsign ?? props.name;
   const remarks = props.remarks ?? props.description;
