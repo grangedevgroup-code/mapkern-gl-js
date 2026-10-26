@@ -4265,12 +4265,15 @@ const specs: Spec[] = [
         fail(
           `bottom-right should hold zoom and compass, then 2D/3D, then the basemap button: ${JSON.stringify(layout)}`,
         );
-      const [stackLeft] = layout.stack;
-      if (!layout.scale || layout.scale[2] > stackLeft! || stackLeft! - layout.scale[2] > 24)
+      const stackLeft = layout.stack[0] ?? 0;
+      const scaleRight = layout.scale?.[2] ?? Number.POSITIVE_INFINITY;
+      if (scaleRight > stackLeft || stackLeft - scaleRight > 24)
         fail(`the scale should sit just left of the buttons: ${JSON.stringify(layout)}`);
       if (!layout.logo || !layout.attribution || !layout.corner?.includes("maplet-bottom-left"))
         fail(`the attribution should sit in the bottom-left corner: ${JSON.stringify(layout)}`);
-      if (layout.attribution[3] > layout.logo[1] + 0.5 || layout.attribution[2] > stackLeft!)
+      const [, , attributionRight = 0, attributionBottom = 0] = layout.attribution ?? [];
+      const logoTop = layout.logo?.[1] ?? 0;
+      if (attributionBottom > logoTop + 0.5 || attributionRight > stackLeft)
         fail(`the attribution should sit above the logo and clear of the buttons: ${JSON.stringify(layout)}`);
       if (layout.maxPitch !== 85) fail(`the viewer should allow tilting to 85 degrees, got ${layout.maxPitch}`);
       if (!layout.pins) fail("the page's own layers should be added once the style loads");
