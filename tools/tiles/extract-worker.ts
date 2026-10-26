@@ -3,7 +3,14 @@ import { parentPort, workerData } from "node:worker_threads";
 import type { BlobRef, BlockKinds, RelationMember, Tags } from "./osm-pbf.ts";
 import { readBlob, visitBlock } from "./osm-pbf.ts";
 import { isRelevantPoint, isRelevantRelation, isRelevantWay, keepTags } from "./schema.ts";
-import { isSearchPoint, isSearchRelation, isSearchWay, searchTags } from "./search-schema.ts";
+import {
+  isSearchPoint,
+  isSearchRelation,
+  isSearchWay,
+  isWorldFeature,
+  isWorldRelation,
+  searchTags,
+} from "./search-schema.ts";
 
 export interface PointRecord {
   id: number;
@@ -53,14 +60,17 @@ export type Result =
   | { kind: "missing"; index: number; kinds: BlockKinds; ids: Float64Array; lon: Int32Array; lat: Int32Array }
   | { kind: "error"; index: number; message: string };
 
-export type Profile = "tiles" | "search";
+export type Profile = "tiles" | "search" | "places";
 
 const options = workerData as { path: string; profile?: Profile };
 const fd = openSync(options.path, "r");
+const world = options.profile === "places";
 const schema =
   options.profile === "search"
     ? { point: isSearchPoint, way: isSearchWay, relation: isSearchRelation, keep: searchTags }
-    : { point: isRelevantPoint, way: isRelevantWay, relation: isRelevantRelation, keep: keepTags };
+    : world
+      ? { point: isWorldFeature, way: isWorldFeature, relation: isWorldRelation, keep: searchTags }
+      : { point: isRelevantPoint, way: isRelevantWay, relation: isRelevantRelation, keep: keepTags };
 let region: Uint8Array | null = null;
 let members: Uint8Array | null = null;
 let missing: Uint8Array | null = null;
@@ -123,7 +133,7 @@ function run(task: Task): Result {
           node(id, lon, lat, tags) {
             if (id > maxId) maxId = id;
             if (lon < minLon || lon > maxLon || lat < minLat || lat > maxLat) return;
-            grow.push(id, lon, lat);
+            if (!world) grow.push(id, lon, lat);
             if (tags && schema.point(tags)) {
               const kept = schema.keep(tags);
               if (kept) points.push({ id, lon, lat, tags: kept });
@@ -144,6 +154,8 @@ function run(task: Task): Result {
           way(id, refs, tags) {
             if (task.extra) {
               if (!has(members, id)) return;
+            } else if (world) {
+              if (!has(members, id) && !schema.way(tags)) return;
             } else {
               const member = has(members, id);
               const relevant = schema.way(tags);
