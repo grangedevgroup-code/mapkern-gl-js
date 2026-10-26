@@ -54,6 +54,7 @@ export type { StyleIssue } from "./style/validate.ts";
 export { validateStyle } from "./style/validate.ts";
 export type { LightStyleOptions } from "./styles/light.ts";
 export { lightStyle } from "./styles/light.ts";
+export { clearDiskCache } from "./tiles/cache.ts";
 export type { RequestParameters, ResourceKind, TransformRequest } from "./tiles/fetch.ts";
 export type { TileStats } from "./tiles/manager.ts";
 export type { ProtocolHandler, ProtocolRequest, ProtocolResult } from "./tiles/protocols.ts";
