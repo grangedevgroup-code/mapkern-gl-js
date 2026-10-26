@@ -8,6 +8,7 @@ import { geopackageToGeoJSON, isGeoPackage } from "./geopackage.ts";
 import { gmlToGeoJSON, isGml } from "./gml.ts";
 import { gpxToGeoJSON } from "./gpx.ts";
 import { kmlToGeoJSON } from "./kml.ts";
+import { isOsmPbf, isOsmXml, osmPbfToGeoJSON, osmXmlToGeoJSON } from "./osm.ts";
 import { shapefileToGeoJSON } from "./shapefile.ts";
 import { isTopology, topologyToGeoJSON } from "./topojson.ts";
 import { parseWkt } from "./wkt.ts";
@@ -41,6 +42,8 @@ export async function bytesToGeoJSON(bytes: Uint8Array, name = "", format?: Feat
       return cotToGeoJSON(text.decode(bytes));
     case "gml":
       return gmlToGeoJSON(text.decode(bytes));
+    case "osm":
+      return isOsmPbf(bytes) ? osmPbfToGeoJSON(bytes) : osmXmlToGeoJSON(text.decode(bytes));
     case "csv":
       return csvToGeoJSON(text.decode(bytes));
     case "wkt":
@@ -59,6 +62,7 @@ export function objectToGeoJSON(data: unknown): unknown {
 function detect(bytes: Uint8Array, name: string): FeatureFormat {
   if (isFlatGeobuf(bytes)) return "flatgeobuf";
   if (isGeoPackage(bytes)) return "geopackage";
+  if (isOsmPbf(bytes)) return "osm";
   const ext = extension(name);
   if (isZip(bytes)) return ext === "kmz" ? "kmz" : "shapefile";
   if (ext === "shp") return "shapefile";
@@ -66,6 +70,7 @@ function detect(bytes: Uint8Array, name: string): FeatureFormat {
   if (head.startsWith("<")) {
     if (/<gpx[\s>]/i.test(head) || ext === "gpx") return "gpx";
     if (ext === "cot" || isCot(head)) return "cot";
+    if (ext === "osm" || isOsmXml(head)) return "osm";
     if (ext === "gml" || isGml(head)) return "gml";
     return "kml";
   }
