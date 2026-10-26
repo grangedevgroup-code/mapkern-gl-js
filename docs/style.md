@@ -87,14 +87,17 @@ clusterProperties: {
 
 The operator can be any expression that combines two values, written with `["accumulated"]` for the total so far and `["get", name]` for the next value, such as `[["concat", ["accumulated"], ", ", ["get", "names"]], ["get", "name"]]`.
 
-Despite the name, a GeoJSON source reads other formats too: KML and KMZ, GPX, CSV, TopoJSON, Shapefiles (zipped together with their `.dbf`, `.prj` and `.cpg` files), FlatGeobuf, WKT and Cursor on Target (CoT) events, including TAK data packages zipped with them. Mapkern works out the format from the file itself, so `data: "trails.gpx"` or `data: "parcels.zip"` just works. If it guesses wrong, set `format` to one of `geojson`, `topojson`, `kml`, `kmz`, `gpx`, `csv`, `shapefile`, `flatgeobuf`, `wkt` or `cot`.
+Despite the name, a GeoJSON source reads other formats too: KML and KMZ, GPX, CSV, TopoJSON, Shapefiles (zipped together with their `.dbf`, `.prj` and `.cpg` files), FlatGeobuf, GeoPackage, GML (including WFS responses), Esri JSON from ArcGIS servers, OpenStreetMap XML and PBF, WKT, Cursor on Target (CoT) events and TAK data packages, and the tracks that GPS devices record as TCX, IGC and NMEA. Mapkern works out the format from the file itself, so `data: "trails.gpx"` or `data: "parcels.zip"` just works. If it guesses wrong, set `format` to one of `geojson`, `topojson`, `kml`, `kmz`, `gpx`, `csv`, `shapefile`, `flatgeobuf`, `wkt`, `cot`, `geopackage`, `gml`, `osm`, `tcx`, `igc` or `nmea`. Esri JSON is recognized inside any JSON file or object.
 
 A few notes on what comes through:
 
 - KML styles become `stroke`, `stroke-width`, `fill`, `fill-opacity` and `marker-color` properties, so you can use them in paint expressions like `["get", "stroke"]`.
-- CSV files need a header row and either latitude and longitude columns (`lat`/`latitude`/`y` and `lon`/`lng`/`longitude`/`x`), an MGRS grid column (`mgrs`, `grid` or `usng`) or a WKT column. Numbers come through as numbers, unless they have leading zeros.
+- CSV files need a header row and either latitude and longitude columns (`lat`/`latitude`/`y` and `lon`/`lng`/`longitude`/`x`), an MGRS grid column (`mgrs`, `grid` or `usng`) or a geometry column (`wkt`, `geometry`, `geom`, `wkb_geometry`) holding WKT or hex WKB, the way PostGIS exports it. Numbers come through as numbers, unless they have leading zeros.
 - CoT events become points with their `uid`, `type`, `callsign`, `remarks`, `team`, `course`, `speed`, `time` and `stale`, and drawn shapes become lines and polygons with their `stroke` and `fill` colors. Units get a `sidc` property with the matching MIL-STD-2525 code, ready for [military symbols](api.md#military-data).
-- Shapefiles and FlatGeobuf files in UTM, a Transverse Mercator or Lambert state plane zone, or Web Mercator are converted to longitude and latitude using the `.prj` file or the EPSG code. Other projections are reported as errors. Datum shifts aren't applied, which can move data in older datums such as NAD27 by up to about 100 m.
+- Shapefiles, FlatGeobuf, GeoPackage, GML and Esri JSON in UTM, a Transverse Mercator or Lambert state plane zone, or Web Mercator are converted to longitude and latitude using the `.prj` file, the EPSG code or the stored projection. Other projections are reported as errors. Datum shifts aren't applied, which can move data in older datums such as NAD27 by up to about 100 m.
+- A GeoPackage with several feature tables gives each feature a `layer` property with its table name, so one source can feed a layer per table.
+- OpenStreetMap data becomes points for tagged nodes, lines or areas for ways (closed ways count as areas when their tags say so, like `building` or `landuse`), polygons with holes for multipolygon relations and lines for routes, each with its tags as properties and an id like `way/123`. It suits a town or a city; for a whole country, build tiles with `mapkern-tiles` instead.
+- Tracks from TCX, IGC and NMEA files become lines with their height as the third coordinate and a `kind`, `start` and `end`, plus the sport, distance and heart rate of a TCX activity or the pilot and glider of an IGC flight.
 
 ### Images, video and canvases
 
