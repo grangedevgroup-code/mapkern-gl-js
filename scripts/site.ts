@@ -6,6 +6,7 @@ import { buildAll } from "./build.ts";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "_site");
 const data = process.argv[2] ? resolve(process.argv[2]) : join(root, "data", "seattle.pmtiles");
+const search = process.argv[3] ? resolve(process.argv[3]) : join(root, "data", "places.search");
 
 await buildAll({ types: false, quiet: true });
 rmSync(out, { recursive: true, force: true });
@@ -27,5 +28,11 @@ if (existsSync(data)) {
   cpSync(data, join(out, "data", "seattle.pmtiles"));
 } else {
   console.warn(`No map data at ${data}; the site will show an empty map`);
+}
+if (existsSync(search)) {
+  mkdirSync(join(out, "data"), { recursive: true });
+  cpSync(search, join(out, "data", "places.search"));
+} else {
+  console.warn(`No search index at ${search}; search on the site will say it is not available`);
 }
 console.log(`Site written to ${out}`);
