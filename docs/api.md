@@ -441,6 +441,26 @@ map.addSource("offline", { type: "vector", tiles: ["local://roads/{z}/{x}/{y}"] 
 
 Return an `ArrayBuffer` or `Uint8Array`, or `null` when there's no tile. `maplet.removeProtocol("local")` undoes it. `pmtiles://` is built in.
 
+## Military data
+
+`militarySymbols(map)` draws MIL-STD-2525 symbols whenever a layer asks for an image named `sidc:` and a symbol code, so a single layer shows every unit in its own symbol:
+
+```js
+maplet.militarySymbols(map);
+map.addLayer({
+  id: "units",
+  type: "symbol",
+  source: "units",
+  layout: { icon: ["concat", "sidc:", ["get", "sidc"]], iconAllowOverlap: true, text: ["get", "callsign"], offset: [0, 2.2] },
+});
+```
+
+It reads the 15-letter codes of 2525B and C and the 20-digit codes of 2525D and E. Each symbol gets the frame and fill of its affiliation (friend, hostile, neutral, unknown, and the dashed pending, assumed friend and suspect frames) and of its dimension (ground, equipment, installation, air, space, sea surface and subsurface), with a dashed frame for planned units, the echelon above it, headquarters, task force and dummy markers, and the icon for common units such as infantry, armor, mechanized infantry, reconnaissance, artillery, air defense, engineers, signal, medical, supply, transport, maintenance and aviation. A code it has no icon for still gets its frame and markers. `drawSymbol(code, { size, label })` returns the same symbol as SVG markup, and a `draw()` function for your own canvas, for HTML markers and legends; `parseSidc(code)` tells you what a code means.
+
+Cursor on Target events load in a GeoJSON source like any other file. `geoJSONToCot(features)` writes features back out as CoT events for a TAK server or client, and `cotTypeToSidc()` and `sidcToCotType()` convert between CoT types such as `a-f-G-U-C-I` and symbol codes.
+
+`toMgrs([lng, lat], digits)` gives the MGRS grid reference of a place, `"10TET4998072946"` at full precision, and `fromMgrs(text)` reads one back, spaces and all, to the middle of its grid square. `toUtm()`, `fromUtm()` and `utmZone()` work with plain UTM, including the Norway and Svalbard zones. Both cover the world from 80° south to 84° north, where UTM applies.
+
 ## Offline
 
 Maplet keeps what it downloads in the browser's storage: tiles, styles, TileJSON, fonts and icons. While a saved copy is fresh, as the server's own `Cache-Control` says, it is used without asking the server, which also saves data. When the device is offline, a request fails, or a server answers with an error, the saved copy is used however old it is, and for the next 30 seconds that server is skipped so tiles don't each wait for it to time out. Places you have looked at before keep working, and a style loads even with no connection.
