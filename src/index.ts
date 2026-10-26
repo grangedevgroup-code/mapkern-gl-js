@@ -41,6 +41,7 @@ export { distanceMeters, lngLatToWorld, metersPerPixel, worldToLngLat } from "./
 export type { SunPosition } from "./geo/sun.ts";
 export { sunAltitude, sunAzimuth, sunPosition } from "./geo/sun.ts";
 export type { DemSource } from "./sources/dem.ts";
+export { openElevationFile } from "./sources/elevation.ts";
 export { openTileFile } from "./sources/files.ts";
 export type { GeoJSONSource } from "./sources/geojson.ts";
 export type { Corners, ImageSource } from "./sources/image.ts";
