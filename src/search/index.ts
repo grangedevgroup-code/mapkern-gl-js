@@ -94,6 +94,7 @@ const PLACE_REACH: Record<string, number> = {
   neighbourhood: 1000,
 };
 const MAX_PREFIX_TERMS = 4000;
+const SHORT_PREFIX_TERMS = 300;
 const CELL = 0.01;
 
 interface TokenMatch {
@@ -171,55 +172,10 @@ export class SearchIndex implements Geocoder {
     const matches = tokens.map((t, i) => this.match(t, prefixLast && i === tokens.length - 1));
     const kinds = options.kinds ? new Set(options.kinds.map((k) => SEARCH_KINDS.indexOf(k))) : null;
     const d = this.data;
-    const allowMissing = tokens.length >= 3 ? 1 : 0;
-    const withContext = matches.length > 1;
-    const sizes = matches.map((m) => {
-      let count = m.postings;
-      for (const c of m.categories.keys()) count += this.byCategory.count(c);
-      if (withContext) for (const c of m.contexts.keys()) count += this.byContext.count(c);
-      return count;
-    });
-    const order = sizes
-      .map((_, i) => i)
-      .filter((i) => sizes[i]! > 0)
-      .sort((a, b) => sizes[a]! - sizes[b]!);
-    if (order.length === 0 || order.length < matches.length - allowMissing) return [];
-    const candidates = new Set<number>();
-    for (const i of order.slice(0, allowMissing + 1)) {
-      const m = matches[i]!;
-      for (const { term } of m.terms)
-        for (let p = d.termStart[term]!; p < d.termStart[term + 1]!; p++) candidates.add(d.postings[p]!);
-      for (const c of m.categories.keys()) this.byCategory.each(c, (e) => candidates.add(e));
-      if (withContext) for (const c of m.contexts.keys()) this.byContext.each(c, (e) => candidates.add(e));
-    }
     const scored: Scored[] = [];
-    for (const e of candidates) {
-      if (kinds && !kinds.has(d.kind[e]!)) continue;
-      const lon = d.lon[e]! / 1e7;
-      const lat = d.lat[e]! / 1e7;
-      if (options.bbox) {
-        const [w, s, east, n] = options.bbox;
-        if (lon < w || lon > east || lat < s || lat > n) continue;
-      }
-      let total = 0;
-      let missing = 0;
-      let direct = false;
-      for (const m of matches) {
-        const q = this.quality(m, e);
-        if (q.value === 0) missing++;
-        if (q.direct) direct = true;
-        total += q.value;
-      }
-      if (missing > allowMissing || !direct) continue;
-      const text = total / matches.length;
-      const distance = options.near ? metres(options.near[0], options.near[1], lon, lat) : undefined;
-      const near = distance === undefined ? 0.5 : 1 / (1 + distance / 5000);
-      scored.push({
-        entry: e,
-        text,
-        score: text * 0.6 + (d.rank[e]! / 255) * 0.2 + near * 0.2 - missing * 0.1,
-        distance,
-      });
+    for (const allowMissing of tokens.length >= 3 ? [0, 1] : [0]) {
+      this.collect(matches, allowMissing, kinds, options, scored);
+      if (scored.length > 0) break;
     }
     scored.sort((a, b) => b.score - a.score);
     const top = scored.slice(0, Math.max(limit * 6, 30));
@@ -241,6 +197,73 @@ export class SearchIndex implements Geocoder {
     return out;
   }
 
+  private collect(
+    matches: TokenMatch[],
+    allowMissing: number,
+    kinds: Set<number> | null,
+    options: SearchOptions,
+    scored: Scored[],
+  ): void {
+    const d = this.data;
+    const withContext = matches.length > 1;
+    const directSize = (m: TokenMatch) => {
+      let count = m.postings;
+      for (const c of m.categories.keys()) count += this.byCategory.count(c);
+      return count;
+    };
+    const sizes = matches.map((m) => {
+      let count = directSize(m);
+      if (withContext) for (const c of m.contexts.keys()) count += this.byContext.count(c);
+      return count;
+    });
+    const order = sizes
+      .map((_, i) => i)
+      .filter((i) => sizes[i]! > 0)
+      .sort((a, b) => sizes[a]! - sizes[b]!);
+    if (order.length === 0 || order.length < matches.length - allowMissing) return;
+    const anchors = order.slice(0, allowMissing + 1);
+    const anchored = anchors.reduce((sum, i) => sum + sizes[i]!, 0);
+    const directOnly = matches.reduce((sum, m) => sum + directSize(m), 0) < anchored;
+    const candidates = new Set<number>();
+    for (const m of directOnly ? matches : anchors.map((i) => matches[i]!)) {
+      for (const { term } of m.terms)
+        for (let p = d.termStart[term]!; p < d.termStart[term + 1]!; p++) candidates.add(d.postings[p]!);
+      for (const c of m.categories.keys()) this.byCategory.each(c, (e) => candidates.add(e));
+      if (withContext && !directOnly)
+        for (const c of m.contexts.keys()) this.byContext.each(c, (e) => candidates.add(e));
+    }
+    const done = new Set(scored.map((x) => x.entry));
+    for (const e of candidates) {
+      if (done.has(e)) continue;
+      if (kinds && !kinds.has(d.kind[e]!)) continue;
+      const lon = d.lon[e]! / 1e7;
+      const lat = d.lat[e]! / 1e7;
+      if (options.bbox) {
+        const [w, s, east, n] = options.bbox;
+        if (lon < w || lon > east || lat < s || lat > n) continue;
+      }
+      let total = 0;
+      let missing = 0;
+      let named = false;
+      for (const m of matches) {
+        const q = this.quality(m, e);
+        if (q.value === 0 && ++missing > allowMissing) break;
+        if (q.direct) named = true;
+        total += q.value;
+      }
+      if (missing > allowMissing || !named) continue;
+      const text = total / matches.length;
+      const distance = options.near ? metres(options.near[0], options.near[1], lon, lat) : undefined;
+      const near = distance === undefined ? 0.5 : 1 / (1 + distance / (5000 * this.spread(e)));
+      scored.push({
+        entry: e,
+        text,
+        score: text * 0.6 + (d.rank[e]! / 255) * 0.2 + near * 0.2 - missing * 0.1,
+        distance,
+      });
+    }
+  }
+
   reverse(position: [number, number], options: ReverseOptions = {}): SearchResult[] {
     const grid = this.spatial();
     const kinds = options.kinds ?? REVERSE_ORDER;
@@ -254,7 +277,7 @@ export class SearchIndex implements Geocoder {
       if (found) found.push({ entry, distance, order });
       else best.set(kind, [{ entry, distance, order }]);
     };
-    const local = kinds.filter((k) => k !== "place");
+    const local: readonly SearchKind[] = kinds.filter((k) => k !== "place");
     if (local.length) {
       const maxRadius = Math.max(...local.map((k) => options.radius ?? REVERSE_RADIUS[k]));
       const across = Math.max(0.2, Math.cos((lat * Math.PI) / 180));
@@ -310,7 +333,7 @@ export class SearchIndex implements Geocoder {
     if (exact >= 0) add(exact, 1);
     if (prefix) {
       const [from, to] = this.prefixRange(token);
-      for (let t = from; t < Math.min(to, from + MAX_PREFIX_TERMS); t++)
+      for (let t = from; t < Math.min(to, from + (token.length < 2 ? SHORT_PREFIX_TERMS : MAX_PREFIX_TERMS)); t++)
         add(t, 0.85 + 0.1 * (token.length / this.termText[t]!.length));
       for (const short of expandPrefix(token)) {
         const t = this.find(short);
@@ -346,7 +369,7 @@ export class SearchIndex implements Geocoder {
     if (k !== undefined) best = Math.max(best, k * 0.8);
     const direct = best > 0;
     const c = m.contexts.get(d.context[e]!);
-    if (c !== undefined) best = Math.max(best, c * 0.85);
+    if (c !== undefined) best = Math.max(best, c * 0.7);
     return { value: best, direct };
   }
 
@@ -378,6 +401,14 @@ export class SearchIndex implements Geocoder {
     let to = from;
     while (to < this.termText.length && this.termText[to]!.startsWith(prefix) && to - from <= MAX_PREFIX_TERMS) to++;
     return [from, to];
+  }
+
+  private spread(e: number): number {
+    const d = this.data;
+    if (SEARCH_KINDS[d.kind[e]!] !== "place") return 1;
+    const raw = d.category[e]! < d.categories.length ? d.categories[d.category[e]!]! : "";
+    const zoom = PLACE_ZOOM[raw.slice(raw.indexOf("=") + 1)] ?? KIND_ZOOM.place;
+    return 2 ** Math.max(0, 12 - zoom);
   }
 
   private text(id: number): string {
