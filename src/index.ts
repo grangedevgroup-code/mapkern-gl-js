@@ -1,5 +1,5 @@
-export type { MapletErrorCode } from "./core/errors.ts";
-export { MapletError } from "./core/errors.ts";
+export type { MapkernErrorCode } from "./core/errors.ts";
+export { MapkernError } from "./core/errors.ts";
 export type { ImageInput, ImageOptions } from "./core/images.ts";
 export type {
   AnimationOptions,
@@ -33,7 +33,7 @@ export type {
   TouchZoomRotateSwitch,
   UiText,
 } from "./core/map.ts";
-export { DEFAULT_STYLE, MapletMap as Map } from "./core/map.ts";
+export { DEFAULT_STYLE, MapkernMap as Map } from "./core/map.ts";
 export type { QueriedFeature, SourceQueriedFeature } from "./core/query.ts";
 export type { Feature, FeatureCollection, GeoJSON, Geometry } from "./geo/geojson.ts";
 export type { LngLat, LngLatLike, LngLatObject } from "./geo/mercator.ts";
@@ -101,9 +101,9 @@ export type { PopupEvent, PopupEvents, PopupOptions } from "./ui/popup.ts";
 export { Popup } from "./ui/popup.ts";
 export type { SourceGeoJSONFeature } from "./worker/geojson.ts";
 
-declare const MAPLET_VERSION: string | undefined;
+declare const MAPKERN_VERSION: string | undefined;
 
-export const version: string = typeof MAPLET_VERSION === "string" ? MAPLET_VERSION : "0.0.0-dev";
+export const version: string = typeof MAPKERN_VERSION === "string" ? MAPKERN_VERSION : "0.0.0-dev";
 export type { CotWriteOptions } from "./formats/cot.ts";
 export { cotToGeoJSON, cotTypeToSidc, geoJSONToCot, sidcToCotType } from "./formats/cot.ts";
 export type { MgrsPoint, Utm } from "./geo/mgrs.ts";
