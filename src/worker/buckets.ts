@@ -408,6 +408,26 @@ export class LineBuilder {
 
 export const EXTRUSION_STRIDE = 12;
 
+function insideTile(rings: Int32Array[], extent: number): Int32Array[] {
+  let outside = false;
+  for (const ring of rings) {
+    for (let i = 0; i < ring.length && !outside; i++) if (ring[i]! < 0 || ring[i]! > extent) outside = true;
+    if (outside) break;
+  }
+  if (!outside) return rings;
+  const tile = { x0: 0, y0: 0, x1: extent, y1: extent };
+  const out: Int32Array[] = [];
+  for (let r = 0; r < rings.length; r++) {
+    const clipped = clipRing(rings[r]!, tile);
+    if (!clipped || Math.abs(ringArea(clipped)) < 1) {
+      if (r === 0) return [];
+      continue;
+    }
+    out.push(Int32Array.from(clipped, Math.round));
+  }
+  return out;
+}
+
 export class ExtrusionBuilder {
   readonly vertices = new Growable(8192);
   readonly indices = new IndexBuilder();
