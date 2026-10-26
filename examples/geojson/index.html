@@ -1,26 +1,16 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="maplet-viewer">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Live GeoJSON</title>
     <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
-    <style>
-      html,
-      body {
-        margin: 0;
-        height: 100%;
-      }
-      #map {
-        position: absolute;
-        inset: 0;
-      }
-    </style>
+    <link rel="stylesheet" href="../viewer.css" />
   </head>
   <body>
     <div id="map"></div>
     <script type="module">
-      import * as maplet from "../../dist/maplet.js";
+      import { createViewer } from "../viewer.js";
 
       const center = [-122.335, 47.608];
       const count = 120;
@@ -51,43 +41,41 @@
         return { type: "FeatureCollection", features };
       }
 
-      const map = new maplet.Map({
-        container: "map",
+      const zones = {
+        type: "FeatureCollection",
+        features: [
+          { type: "Feature", properties: { kind: "outer" }, geometry: { type: "Polygon", coordinates: [circle(0.03, 96), circle(0.004, 48)] } },
+          { type: "Feature", properties: { kind: "track" }, geometry: { type: "LineString", coordinates: circle(0.016, 96) } },
+        ],
+      };
+
+      const { map } = createViewer({
         center,
         zoom: 13.5,
-        style: {
-          version: 1,
-          sources: {
-            zones: {
-              type: "geojson",
-              data: {
-                type: "FeatureCollection",
-                features: [
-                  { type: "Feature", properties: { kind: "outer" }, geometry: { type: "Polygon", coordinates: [circle(0.03, 96), circle(0.004, 48)] } },
-                  { type: "Feature", properties: { kind: "track" }, geometry: { type: "LineString", coordinates: circle(0.016, 96) } },
-                ],
-              },
-            },
-            vehicles: { type: "geojson", data: vehicles(0) },
-          },
-          layers: [
-            { id: "background", type: "background", paint: { color: "#eef1ef" } },
-            {
+        overlay(map) {
+          if (!map.getSource("zones")) map.addSource("zones", { type: "geojson", data: zones });
+          if (!map.getSource("vehicles")) map.addSource("vehicles", { type: "geojson", data: vehicles(performance.now()) });
+          if (!map.getLayer("zone")) {
+            map.addLayer({
               id: "zone",
               type: "fill",
               source: "zones",
               filter: ["==", ["geometry-type"], "Polygon"],
               paint: { color: "#b4d8c4", opacity: 0.5, outlineColor: "#246a50" },
-            },
-            {
+            });
+          }
+          if (!map.getLayer("track")) {
+            map.addLayer({
               id: "track",
               type: "line",
               source: "zones",
               filter: ["==", ["geometry-type"], "LineString"],
               layout: { join: "round" },
               paint: { color: "#246a50", width: 2, dash: [3, 2] },
-            },
-            {
+            });
+          }
+          if (!map.getLayer("vehicles")) {
+            map.addLayer({
               id: "vehicles",
               type: "circle",
               source: "vehicles",
@@ -97,23 +85,20 @@
                 strokeColor: "#ffffff",
                 strokeWidth: 1.5,
               },
-            },
-          ],
+            });
+          }
         },
       });
 
-      map.addControl(new maplet.NavigationControl());
-
-      const source = () => map.getSource("vehicles");
       let last = 0;
       function tick(now) {
         if (now - last > 100) {
           last = now;
-          source()?.setData(vehicles(now));
+          map.getSource("vehicles")?.setData(vehicles(now));
         }
         requestAnimationFrame(tick);
       }
-      map.once("load").then(() => requestAnimationFrame(tick));
+      requestAnimationFrame(tick);
       window.map = map;
     </script>
   </body>
