@@ -1,90 +1,17 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="maplet-viewer">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <title>Maplet</title>
-    <style>
-      html,
-      body {
-        margin: 0;
-        height: 100%;
-        overflow: hidden;
-        background: #11191f;
-      }
-      #map {
-        position: absolute;
-        inset: 0;
-      }
-      .maplet-bottom-right > .maplet-scale {
-        position: absolute;
-        right: calc(100% + var(--maplet-margin));
-        bottom: 0;
-      }
-    </style>
+    <link rel="stylesheet" href="examples/viewer.css" />
   </head>
   <body>
     <div id="map"></div>
     <script type="module">
-      import * as maplet from "./dist/maplet.js";
+      import { createViewer } from "./examples/viewer.js";
 
-      const basemaps = [
-        { name: "Map", style: "https://tiles.openfreemap.org/styles/liberty" },
-        {
-          name: "Satellite",
-          style: {
-            version: 1,
-            sources: {
-              imagery: {
-                type: "raster",
-                tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
-                tileSize: 256,
-                maxZoom: 19,
-              },
-            },
-            layers: [{ id: "imagery", type: "raster", source: "imagery" }],
-          },
-        },
-      ];
-      let selected = 0;
-      try {
-        selected = Math.min(basemaps.length - 1, Math.max(0, Number(localStorage.getItem("basemap")) || 0));
-      } catch {}
-      const map = new maplet.Map({
-        container: "map",
-        hash: true,
-        attributionControl: false,
-        style: basemaps[selected].style,
-      });
-      const picker = new maplet.BasemapControl({ basemaps, selected });
-      const terrain = new maplet.TerrainControl({
-        source: {
-          type: "dem",
-          tiles: ["https://tiles.mapterhorn.com/{z}/{x}/{y}.webp"],
-          tileSize: 512,
-          maxZoom: 12,
-          encoding: "terrarium",
-        },
-      });
-      map.addControl(picker, "bottom-right");
-      map.addControl(terrain, "bottom-right");
-      map.addControl(new maplet.NavigationControl(), "bottom-right");
-      map.addControl(new maplet.ScaleControl(), "bottom-right");
-      picker.on("change", ({ index }) => {
-        try {
-          localStorage.setItem("basemap", String(index));
-        } catch {}
-      });
-      terrain.on("viewchange", ({ view }) => {
-        try {
-          localStorage.setItem("view", view);
-        } catch {}
-      });
-      try {
-        const view = localStorage.getItem("view");
-        if (view === "terrain" || view === "tilted") terrain.setView(view);
-      } catch {}
-      window.map = map;
+      window.map = createViewer({ attributionControl: false }).map;
     </script>
   </body>
 </html>
