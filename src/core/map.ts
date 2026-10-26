@@ -41,6 +41,7 @@ import { AttributionControl } from "../ui/controls.ts";
 import { injectStyles } from "../ui/css.ts";
 import type { DebugTile } from "../ui/debug.ts";
 import { DebugOverlay } from "../ui/debug.ts";
+import { LogoControl } from "../ui/logo.ts";
 import type { WorkerFactory } from "../worker/pool.ts";
 import { WorkerPool } from "../worker/pool.ts";
 import { errorMessage, MapletError } from "./errors.ts";
@@ -98,6 +99,7 @@ export interface MapOptions {
   prefetch?: boolean;
   transformRequest?: TransformRequest;
   attributionControl?: boolean | { custom?: string | string[] };
+  logoControl?: boolean;
   workerCount?: number;
   workerUrl?: string;
   reducedMotion?: boolean;
@@ -119,7 +121,14 @@ export type UiText =
   | "yourLocation"
   | "scrollZoomBlocker"
   | "scrollZoomBlockerMac"
-  | "touchPanBlocker";
+  | "touchPanBlocker"
+  | "basemaps"
+  | "flatView"
+  | "terrainView"
+  | "tiltedView";
+
+const NEAR_SAMPLES = 8;
+const PREFETCH_MARGIN = 1.4;
 
 const DEFAULT_TEXT: Record<UiText, string> = {
   zoomIn: "Zoom in",
@@ -137,6 +146,10 @@ const DEFAULT_TEXT: Record<UiText, string> = {
   scrollZoomBlocker: "Use Ctrl + scroll to zoom the map",
   scrollZoomBlockerMac: "Use ⌘ + scroll to zoom the map",
   touchPanBlocker: "Use two fingers to move the map",
+  basemaps: "Choose a basemap",
+  flatView: "2D map",
+  terrainView: "3D terrain from above",
+  tiltedView: "Tilted 3D terrain",
 };
 
 export interface ScreenPosition {
@@ -560,6 +573,7 @@ export class MapletMap extends Emitter<MapEvents> {
       const custom = typeof options.attributionControl === "object" ? options.attributionControl.custom : undefined;
       this.addControl(new AttributionControl(custom === undefined ? {} : { custom }));
     }
+    if (options.logoControl !== false) this.addControl(new LogoControl());
 
     if (options.bounds !== undefined) {
       const camera = this.cameraForBounds(options.bounds, options.fitBoundsOptions ?? {});
@@ -906,7 +920,12 @@ export class MapletMap extends Emitter<MapEvents> {
       if (typeof exaggeration !== "number" || !Number.isFinite(exaggeration) || exaggeration < 0) {
         throw new MapletError("invalid-option", "terrain.exaggeration must be a number of 0 or more", { terrain });
       }
-      style.meta.terrain = { source: terrain.source, exaggeration };
+      const relief = terrain.relief ?? 0;
+      if (typeof relief !== "number" || !(relief >= 0 && relief <= 1)) {
+        throw new MapletError("invalid-option", "terrain.relief must be a number from 0 to 1", { terrain });
+      }
+      style.meta.terrain =
+        relief > 0 ? { source: terrain.source, exaggeration, relief } : { source: terrain.source, exaggeration };
     }
     this.cameraChanged();
     return this;
@@ -1245,6 +1264,7 @@ export class MapletMap extends Emitter<MapEvents> {
     if (!this.terrain || this.terrain.source !== source) this.terrain = new Terrain(source, exaggeration);
     const terrain = this.terrain;
     terrain.exaggeration = exaggeration;
+    terrain.relief = Math.min(1, Math.max(0, spec.relief ?? 0));
     const [cx, cy] = t.centerWorld;
     let target = terrain.elevationAt(cx, cy);
     if (progress !== null && this.elevationTo !== null) {
@@ -1257,12 +1277,76 @@ export class MapletMap extends Emitter<MapEvents> {
         t.setElevationKeepCamera(target);
       }
       const floor = this.cameraFloor(terrain);
-      const wanted = floor === null ? target : Math.max(target, floor);
-      if (Math.abs(wanted - t.elevation) > 1e-3) t.setElevation(wanted);
+      if (this.elevationIntent === "camera" && progress === null && floor !== null && floor > t.elevation + 1e-3) {
+        this.backOff(terrain);
+      } else {
+        const wanted = floor === null ? target : Math.max(target, floor);
+        if (Math.abs(wanted - t.elevation) > 1e-3) t.setElevation(wanted);
+      }
       if (t.elevation !== before || t.zoom !== zoom) this.cameraVersion++;
     }
+    t.setPeak(this.nearPeak(terrain));
     terrain.update(t);
     t.setGround(Math.min(terrain.ground, t.elevation));
+  }
+
+  private backOff(terrain: Terrain): void {
+    const t = this.transform;
+    const clear = (zoom: number) => {
+      t.setZoom(zoom);
+      const floor = this.cameraFloor(terrain);
+      return floor === null || floor <= t.elevation + 1e-3;
+    };
+    const requested = t.zoom;
+    const lowest = Math.max(t.minZoom, requested - 8);
+    let step = 1 / 64;
+    let above = requested;
+    let found: number | null = null;
+    while (above > lowest) {
+      const z = Math.max(lowest, above - step);
+      if (clear(z)) {
+        found = z;
+        break;
+      }
+      above = z;
+      step = Math.min(step * 1.5, 0.5);
+    }
+    if (found === null) {
+      const floor = this.cameraFloor(terrain);
+      if (floor !== null) t.setElevation(floor);
+      return;
+    }
+    let low = found;
+    let high = above;
+    for (let i = 0; i < 10; i++) {
+      const mid = (low + high) / 2;
+      if (clear(mid)) low = mid;
+      else high = mid;
+    }
+    t.setZoom(low);
+  }
+
+  private nearPeak(terrain: Terrain): number {
+    const t = this.transform;
+    const ws = t.worldSize;
+    const camera = t.cameraPosition;
+    const ground = t.ground * t.pixelsPerMeter;
+    let peak = Number.NEGATIVE_INFINITY;
+    const sample = (x: number, y: number) => {
+      const meters = terrain.elevationAt(x, y);
+      if (meters !== null && meters > peak) peak = meters;
+    };
+    const cx = camera[0] / ws;
+    const cy = camera[1] / ws;
+    sample(cx, cy);
+    for (const px of [0, t.width / 2, t.width]) {
+      const [hx, hy] = t.unprojectClamped(px, t.height, ground);
+      for (let i = 1; i <= NEAR_SAMPLES; i++) {
+        const f = i / NEAR_SAMPLES;
+        sample(cx + (hx - cx) * f, cy + (hy - cy) * f);
+      }
+    }
+    return peak;
   }
 
   private cameraFloor(terrain: Terrain): number | null {
@@ -2300,6 +2384,9 @@ export class MapletMap extends Emitter<MapEvents> {
       future.zoomAround(wheelTarget.zoom, wheelTarget.point[0], wheelTarget.point[1]);
       out.push(future);
     }
+    const around = this.transform.clone();
+    around.resize(this.transform.width * PREFETCH_MARGIN, this.transform.height * PREFETCH_MARGIN);
+    out.push(around);
     return out;
   }
 
