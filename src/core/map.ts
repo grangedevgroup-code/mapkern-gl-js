@@ -47,7 +47,7 @@ import { LogoControl } from "../ui/logo.ts";
 import type { WorkerFactory } from "../worker/pool.ts";
 import { WorkerPool } from "../worker/pool.ts";
 import { deepClone } from "./clone.ts";
-import { errorMessage, MapletError } from "./errors.ts";
+import { errorMessage, MapkernError } from "./errors.ts";
 import type { Listener } from "./events.ts";
 import { Emitter } from "./events.ts";
 import { MapHash } from "./hash.ts";
@@ -220,7 +220,7 @@ export interface QueryOptions {
 }
 
 export interface MapEvent {
-  readonly target: MapletMap;
+  readonly target: MapkernMap;
   readonly type: string;
 }
 
@@ -268,7 +268,7 @@ export interface MapTouchEvent extends MapEvent {
 }
 
 export interface MapErrorEvent extends MapEvent {
-  readonly error: MapletError;
+  readonly error: MapkernError;
   readonly sourceId?: string | undefined;
 }
 
@@ -351,7 +351,7 @@ interface CameraFlags {
 
 const FRAME_SAMPLES = 240;
 
-export class MapletMap extends Emitter<MapEvents> {
+export class MapkernMap extends Emitter<MapEvents> {
   readonly transform: Transform;
   readonly dragPan: HandlerSwitch;
   readonly dragRotate: HandlerSwitch;
@@ -442,14 +442,14 @@ export class MapletMap extends Emitter<MapEvents> {
   constructor(options: MapOptions) {
     super();
     if (typeof options !== "object" || options === null) {
-      throw new MapletError("invalid-option", "new Map(options) needs an options object");
+      throw new MapkernError("invalid-option", "new Map(options) needs an options object");
     }
     this.options = { ...options };
     this.strings = { ...DEFAULT_TEXT, ...(options.locale ?? {}) };
     const container =
       typeof options.container === "string" ? document.getElementById(options.container) : options.container;
     if (!container || !(container instanceof HTMLElement)) {
-      throw new MapletError("invalid-option", `Map container ${String(options.container)} was not found`);
+      throw new MapkernError("invalid-option", `Map container ${String(options.container)} was not found`);
     }
     this.container = container;
     const doc = container.ownerDocument;
@@ -480,19 +480,19 @@ export class MapletMap extends Emitter<MapEvents> {
     if (options.maxBounds !== undefined) this.transform.setMaxBounds(worldBounds(options.maxBounds));
     this.lastState = readState(this.transform);
 
-    container.classList.add("maplet-map");
+    container.classList.add("mapkern-map");
     this.canvasContainer = doc.createElement("div");
-    this.canvasContainer.className = "maplet-canvas-container";
+    this.canvasContainer.className = "mapkern-canvas-container";
     this.canvasContainer.tabIndex = options.interactive === false ? -1 : 0;
     this.canvasContainer.setAttribute("role", "region");
     this.canvasContainer.setAttribute("aria-label", this.strings.map);
     this.canvas = doc.createElement("canvas");
-    this.canvas.className = "maplet-canvas";
+    this.canvas.className = "mapkern-canvas";
     this.canvasContainer.appendChild(this.canvas);
     container.appendChild(this.canvasContainer);
     for (const pos of ["top-left", "top-right", "bottom-left", "bottom-right"] as const) {
       const corner = doc.createElement("div");
-      corner.className = `maplet-corner maplet-${pos}`;
+      corner.className = `mapkern-corner mapkern-${pos}`;
       container.appendChild(corner);
       this.controlCorners.set(pos, corner);
     }
@@ -914,21 +914,21 @@ export class MapletMap extends Emitter<MapEvents> {
 
   setTerrain(terrain: TerrainSpec | null): this {
     const style = this.style;
-    if (!style) throw new MapletError("invalid-option", "Set a style before turning on terrain");
+    if (!style) throw new MapkernError("invalid-option", "Set a style before turning on terrain");
     if (terrain === null) {
       delete style.meta.terrain;
     } else {
       const source = typeof terrain?.source === "string" ? style.sources.get(terrain.source) : undefined;
       if (source?.type !== "dem") {
-        throw new MapletError("invalid-option", "terrain.source must name a dem source", { terrain });
+        throw new MapkernError("invalid-option", "terrain.source must name a dem source", { terrain });
       }
       const exaggeration = terrain.exaggeration ?? 1;
       if (typeof exaggeration !== "number" || !Number.isFinite(exaggeration) || exaggeration < 0) {
-        throw new MapletError("invalid-option", "terrain.exaggeration must be a number of 0 or more", { terrain });
+        throw new MapkernError("invalid-option", "terrain.exaggeration must be a number of 0 or more", { terrain });
       }
       const relief = terrain.relief ?? 0;
       if (typeof relief !== "number" || !(relief >= 0 && relief <= 1)) {
-        throw new MapletError("invalid-option", "terrain.relief must be a number from 0 to 1", { terrain });
+        throw new MapkernError("invalid-option", "terrain.relief must be a number from 0 to 1", { terrain });
       }
       style.meta.terrain =
         relief > 0 ? { source: terrain.source, exaggeration, relief } : { source: terrain.source, exaggeration };
@@ -944,13 +944,13 @@ export class MapletMap extends Emitter<MapEvents> {
 
   setSky(sky: SkySpec | null): this {
     const style = this.style;
-    if (!style) throw new MapletError("invalid-option", "Set a style before changing the sky");
+    if (!style) throw new MapkernError("invalid-option", "Set a style before changing the sky");
     if (sky === null) {
       delete style.meta.sky;
     } else {
       const issues = validateSky(sky);
       if (issues.length > 0) {
-        throw new MapletError("invalid-option", `${issues[0]!.path} ${issues[0]!.message}`, { sky });
+        throw new MapkernError("invalid-option", `${issues[0]!.path} ${issues[0]!.message}`, { sky });
       }
       style.meta.sky = deepClone(sky);
     }
@@ -965,14 +965,14 @@ export class MapletMap extends Emitter<MapEvents> {
 
   setSun(sun: (Omit<SunSpec, "time"> & { time?: SunSpec["time"] | Date }) | null): this {
     const style = this.style;
-    if (!style) throw new MapletError("invalid-option", "Set a style before turning on day and night");
+    if (!style) throw new MapkernError("invalid-option", "Set a style before turning on day and night");
     if (sun === null) {
       delete style.meta.sun;
     } else {
       const spec: SunSpec = sun.time instanceof Date ? { ...sun, time: sun.time.getTime() } : (sun as SunSpec);
       const issues = validateSun(spec);
       if (issues.length > 0) {
-        throw new MapletError("invalid-option", `${issues[0]!.path} ${issues[0]!.message}`, { sun });
+        throw new MapkernError("invalid-option", `${issues[0]!.path} ${issues[0]!.message}`, { sun });
       }
       style.meta.sun = deepClone(spec);
     }
@@ -1359,21 +1359,21 @@ export class MapletMap extends Emitter<MapEvents> {
       fetchBytes(params, controller.signal, this.requestTimeout(), "style", this.diskCache)
         .then((result) => {
           if (controller.signal.aborted || this.removed) return;
-          if (result.kind === "empty") throw new MapletError("invalid-style", `Style not found at ${style}`);
+          if (result.kind === "empty") throw new MapkernError("invalid-style", `Style not found at ${style}`);
           let spec: unknown;
           try {
             spec = JSON.parse(new TextDecoder().decode(result.data));
           } catch (error) {
-            throw new MapletError("invalid-style", `Style at ${style} is not valid JSON`, {}, error);
+            throw new MapkernError("invalid-style", `Style at ${style} is not valid JSON`, {}, error);
           }
           this.applyStyle(spec as StyleSpec, diff, absoluteUrl(params.url));
         })
         .catch((error: unknown) => {
           if (controller.signal.aborted || this.removed) return;
           this.fail(
-            error instanceof MapletError
+            error instanceof MapkernError
               ? error
-              : new MapletError("invalid-style", `Could not load the style: ${errorMessage(error)}`, {}, error),
+              : new MapkernError("invalid-style", `Could not load the style: ${errorMessage(error)}`, {}, error),
           );
         });
     } else {
@@ -1388,9 +1388,13 @@ export class MapletMap extends Emitter<MapEvents> {
 
   addImage(id: string, image: ImageInput, options: ImageOptions = {}): this {
     if (this.painter.images.has(id)) {
-      throw new MapletError("invalid-option", `There is already an image named "${id}"; use updateImage to change it`, {
-        image: id,
-      });
+      throw new MapkernError(
+        "invalid-option",
+        `There is already an image named "${id}"; use updateImage to change it`,
+        {
+          image: id,
+        },
+      );
     }
     this.painter.images.add(styleImage(id, image, options, false));
     this.triggerRepaint();
@@ -1399,7 +1403,7 @@ export class MapletMap extends Emitter<MapEvents> {
 
   updateImage(id: string, image: ImageInput): this {
     const current = this.painter.images.image(id);
-    if (!current) throw new MapletError("invalid-option", `There is no image named "${id}"`, { image: id });
+    if (!current) throw new MapkernError("invalid-option", `There is no image named "${id}"`, { image: id });
     this.painter.images.add(
       styleImage(id, image, { pixelRatio: current.pixelRatio, sdf: current.sdf }, current.sprite),
     );
@@ -1431,11 +1435,11 @@ export class MapletMap extends Emitter<MapEvents> {
     ).catch((error: unknown) => {
       throw resourceError(error, `Could not load the image ${url}`);
     });
-    if (result.kind === "empty") throw new MapletError("http", `There is no image at ${url}`, { url });
+    if (result.kind === "empty") throw new MapkernError("http", `There is no image at ${url}`, { url });
     try {
       return await createImageBitmap(new Blob([result.data], { type: result.contentType || "image/png" }));
     } catch (error) {
-      throw new MapletError("decode", `The file at ${url} is not an image the browser can read`, { url }, error);
+      throw new MapkernError("decode", `The file at ${url} is not an image the browser can read`, { url }, error);
     }
   }
 
@@ -1460,10 +1464,10 @@ export class MapletMap extends Emitter<MapEvents> {
   setFeatureState(feature: FeatureTarget, state: Record<string, unknown>): this {
     const target = this.stateTarget(feature, "setFeatureState");
     if (target.key === undefined) {
-      throw new MapletError("invalid-option", "setFeatureState needs a feature id", { sourceId: target.source });
+      throw new MapkernError("invalid-option", "setFeatureState needs a feature id", { sourceId: target.source });
     }
     if (typeof state !== "object" || state === null || Array.isArray(state)) {
-      throw new MapletError("invalid-option", "setFeatureState needs a state object such as { hover: true }");
+      throw new MapkernError("invalid-option", "setFeatureState needs a state object such as { hover: true }");
     }
     this.featureStates.set(target.source, target.sourceLayer, target.key, state);
     this.triggerRepaint();
@@ -1473,7 +1477,7 @@ export class MapletMap extends Emitter<MapEvents> {
   getFeatureState(feature: FeatureTarget): Record<string, unknown> {
     const target = this.stateTarget(feature, "getFeatureState");
     if (target.key === undefined) {
-      throw new MapletError("invalid-option", "getFeatureState needs a feature id", { sourceId: target.source });
+      throw new MapkernError("invalid-option", "getFeatureState needs a feature id", { sourceId: target.source });
     }
     return this.featureStates.get(target.source, target.sourceLayer, target.key);
   }
@@ -1481,7 +1485,7 @@ export class MapletMap extends Emitter<MapEvents> {
   removeFeatureState(feature: FeatureTarget, key?: string): this {
     const target = this.stateTarget(feature, "removeFeatureState");
     if (key !== undefined && (typeof key !== "string" || target.key === undefined)) {
-      throw new MapletError(
+      throw new MapkernError(
         "invalid-option",
         "removeFeatureState can remove one state key only from a feature with an id",
         { sourceId: target.source },
@@ -1497,23 +1501,23 @@ export class MapletMap extends Emitter<MapEvents> {
     method: string,
   ): { source: string; sourceLayer: string | undefined; key: number | undefined } {
     if (typeof feature !== "object" || feature === null || typeof feature.source !== "string") {
-      throw new MapletError("invalid-option", `${method} needs { source, sourceLayer, id }`);
+      throw new MapkernError("invalid-option", `${method} needs { source, sourceLayer, id }`);
     }
     const source = this.requireStyle().sources.get(feature.source);
     if (!source) {
-      throw new MapletError("invalid-option", `There is no source with id "${feature.source}"`, {
+      throw new MapkernError("invalid-option", `There is no source with id "${feature.source}"`, {
         sourceId: feature.source,
       });
     }
     if (source.type !== "vector" && source.type !== "geojson") {
-      throw new MapletError("invalid-option", `Feature state needs a vector or geojson source, not ${source.type}`, {
+      throw new MapkernError("invalid-option", `Feature state needs a vector or geojson source, not ${source.type}`, {
         sourceId: feature.source,
       });
     }
     let sourceLayer: string | undefined;
     if (source.type === "vector") {
       if (typeof feature.sourceLayer !== "string" || feature.sourceLayer === "") {
-        throw new MapletError(
+        throw new MapkernError(
           "invalid-option",
           `${method} needs the sourceLayer of vector source "${feature.source}"`,
           {
@@ -1527,7 +1531,7 @@ export class MapletMap extends Emitter<MapEvents> {
     if (feature.id !== undefined) {
       key = featureKey(feature.id);
       if (key === undefined) {
-        throw new MapletError("invalid-option", "Feature ids are finite numbers or non-empty strings", {
+        throw new MapkernError("invalid-option", "Feature ids are finite numbers or non-empty strings", {
           sourceId: feature.source,
         });
       }
@@ -1553,10 +1557,11 @@ export class MapletMap extends Emitter<MapEvents> {
     const box = this.queryBox(geometry);
     let accept: (layer: StyleLayer) => boolean = () => true;
     if (options.layers !== undefined) {
-      if (!Array.isArray(options.layers)) throw new MapletError("invalid-option", "layers must be a list of layer ids");
+      if (!Array.isArray(options.layers))
+        throw new MapkernError("invalid-option", "layers must be a list of layer ids");
       for (const id of options.layers) {
         if (!style.getLayer(id))
-          throw new MapletError("invalid-option", `There is no layer with id "${id}"`, { layer: id });
+          throw new MapkernError("invalid-option", `There is no layer with id "${id}"`, { layer: id });
       }
       const wanted = new Set(options.layers);
       accept = (layer) => wanted.has(layer.id);
@@ -1592,10 +1597,10 @@ export class MapletMap extends Emitter<MapEvents> {
     if (!style || this.removed) return [];
     const source = style.sources.get(sourceId);
     if (!source) {
-      throw new MapletError("invalid-option", `There is no source with id "${sourceId}"`, { sourceId });
+      throw new MapkernError("invalid-option", `There is no source with id "${sourceId}"`, { sourceId });
     }
     if (source.type !== "vector" && source.type !== "geojson") {
-      throw new MapletError(
+      throw new MapkernError(
         "invalid-option",
         `querySourceFeatures needs a vector or geojson source, not ${source.type}`,
         {
@@ -1604,14 +1609,14 @@ export class MapletMap extends Emitter<MapEvents> {
       );
     }
     if (options.sourceLayer !== undefined && typeof options.sourceLayer !== "string") {
-      throw new MapletError("invalid-option", "sourceLayer must be the name of a layer in the tiles", { sourceId });
+      throw new MapkernError("invalid-option", "sourceLayer must be the name of a layer in the tiles", { sourceId });
     }
     let filter: Compiled<boolean> | null = null;
     if (options.filter !== undefined && options.filter !== null) {
       try {
         filter = compile<boolean>(options.filter, "boolean", false, "filter", { geometry: true });
       } catch (error) {
-        throw new MapletError("invalid-option", errorMessage(error), { sourceId }, error);
+        throw new MapkernError("invalid-option", errorMessage(error), { sourceId }, error);
       }
     }
     if (source.type === "vector") {
@@ -1711,7 +1716,7 @@ export class MapletMap extends Emitter<MapEvents> {
       const x = Array.isArray(p) ? p[0] : p?.x;
       const y = Array.isArray(p) ? p[1] : p?.y;
       if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) {
-        throw new MapletError("invalid-option", "query points must be [x, y] or { x, y } in pixels");
+        throw new MapkernError("invalid-option", "query points must be [x, y] or { x, y } in pixels");
       }
       return [x, y];
     };
@@ -1791,7 +1796,7 @@ export class MapletMap extends Emitter<MapEvents> {
 
   isSourceLoaded(id: string): boolean {
     const source = this.style?.sources.get(id);
-    if (!source) throw new MapletError("invalid-option", `There is no source with id "${id}"`);
+    if (!source) throw new MapkernError("invalid-option", `There is no source with id "${id}"`);
     return source.loaded && source.isIdle();
   }
 
@@ -1836,7 +1841,7 @@ export class MapletMap extends Emitter<MapEvents> {
   addControl(control: Control, position?: ControlPosition): this {
     const pos = position ?? control.defaultPosition ?? "top-right";
     const corner = this.controlCorners.get(pos);
-    if (!corner) throw new MapletError("invalid-option", `Unknown control position "${String(pos)}"`);
+    if (!corner) throw new MapkernError("invalid-option", `Unknown control position "${String(pos)}"`);
     const element = control.onAdd(this);
     if (pos.startsWith("bottom")) corner.insertBefore(element, corner.firstChild);
     else corner.appendChild(element);
@@ -1972,18 +1977,18 @@ export class MapletMap extends Emitter<MapEvents> {
   private teardownDom(): void {
     this.canvasContainer.remove();
     for (const corner of this.controlCorners.values()) corner.remove();
-    this.container.classList.remove("maplet-map");
+    this.container.classList.remove("mapkern-map");
   }
 
   private layer(id: string): StyleLayer {
     const layer = this.requireStyle().getLayer(id);
-    if (!layer) throw new MapletError("invalid-option", `There is no layer with id "${id}"`);
+    if (!layer) throw new MapkernError("invalid-option", `There is no layer with id "${id}"`);
     return layer;
   }
 
   private requireStyle(): Style {
     if (!this.style)
-      throw new MapletError("invalid-style", "The map has no style yet; call setStyle first or wait for styleload");
+      throw new MapkernError("invalid-style", "The map has no style yet; call setStyle first or wait for styleload");
     return this.style;
   }
 
@@ -1997,7 +2002,7 @@ export class MapletMap extends Emitter<MapEvents> {
         skipped = imported.skipped;
       } catch (error) {
         this.fail(
-          error instanceof MapletError ? error : new MapletError("invalid-style", errorMessage(error), {}, error),
+          error instanceof MapkernError ? error : new MapkernError("invalid-style", errorMessage(error), {}, error),
         );
         return;
       }
@@ -2008,7 +2013,7 @@ export class MapletMap extends Emitter<MapEvents> {
         assertValid(spec);
       } catch (error) {
         this.fail(
-          error instanceof MapletError ? error : new MapletError("invalid-style", errorMessage(error), {}, error),
+          error instanceof MapkernError ? error : new MapkernError("invalid-style", errorMessage(error), {}, error),
         );
         return;
       }
@@ -2047,7 +2052,7 @@ export class MapletMap extends Emitter<MapEvents> {
       });
     } catch (error) {
       this.fail(
-        error instanceof MapletError ? error : new MapletError("invalid-style", errorMessage(error), {}, error),
+        error instanceof MapkernError ? error : new MapkernError("invalid-style", errorMessage(error), {}, error),
       );
       return;
     }
@@ -2129,13 +2134,13 @@ export class MapletMap extends Emitter<MapEvents> {
       [index, sheet] = await Promise.all([get("", ".json"), get("", ".png")]);
     }
     if (index.kind === "empty" || sheet.kind === "empty") {
-      throw new MapletError("http", `The sprite ${url} is missing its .json or .png file`, { url });
+      throw new MapkernError("http", `The sprite ${url} is missing its .json or .png file`, { url });
     }
     let parsed: unknown;
     try {
       parsed = JSON.parse(new TextDecoder().decode(index.data));
     } catch (error) {
-      throw new MapletError(
+      throw new MapkernError(
         "decode",
         `The sprite index ${spriteUrl(url, suffix, ".json")} is not valid JSON`,
         {},
@@ -2194,7 +2199,7 @@ export class MapletMap extends Emitter<MapEvents> {
         return new ImageSource(id, spec, ctx);
       default: {
         const type = (spec as { type: unknown }).type;
-        throw new MapletError("invalid-style", `Source type "${String(type)}" is not supported`, { sourceId: id });
+        throw new MapkernError("invalid-style", `Source type "${String(type)}" is not supported`, { sourceId: id });
       }
     }
   }
@@ -2235,7 +2240,7 @@ export class MapletMap extends Emitter<MapEvents> {
     return checkNumber(this.options.requestTimeout, "requestTimeout", 30000);
   }
 
-  private fail(error: MapletError, sourceId?: string): void {
+  private fail(error: MapkernError, sourceId?: string): void {
     queueMicrotask(() => {
       if (this.removed) return;
       if (this.listens("error")) {
@@ -2636,7 +2641,7 @@ export class MapletMap extends Emitter<MapEvents> {
     const doc = this.container.ownerDocument;
     if (!this.noticeElement) {
       const el = doc.createElement("div");
-      el.className = "maplet-cooperative";
+      el.className = "mapkern-cooperative";
       el.setAttribute("aria-live", "polite");
       this.container.appendChild(el);
       this.noticeElement = el;
@@ -2647,11 +2652,11 @@ export class MapletMap extends Emitter<MapEvents> {
     el.textContent = this.text(
       kind === "touch" ? "touchPanBlocker" : mac ? "scrollZoomBlockerMac" : "scrollZoomBlocker",
     );
-    el.classList.add("maplet-visible");
+    el.classList.add("mapkern-visible");
     if (this.noticeTimer !== undefined) clearTimeout(this.noticeTimer);
     this.noticeTimer = setTimeout(() => {
       this.noticeTimer = undefined;
-      el.classList.remove("maplet-visible");
+      el.classList.remove("mapkern-visible");
     }, 1500);
   }
 
@@ -2723,19 +2728,19 @@ export class MapletMap extends Emitter<MapEvents> {
   };
 }
 
-function resourceError(error: unknown, message: string): MapletError {
-  if (error instanceof MapletError) return error;
+function resourceError(error: unknown, message: string): MapkernError {
+  if (error instanceof MapkernError) return error;
   const failure = (error as { failure?: { kind?: string; message?: string } })?.failure;
   if (failure) {
     const code = failure.kind === "auth" ? "auth" : failure.kind === "network" ? "network" : "http";
-    return new MapletError(code, `${message}: ${failure.message ?? "request failed"}`, { failure }, error);
+    return new MapkernError(code, `${message}: ${failure.message ?? "request failed"}`, { failure }, error);
   }
-  return new MapletError("network", `${message}: ${errorMessage(error)}`, {}, error);
+  return new MapkernError("network", `${message}: ${errorMessage(error)}`, {}, error);
 }
 
 function layerEventType(type: string): LayerEventType {
   if (!LAYER_EVENT_TYPES.has(type)) {
-    throw new MapletError("invalid-option", `"${type}" events can't be bound to layers`, { event: type });
+    throw new MapkernError("invalid-option", `"${type}" events can't be bound to layers`, { event: type });
   }
   return type as LayerEventType;
 }
@@ -2743,20 +2748,20 @@ function layerEventType(type: string): LayerEventType {
 function layerList(layers: unknown): string[] {
   const list = typeof layers === "string" ? [layers] : Array.isArray(layers) ? [...layers] : null;
   if (!list || list.length === 0 || list.some((id) => typeof id !== "string" || id === "")) {
-    throw new MapletError("invalid-option", "Layer events need a layer id or a list of layer ids");
+    throw new MapkernError("invalid-option", "Layer events need a layer id or a list of layer ids");
   }
   return list as string[];
 }
 
 function checkListener<E>(listener: unknown): Listener<E> {
-  if (typeof listener !== "function") throw new MapletError("invalid-option", "The listener must be a function");
+  if (typeof listener !== "function") throw new MapkernError("invalid-option", "The listener must be a function");
   return listener as Listener<E>;
 }
 
 function checkNumber(value: unknown, name: string, fallback: number): number {
   if (value === undefined) return fallback;
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new MapletError("invalid-option", `${name} must be a finite number`, { option: name });
+    throw new MapkernError("invalid-option", `${name} must be a finite number`, { option: name });
   }
   return value;
 }
@@ -2781,7 +2786,7 @@ function normalizePadding(padding: PaddingOptions | undefined): Padding {
   const side = (value: unknown, name: string): number => {
     if (value === undefined) return 0;
     if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-      throw new MapletError("invalid-option", `padding ${name} must be a number of pixels, 0 or more`);
+      throw new MapkernError("invalid-option", `padding ${name} must be a number of pixels, 0 or more`);
     }
     return value;
   };
@@ -2790,7 +2795,7 @@ function normalizePadding(padding: PaddingOptions | undefined): Padding {
     return { top: all, right: all, bottom: all, left: all };
   }
   if (typeof padding !== "object" || padding === null) {
-    throw new MapletError("invalid-option", "padding must be a number or { top, right, bottom, left }");
+    throw new MapkernError("invalid-option", "padding must be a number or { top, right, bottom, left }");
   }
   return {
     top: side(padding.top, "top"),
@@ -2802,14 +2807,14 @@ function normalizePadding(padding: PaddingOptions | undefined): Padding {
 
 function worldBounds(bounds: BoundsLike): WorldBounds {
   if (!Array.isArray(bounds) || (bounds.length !== 2 && bounds.length !== 4)) {
-    throw new MapletError(
+    throw new MapkernError(
       "invalid-option",
       "bounds must be [[west, south], [east, north]] or [west, south, east, north]",
     );
   }
   const [[w, s], [e, n]] = normalizeBounds(bounds);
   if (![w, s, e, n].every(Number.isFinite)) {
-    throw new MapletError(
+    throw new MapkernError(
       "invalid-option",
       "bounds must be [[west, south], [east, north]] or [west, south, east, north]",
     );
@@ -2824,17 +2829,17 @@ function screenPoint(p: PointLike): [number, number] {
   const x = Array.isArray(p) ? p[0] : p?.x;
   const y = Array.isArray(p) ? p[1] : p?.y;
   if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) {
-    throw new MapletError("invalid-option", "points must be [x, y] or { x, y } in pixels");
+    throw new MapkernError("invalid-option", "points must be [x, y] or { x, y } in pixels");
   }
   return [x, y];
 }
 
-declare const MAPLET_WORKER_SOURCE: string | undefined;
+declare const MAPKERN_WORKER_SOURCE: string | undefined;
 
 function workerFactory(url: string | undefined): WorkerFactory | null {
   if (typeof Worker === "undefined") return null;
   if (url) return () => new Worker(url);
-  const source = typeof MAPLET_WORKER_SOURCE === "string" ? MAPLET_WORKER_SOURCE : undefined;
+  const source = typeof MAPKERN_WORKER_SOURCE === "string" ? MAPKERN_WORKER_SOURCE : undefined;
   if (!source) return null;
   let blobUrl: string | null = null;
   return () => {
