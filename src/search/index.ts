@@ -135,7 +135,8 @@ export class SearchIndex implements Geocoder {
     const limit = Math.max(1, options.limit ?? 8);
     const prefixLast = (options.autocomplete ?? true) && !/\s$/.test(query);
     const matches = await Promise.all(tokens.map((t, i) => this.match(t, prefixLast && i === tokens.length - 1)));
-    const kinds = options.kinds ? new Set(options.kinds.map((k) => SEARCH_KINDS.indexOf(k))) : null;
+    const wanted = options.kinds ?? (prefixLast && tokens.length === 1 && tokens[0]!.length === 1 ? ["place"] : null);
+    const kinds = wanted ? new Set(wanted.map((k) => SEARCH_KINDS.indexOf(k))) : null;
     let candidates: Candidate[] = [];
     for (const allowMissing of tokens.length >= 3 ? [0, 1] : [0]) {
       candidates = this.combine(matches, allowMissing, options.near);
@@ -256,6 +257,10 @@ export class SearchIndex implements Geocoder {
       seen.add(info.term);
       out.push({ ids: await file.postings(info, POSTING_LIMIT), quality, direct });
     };
+    if (prefix && token.length === 1) {
+      await add(await file.term(PREFIX_TOP + token), 0.9, true);
+      return out;
+    }
     await add(await file.term(token), 1, true);
     if (prefix) {
       if (token.length <= 3) await add(await file.term(PREFIX_TOP + token), 0.9, true);
@@ -283,7 +288,8 @@ export class SearchIndex implements Geocoder {
     return out;
   }
 
-  private combine(matches: Match[][], allowMissing: number, near: [number, number] | undefined): Candidate[] {
+  private combine(all: Match[][], allowMissing: number, near: [number, number] | undefined): Candidate[] {
+    const matches = all.length === 1 ? all.map((list) => list.filter((m) => m.direct)) : all;
     const sizes = matches.map((list) => list.reduce((s, m) => s + m.ids.length, 0));
     const order = sizes
       .map((_, i) => i)
