@@ -234,34 +234,51 @@ export class SearchIndex implements Geocoder {
     const limit = options.limit ?? (single ? 5 : kinds.length);
     const [lon, lat] = position;
     const d = this.data;
-    const best = new Map<SearchKind, { entry: number; distance: number }[]>();
-    const maxRadius = Math.max(...kinds.map((k) => options.radius ?? REVERSE_RADIUS[k]));
-    const reach = Math.min(40, Math.ceil(maxRadius / 111000 / CELL / Math.max(0.2, Math.cos((lat * Math.PI) / 180))));
-    const cx = Math.floor(lon / CELL);
-    const cy = Math.floor(lat / CELL);
-    const checked = new Set<number>();
-    for (let y = cy - reach; y <= cy + reach; y++) {
-      for (let x = cx - reach; x <= cx + reach; x++) {
-        const list = grid.get(cellKey(x, y));
-        if (!list) continue;
-        for (const e of list) {
-          if (checked.has(e)) continue;
-          checked.add(e);
-          const kind = SEARCH_KINDS[d.kind[e]!]!;
-          if (!kinds.includes(kind)) continue;
-          const distance = this.distanceTo(e, lon, lat);
-          if (distance > (options.radius ?? REVERSE_RADIUS[kind])) continue;
-          const found = best.get(kind);
-          if (found) found.push({ entry: e, distance });
-          else best.set(kind, [{ entry: e, distance }]);
+    const best = new Map<SearchKind, { entry: number; distance: number; order: number }[]>();
+    const keep = (kind: SearchKind, entry: number, distance: number, order: number) => {
+      const found = best.get(kind);
+      if (found) found.push({ entry, distance, order });
+      else best.set(kind, [{ entry, distance, order }]);
+    };
+    const local = kinds.filter((k) => k !== "place");
+    if (local.length) {
+      const maxRadius = Math.max(...local.map((k) => options.radius ?? REVERSE_RADIUS[k]));
+      const across = Math.max(0.2, Math.cos((lat * Math.PI) / 180));
+      const reachX = Math.min(40, Math.ceil(maxRadius / 111195 / across / CELL));
+      const reachY = Math.min(40, Math.ceil(maxRadius / 111195 / CELL));
+      const cx = Math.floor(lon / CELL);
+      const cy = Math.floor(lat / CELL);
+      const checked = new Set<number>();
+      for (let y = cy - reachY; y <= cy + reachY; y++) {
+        for (let x = cx - reachX; x <= cx + reachX; x++) {
+          const list = grid.get(cellKey(x, y));
+          if (!list) continue;
+          for (const e of list) {
+            if (checked.has(e)) continue;
+            checked.add(e);
+            const kind = SEARCH_KINDS[d.kind[e]!]!;
+            if (!local.includes(kind)) continue;
+            const distance = this.distanceTo(e, lon, lat);
+            if (distance <= (options.radius ?? REVERSE_RADIUS[kind])) keep(kind, e, distance, distance);
+          }
         }
+      }
+    }
+    if (kinds.includes("place")) {
+      const radius = options.radius ?? REVERSE_RADIUS.place;
+      for (const e of this.places) {
+        const distance = metres(lon, lat, d.lon[e]! / 1e7, d.lat[e]! / 1e7);
+        if (distance > radius) continue;
+        const raw = d.category[e]! < d.categories.length ? d.categories[d.category[e]!]! : "";
+        const reach = PLACE_REACH[raw.slice(raw.indexOf("=") + 1)];
+        if (reach !== undefined) keep("place", e, distance, distance / reach);
       }
     }
     const out: SearchResult[] = [];
     for (const kind of REVERSE_ORDER) {
       const list = best.get(kind);
       if (!list) continue;
-      list.sort((a, b) => a.distance - b.distance || d.rank[b.entry]! - d.rank[a.entry]!);
+      list.sort((a, b) => a.order - b.order || d.rank[b.entry]! - d.rank[a.entry]!);
       for (const { entry, distance } of list.slice(0, single ? limit : 1)) out.push(this.result(entry, 1, distance));
     }
     return out.slice(0, limit);
