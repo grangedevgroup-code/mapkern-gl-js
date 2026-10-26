@@ -334,7 +334,7 @@ map.addControl(terrain);
 terrain.on("viewchange", ({ view }) => console.log(view));
 ```
 
-`source` is an elevation source to add, or the id of one already in the style. `exaggeration`, `relief` (0.5 unless you say otherwise) and `pitch` (60) tune the 3D views. `setView("flat" | "terrain" | "tilted")` switches from code and `view` reads it back, also after someone tilts the map by hand. Terrain stays on when the style changes, for example from a `BasemapControl`. `setSource(source)` swaps in other elevation data, such as a file opened with `openTileFile`, and keeps the current view.
+`source` is an elevation source to add, or the id of one already in the style. `exaggeration`, `relief` (0.5 unless you say otherwise) and `pitch` (60) tune the 3D views. `setView("flat" | "terrain" | "tilted")` switches from code and `view` reads it back, also after someone tilts the map by hand. Terrain stays on when the style changes, for example from a `BasemapControl`. `setSource(source)` swaps in other elevation data, such as a file opened with `openTileFile` or `openElevationFile`, and keeps the current view.
 
 `FullscreenControl` fills the screen with the map, or with the element you pass as `container`. Browsers without the Fullscreen API, such as Safari on iPhone, get the same effect by stretching the map over the page. It fires `fullscreenstart` and `fullscreenend`, and `isFullscreen()` tells you which state it's in.
 
@@ -425,6 +425,16 @@ map.addSource("mine", { type: "vector", url });
 ```
 
 Once a tile source has loaded, its `bounds` tell you the area the file covers, as `[west, south, east, north]`, so `map.fitBounds(map.getSource("mine").bounds)` takes you there. It's `null` for files that cover the whole world or don't say.
+
+Elevation that isn't in tiles yet opens with `mapkern.openElevationFile(files)`. It takes one file or several: DTED cells (`.dt0` to `.dt3`), SRTM `.hgt` tiles named after their corner, like `N47W123.hgt`, GeoTIFF elevation in longitude and latitude, or a ZIP of any of them. The URL it gives back works as an elevation source, and the heights are cut into tiles in the browser as the map needs them:
+
+```js
+const url = await mapkern.openElevationFile(input.files);
+map.addSource("ground", { type: "dem", url });
+map.setTerrain({ source: "ground" });
+```
+
+The files are read into memory, so a few dozen DTED level 1 or SRTM cells are fine; for a whole country, build an elevation `.pmtiles` with `mapkern-tiles dem` instead.
 
 ## Your own tile protocol
 
