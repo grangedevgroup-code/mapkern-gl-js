@@ -65,7 +65,8 @@ interface Pointer {
 
 type Mode =
   | { kind: "idle" }
-  | { kind: "press"; pointer: number; rotate: boolean; hold: Hold }
+  | { kind: "press"; pointer: number; rotate: boolean; hold: Hold; quick: boolean }
+  | { kind: "quick"; pointer: number; startY: number; zoom0: number; anchor: Point3 | null; x: number; y: number }
   | { kind: "box"; pointer: number; startX: number; startY: number; box: HTMLElement | null; hold: Hold }
   | { kind: "pan"; pointer: number; anchor: Point3 }
   | { kind: "rotate"; pointer: number; lastX: number; lastY: number; moved: boolean }
@@ -78,7 +79,8 @@ type Mode =
       pitch0: number;
       anchor: Point3 | null;
       sub: "undecided" | "pinch" | "pitch";
-      rotating: boolean;
+      turnStart: number | null;
+      started: number;
     };
 
 interface TwoFinger {
@@ -108,6 +110,10 @@ interface WheelZoom {
 const MAX_INERTIA_SPEED = 1.4;
 const INERTIA_DECELERATION = 0.0025;
 const DOUBLE_TAP_MS = 300;
+const ROTATE_START = (20 * Math.PI) / 180;
+const ROTATE_START_ZOOMING = (40 * Math.PI) / 180;
+const ROTATE_ARC = 30;
+const QUICK_ZOOM_PIXELS = 120;
 
 export class InputHandlers {
   options: InputOptions;
@@ -267,7 +273,7 @@ export class InputHandlers {
     if (e.pointerType !== "mouse") e.preventDefault();
     const touches = [...this.pointers.values()].filter((p) => p.type !== "mouse");
     if (touches.length === 2 && this.options.touchZoomRotate) {
-      this.beginTwoFinger(touches[0]!, touches[1]!);
+      this.beginTwoFinger(touches[0]!, touches[1]!, e.timeStamp);
       return;
     }
     if (this.pointers.size > 1) return;
@@ -275,8 +281,15 @@ export class InputHandlers {
       this.mode = { kind: "box", pointer: e.pointerId, startX: x, startY: y, box: null, hold };
       return;
     }
-    const rotate = e.pointerType === "mouse" && (e.button === 2 || e.ctrlKey);
-    this.mode = { kind: "press", pointer: e.pointerId, rotate, hold };
+    const rotate = (e.pointerType === "mouse" || e.pointerType === "pen") && (e.button === 2 || e.ctrlKey);
+    const last = this.lastTap;
+    const quick =
+      e.pointerType !== "mouse" &&
+      this.options.touchZoomRotate &&
+      last !== null &&
+      e.timeStamp - last.t < DOUBLE_TAP_MS &&
+      Math.hypot(x - last.x, y - last.y) < 30;
+    this.mode = { kind: "press", pointer: e.pointerId, rotate, hold, quick };
     this.samples = [{ t: e.timeStamp, x, y }];
   }
 
@@ -284,7 +297,7 @@ export class InputHandlers {
     const [x, y] = this.point(e);
     const pointer = this.pointers.get(e.pointerId);
     if (!pointer) {
-      if (e.pointerType === "mouse") this.host.pointerEvent("mousemove", e, [x, y]);
+      if (e.pointerType === "mouse" || e.pointerType === "pen") this.host.pointerEvent("mousemove", e, [x, y]);
       return;
     }
     pointer.x = x;
@@ -295,7 +308,23 @@ export class InputHandlers {
       if (Math.hypot(x - pointer.startX, y - pointer.startY) < this.options.clickTolerance) return;
       mode.hold.moved = true;
       if (mode.hold.waiting || mode.hold.prevented) return;
-      if (mode.rotate) {
+      if (mode.quick) {
+        if (!this.capture(e.pointerId)) {
+          this.cancel();
+          return;
+        }
+        this.lastTap = null;
+        this.mode = {
+          kind: "quick",
+          pointer: e.pointerId,
+          startY: pointer.startY,
+          zoom0: transform.zoom,
+          anchor: this.host.anchor(pointer.startX, pointer.startY),
+          x: pointer.startX,
+          y: pointer.startY,
+        };
+        this.host.gesture(true);
+      } else if (mode.rotate) {
         if (!this.options.dragRotate) return;
         if (!this.capture(e.pointerId)) {
           this.cancel();
@@ -331,6 +360,12 @@ export class InputHandlers {
       return;
     }
     const current = this.mode;
+    if (current.kind === "quick" && current.pointer === e.pointerId) {
+      transform.setZoom(current.zoom0 + (y - current.startY) / QUICK_ZOOM_PIXELS);
+      if (current.anchor) transform.setLocationAtPoint(current.anchor, current.x, current.y, current.anchor[2]);
+      this.host.changed();
+      return;
+    }
     if (current.kind === "pan" && current.pointer === e.pointerId) {
       transform.setLocationAtPoint(current.anchor, x, y, current.anchor[2]);
       this.samples.push({ t: e.timeStamp, x, y });
@@ -397,8 +432,24 @@ export class InputHandlers {
       if (mode.moved) this.host.rotateEnded();
       return;
     }
+    if (mode.kind === "quick" && mode.pointer === e.pointerId) {
+      this.mode = { kind: "idle" };
+      this.host.gesture(false);
+      return;
+    }
     if (mode.kind === "touch2" && mode.ids.includes(e.pointerId)) {
       this.host.gesture(false);
+      if (
+        !cancelled &&
+        mode.sub === "undecided" &&
+        e.timeStamp - mode.started < DOUBLE_TAP_MS &&
+        this.options.doubleClickZoom
+      ) {
+        this.mode = { kind: "idle" };
+        this.lastTap = null;
+        this.zoomBy(-1, [mode.start.midX, mode.start.midY]);
+        return;
+      }
       const rest = [...this.pointers.values()].find((p) => p.type !== "mouse");
       if (rest && this.options.dragPan && !this.options.cooperative) {
         const anchor = this.host.anchor(rest.x, rest.y);
@@ -462,7 +513,7 @@ export class InputHandlers {
     }
   }
 
-  private beginTwoFinger(a: Pointer, b: Pointer): void {
+  private beginTwoFinger(a: Pointer, b: Pointer, time: number): void {
     this.capture(a.id);
     this.capture(b.id);
     const prior = this.mode;
@@ -478,7 +529,8 @@ export class InputHandlers {
       pitch0: transform.pitch,
       anchor: this.host.anchor(start.midX, start.midY),
       sub: "undecided",
-      rotating: false,
+      turnStart: null,
+      started: time,
     };
     this.host.gesture(true);
   }
@@ -519,10 +571,14 @@ export class InputHandlers {
       this.host.changed();
       return;
     }
-    transform.setZoom(mode.zoom0 + Math.log2(now.dist / s.dist));
+    const scale = Math.log2(now.dist / s.dist);
+    transform.setZoom(mode.zoom0 + scale);
     const turn = angleDelta(now.angle, s.angle);
-    if (!mode.rotating && this.options.touchRotate && Math.abs(turn) > (12 * Math.PI) / 180) mode.rotating = true;
-    if (mode.rotating) transform.setBearing(mode.bearing0 - (turn * 180) / Math.PI);
+    if (mode.turnStart === null && this.options.touchRotate) {
+      const needed = Math.abs(scale) > 0.2 ? ROTATE_START_ZOOMING : ROTATE_START;
+      if (Math.abs(turn) > needed && (Math.abs(turn) * now.dist) / 2 > ROTATE_ARC) mode.turnStart = turn;
+    }
+    if (mode.turnStart !== null) transform.setBearing(mode.bearing0 - ((turn - mode.turnStart) * 180) / Math.PI);
     if (mode.anchor) transform.setLocationAtPoint(mode.anchor, now.midX, now.midY, mode.anchor[2]);
     this.host.changed();
   }
