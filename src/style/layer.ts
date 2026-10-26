@@ -1,3 +1,4 @@
+import { deepClone } from "../core/clone.ts";
 import type { LayerUpdate } from "./diff.ts";
 import type { Compiled, EvalContext, OutputKind } from "./expression.ts";
 import { compile, isOperator } from "./expression.ts";
@@ -275,7 +276,7 @@ export class StyleLayer {
   constructor(spec: LayerSpec) {
     this.id = spec.id;
     this.type = spec.type;
-    this.spec = structuredClone(spec);
+    this.spec = deepClone(spec);
     this.source = "source" in spec ? spec.source : undefined;
     this.sourceLayer = "sourceLayer" in spec ? spec.sourceLayer : undefined;
     this.minZoom = spec.minZoom ?? 0;
@@ -337,7 +338,7 @@ export class StyleLayer {
       if (problem) throw new Error(`${name} ${problem}`);
       holder.paint ??= {};
       if (value === undefined) delete holder.paint[name];
-      else holder.paint[name] = structuredClone(value);
+      else holder.paint[name] = deepClone(value);
       return;
     }
     const def = PAINT[this.type][name];
@@ -347,7 +348,7 @@ export class StyleLayer {
     holder.paint ??= {};
     const paint = holder.paint;
     if (value === undefined) delete paint[name];
-    else paint[name] = structuredClone(value);
+    else paint[name] = deepClone(value);
     this.startTransition(name, def, before, fallback);
     this.revision++;
   }
@@ -398,7 +399,7 @@ export class StyleLayer {
     holder.layout ??= {};
     const layout = holder.layout;
     if (value === undefined) delete layout[name];
-    else layout[name] = structuredClone(value);
+    else layout[name] = deepClone(value);
     this.revision++;
   }
 
@@ -409,7 +410,7 @@ export class StyleLayer {
         : compile<boolean>(filter, "boolean", false, `${this.id}.filter`, { geometry: true });
     const spec = this.spec as { filter?: unknown };
     if (filter === undefined || filter === null) delete spec.filter;
-    else spec.filter = structuredClone(filter);
+    else spec.filter = deepClone(filter);
     this.revision++;
   }
 
@@ -421,7 +422,7 @@ export class StyleLayer {
     if (update.filter) this.setFilter((spec as { filter?: unknown }).filter);
     if (update.zoom) this.setZoomRange(spec.minZoom ?? 0, spec.maxZoom ?? 24);
     if (update.visible) this.setVisible(spec.visible !== false);
-    this.spec = structuredClone(spec);
+    this.spec = deepClone(spec);
   }
 
   setZoomRange(minZoom: number, maxZoom: number): void {
@@ -437,7 +438,7 @@ export class StyleLayer {
   }
 
   serialize(): LayerSpec {
-    return structuredClone(this.spec);
+    return deepClone(this.spec);
   }
 
   private setProperty(
@@ -453,7 +454,7 @@ export class StyleLayer {
         const problem = def.check(value);
         if (problem) throw new Error(`${this.id}.${group}.${name} ${problem}`);
       }
-      this.fixedValues.set(name, structuredClone(v));
+      this.fixedValues.set(name, deepClone(v));
       return;
     }
     if (value !== undefined && def.check && isPlainValue(value, def)) {
