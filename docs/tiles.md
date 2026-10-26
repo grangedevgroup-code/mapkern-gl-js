@@ -86,7 +86,15 @@ npx mapkern-tiles search --input washington-latest.osm.pbf --bbox=-123.05,46.95,
 
 It keeps towns and neighborhoods, every address with a house number and street, named streets and paths (the pieces of one street become a single result), and named businesses, parks, schools, rivers and other places, each with its category. Every entry knows its town, state and country from the boundaries in the data, so results read like "Olympia, Washington 98501, United States". The boundaries of the states and countries around your box are read in full, even where they lie outside it.
 
-The Olympia box above holds about 94,000 entries and comes out at 3 MB. Most of the time goes into reading the PBF: the whole North America file takes about twelve minutes, so a state extract is much quicker. Serve the file like any other, or let the person open it from their device, and load it with `SearchIndex.load`.
+The Olympia box above holds about 94,000 entries. Most of the time goes into reading the PBF: the whole North America file takes about twelve minutes, so a state extract is much quicker. Serve the file like any other, or let the person open it from their device, and load it with `SearchIndex.load`.
+
+For the whole world, `--world` keeps only towns, villages, neighborhoods, islands, states and countries, airports (also found by their IATA and ICAO codes) and other places notable enough to have a Wikidata link, with every name the data has in other languages. Pass each continent file with its own `--input`; places that appear in two files are kept once:
+
+```sh
+npx mapkern-tiles search --world --input africa-latest.osm.pbf --input asia-latest.osm.pbf ... --output world.search
+```
+
+Where a file cuts through a country's border, the pieces are joined up so places near the edge still get their state and country.
 
 ## Credit
 
