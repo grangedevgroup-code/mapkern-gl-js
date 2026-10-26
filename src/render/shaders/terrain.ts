@@ -47,7 +47,9 @@ uniform sampler2D u_drape;
 uniform vec4 u_drape_rect;
 uniform vec3 u_sun_light;
 uniform float u_sun_gain;
-uniform float u_dem_meters;
+uniform sampler2D u_gradient;
+uniform vec2 u_gradient_texel;
+uniform float u_gradient_scale;
 ${demChunk}
 in vec2 v_uv;
 out vec4 fragColor;
@@ -56,12 +58,10 @@ void main() {
   vec4 color = texture(u_drape, vec2(uv.x, 1.0 - uv.y));
   if (u_sun_gain > 0.0 && u_has_dem > 0.5) {
     vec2 dem = u_dem_rect.xy + v_uv * u_dem_rect.zw;
-    float step = 1.0 / u_dem_size;
-    float hx = demElevation(dem + vec2(step, 0.0)) - demElevation(dem - vec2(step, 0.0));
-    float hy = demElevation(dem + vec2(0.0, step)) - demElevation(dem - vec2(0.0, step));
+    vec2 g = texture(u_gradient, dem * u_gradient_texel.x + u_gradient_texel.y).rg;
     float y = mix(u_rows.x, u_rows.y, v_uv.y);
-    float meters = 2.0 * u_dem_meters / cosh(3.14159265 * (1.0 - 2.0 * y));
-    vec3 n = normalize(vec3(-hx * u_exaggeration, -hy * u_exaggeration, meters));
+    float k = cosh(3.14159265 * (1.0 - 2.0 * y));
+    vec3 n = normalize(vec3(-g * (u_gradient_scale * k * u_exaggeration), 1.0));
     float d = dot(n, u_sun_light) - u_sun_light.z;
     color.rgb *= clamp(1.0 + d * u_sun_gain, 0.45, 1.3);
   }
