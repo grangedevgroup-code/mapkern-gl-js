@@ -21,7 +21,9 @@ function same(actual: unknown, wanted: unknown, eps: number, where: string): voi
   }
   assert.ok(Array.isArray(actual) && Array.isArray(wanted), where);
   assert.equal((actual as unknown[]).length, (wanted as unknown[]).length, `${where} length`);
-  (wanted as unknown[]).forEach((w, i) => same((actual as unknown[])[i], w, eps, `${where}[${i}]`));
+  (wanted as unknown[]).forEach((w, i) => {
+    same((actual as unknown[])[i], w, eps, `${where}[${i}]`);
+  });
 }
 
 test("a GeoPackage written by GDAL reads back layer by layer in longitude and latitude", async () => {
