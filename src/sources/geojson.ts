@@ -301,7 +301,7 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
     const params = resolveRequest(url, "source", this.ctx.transformRequest);
     for (let attempt = 1; ; attempt++) {
       try {
-        const result = await fetchBytes(params, signal, this.ctx.requestTimeoutMs, "source");
+        const result = await fetchBytes(params, signal, this.ctx.requestTimeoutMs, "source", this.ctx.diskCache);
         if (result.kind === "empty") {
           throw new MapletError("source-error", `GeoJSON source "${this.id}" found no data at ${url}`, {
             sourceId: this.id,
