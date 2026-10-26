@@ -1,9 +1,9 @@
 # API
 
-Everything is exported from the package root. The examples here import it all as `maplet`:
+Everything is exported from the package root. The examples here import it all as `mapkern`:
 
 ```js
-import * as maplet from "maplet-gl";
+import * as mapkern from "mapkern-gl";
 ```
 
 Positions are always `[longitude, latitude]`. Anywhere a position goes in, `{ lng, lat }` works too.
@@ -11,15 +11,15 @@ Positions are always `[longitude, latitude]`. Anywhere a position goes in, `{ ln
 ## Creating a map
 
 ```js
-const map = new maplet.Map({
+const map = new mapkern.Map({
   container: "map",
-  style: maplet.lightStyle({ url: "seattle.pmtiles" }),
+  style: mapkern.lightStyle({ url: "seattle.pmtiles" }),
   center: [-122.335, 47.608],
   zoom: 12,
 });
 ```
 
-`container` is an element or its id, and it needs a size. `style` is a [style](style.md) object or the URL of one, and styles written for MapLibre or Mapbox work too, see [Styles from MapLibre and Mapbox](style.md#styles-from-maplibre-and-mapbox). Leave it out and you get the whole world with OpenFreeMap's Liberty style (`maplet.DEFAULT_STYLE`), or pass `null` for an empty map. Everything else is optional:
+`container` is an element or its id, and it needs a size. `style` is a [style](style.md) object or the URL of one, and styles written for MapLibre or Mapbox work too, see [Styles from MapLibre and Mapbox](style.md#styles-from-maplibre-and-mapbox). Leave it out and you get the whole world with OpenFreeMap's Liberty style (`mapkern.DEFAULT_STYLE`), or pass `null` for an empty map. Everything else is optional:
 
 | Option | Default | |
 | --- | --- | --- |
@@ -48,9 +48,9 @@ const map = new maplet.Map({
 | `prefetch` | `true` | Load tiles ahead of camera animations and a ring just outside the view, so a pan shows them at once. They load after everything on screen and never cause a redraw of their own |
 | `transformRequest` | | `(url, kind) => ({ url, headers, credentials })`, for adding API keys or headers |
 | `attributionControl` | `true` | `false` hides it; `{ custom: "..." }` adds your own credit |
-| `logoControl` | `true` | The faint Maplet logo in the bottom-left corner. `false` leaves it out, and `.maplet-logo` styles it |
+| `logoControl` | `true` | The faint Mapkern logo in the bottom-left corner. `false` leaves it out, and `.mapkern-logo` styles it |
 | `workerCount` | cores minus one, up to 4 | |
-| `workerUrl` | | URL of `dist/maplet-worker.js`, for sites whose Content Security Policy blocks `blob:` workers |
+| `workerUrl` | | URL of `dist/mapkern-worker.js`, for sites whose Content Security Policy blocks `blob:` workers |
 | `reducedMotion` | the system setting | `true` turns camera animations into jumps |
 | `locale` | | Your own labels for controls, hints and screen readers: `{ zoomIn, zoomOut, resetNorth, map, marker, popup, closePopup, fullscreen, exitFullscreen, geolocate, locationUnavailable, yourLocation, scrollZoomBlocker, scrollZoomBlockerMac, touchPanBlocker, basemaps, flatView, terrainView, tiltedView }` |
 
@@ -119,7 +119,7 @@ To read a layer back, use `getFilter(id)`, `getPaintProperty(id, name)` and `get
 
 If the style has a [`transition`](style.md#transitions), `setPaintProperty` and `setStyle` fade from the old colors and sizes to the new ones instead of jumping. `setPaintProperty("roads", "colorTransition", { duration: 500 })` sets the timing for one property.
 
-When an edit changes which features a layer draws, Maplet rebuilds the tiles in the background and keeps the old ones on screen until the new ones are ready.
+When an edit changes which features a layer draws, Mapkern rebuilds the tiles in the background and keeps the old ones on screen until the new ones are ready.
 
 ## GeoJSON
 
@@ -132,7 +132,7 @@ vehicles.setData(latestPositions);
 
 In TypeScript, check `vehicles?.type === "geojson"` first so the compiler knows which kind of source it is.
 
-The current data stays on screen until the new tiles are ready, and if you call `setData` faster than Maplet can keep up, it skips straight to the newest data. You can pass a URL instead of an object, which is the better choice for big files because the parsing then happens in a worker.
+The current data stays on screen until the new tiles are ready, and if you call `setData` faster than Mapkern can keep up, it skips straight to the newest data. You can pass a URL instead of an object, which is the better choice for big files because the parsing then happens in a worker.
 
 `setData` also takes a `File` or `Blob`, so people can open their own files. Any of the formats listed in the [style guide](style.md#geojson) work:
 
@@ -185,7 +185,7 @@ await map.once("idle");
 
 `once` returns a promise, so you can await it. `off(type, listener)` removes a listener.
 
-- `styleload`: a style has been applied. `event.skipped` lists anything in a MapLibre or Mapbox style that Maplet left out because it can't draw it yet. `load`: the first frame with it has been drawn.
+- `styleload`: a style has been applied. `event.skipped` lists anything in a MapLibre or Mapbox style that Mapkern left out because it can't draw it yet. `load`: the first frame with it has been drawn.
 - `idle`: everything on screen has loaded and nothing is moving.
 - `render` after every frame, `resize` when the map changes size, `remove` when it's removed.
 - `movestart`, `move` and `moveend` whenever the camera changes. There are also `zoom`, `rotate` and `pitch` versions of all three. `originalEvent` is the mouse, touch, wheel or keyboard event when a person caused the move, and `undefined` when your code did.
@@ -195,8 +195,8 @@ await map.once("idle");
 - `click`, `dblclick`, `contextmenu`, `mousemove`, `mousedown`, `mouseup` and `mouseout` (the pointer left the map) carry `point` (`{ x, y }`) and `lngLat`. Call `event.preventDefault()` in `dblclick` to stop the zoom, or in `mousedown` to keep that press from moving the map.
 - `sourcedata` when a source loads (`kind: "metadata"`), gets new data (`"content"`) or fails (`"error"`).
 - `styleimagemissing` when a layer needs an [image](#images) that hasn't been added.
-- `error` with a `MapletError` in `event.error`.
-- `contextlost` and `contextrestored` if the browser drops the GPU context. Maplet reloads what it needs on its own.
+- `error` with a `MapkernError` in `event.error`.
+- `contextlost` and `contextrestored` if the browser drops the GPU context. Mapkern reloads what it needs on its own.
 
 A listener can also watch one layer, or a list of them. It only fires when the pointer is over a feature in those layers, and `event.features` lists what's there, top layer first:
 
@@ -276,7 +276,7 @@ map.setSky({ color: "#88c6fc", horizonColor: "#ffffff" });
 map.setSky(null);
 ```
 
-`setSky` sets the colors of the sky and the haze you see over the distant ground on a tilted map, and `null` goes back to the sky Maplet picks to suit the style. `getSky()` returns what the style set. [The style guide](style.md#sky) lists the settings.
+`setSky` sets the colors of the sky and the haze you see over the distant ground on a tilted map, and `null` goes back to the sky Mapkern picks to suit the style. `getSky()` returns what the style set. [The style guide](style.md#sky) lists the settings.
 
 ## Day and night
 
@@ -299,20 +299,20 @@ Errors come with a `code`, a readable `message` and a `detail` object. If you do
 ## Controls
 
 ```js
-map.addControl(new maplet.NavigationControl());
-map.addControl(new maplet.ScaleControl({ unit: "imperial" }), "bottom-left");
+map.addControl(new mapkern.NavigationControl());
+map.addControl(new mapkern.ScaleControl({ unit: "imperial" }), "bottom-left");
 ```
 
 `NavigationControl` has zoom buttons and a compass that turns the map back north and flat. Pass `showZoom: false` or `showCompass: false` to leave one out. `ScaleControl` draws one scale line labelled in both units, such as "200 km · 124 mi"; `unit: "metric"` or `unit: "imperial"` keeps one, and `maxWidth` sets the longest it gets, in pixels.
 
 Each corner fills from its edge inward: the first control added to a corner sits closest to the edge and later ones line up next to it. The attribution control and the logo are added for you, so they stay at the very bottom of their corners with other controls above them.
 
-Controls sit 10 pixels in from the edges of the map. On touch screens the buttons grow to 44 pixels so they're easy to hit, and the margin to 16. Set `--maplet-control-margin` in your CSS to choose your own, for example `.maplet-map { --maplet-control-margin: max(20px, env(safe-area-inset-bottom)); }` for a full-screen map on a phone with rounded corners.
+Controls sit 10 pixels in from the edges of the map. On touch screens the buttons grow to 44 pixels so they're easy to hit, and the margin to 16. Set `--mapkern-control-margin` in your CSS to choose your own, for example `.mapkern-map { --mapkern-control-margin: max(20px, env(safe-area-inset-bottom)); }` for a full-screen map on a phone with rounded corners.
 
 `BasemapControl` is a button that opens a menu of basemaps and swaps the style when one is picked, keeping the camera where it is:
 
 ```js
-const basemaps = new maplet.BasemapControl({
+const basemaps = new mapkern.BasemapControl({
   basemaps: [
     { name: "Map", style: "https://tiles.openfreemap.org/styles/liberty" },
     { name: "Satellite", style: mySatelliteStyle },
@@ -327,7 +327,7 @@ basemaps.on("change", ({ index, basemap }) => console.log(index, basemap.name));
 `TerrainControl` is a single button that steps through a flat map ("2D"), 3D terrain seen from straight above ("3D") and tilted 3D terrain (a tilted "3D"):
 
 ```js
-const terrain = new maplet.TerrainControl({
+const terrain = new mapkern.TerrainControl({
   source: { type: "dem", url: "https://example.com/elevation.json", encoding: "terrarium" },
 });
 map.addControl(terrain);
@@ -341,7 +341,7 @@ terrain.on("viewchange", ({ view }) => console.log(view));
 `GeolocateControl` asks the browser where the person is, flies there and marks the spot with a dot and a circle for how accurate the reading is:
 
 ```js
-const locate = new maplet.GeolocateControl({ trackUserLocation: true });
+const locate = new mapkern.GeolocateControl({ trackUserLocation: true });
 map.addControl(locate);
 locate.on("geolocate", ({ position }) => console.log(position.coords.latitude, position.coords.longitude));
 ```
@@ -356,7 +356,7 @@ Your own control is any object with `onAdd(map)`, which returns an element, and 
 class HomeButton {
   onAdd(map) {
     const button = document.createElement("button");
-    button.className = "maplet-control";
+    button.className = "mapkern-control";
     button.textContent = "Home";
     button.onclick = () => map.flyTo({ center: [-122.335, 47.608], zoom: 12 });
     return button;
@@ -370,8 +370,8 @@ map.addControl(new HomeButton(), "top-left");
 ## Markers and popups
 
 ```js
-const popup = new maplet.Popup().setText("Pike Place Market");
-new maplet.Marker().setLngLat([-122.342, 47.609]).setPopup(popup).addTo(map);
+const popup = new mapkern.Popup().setText("Pike Place Market");
+new mapkern.Marker().setLngLat([-122.342, 47.609]).setPopup(popup).addTo(map);
 ```
 
 A marker keeps a pin, or an element of your own, on a place while the map moves. Clicking it opens its popup, and so does Enter or Space once it has keyboard focus. Pass `element` to use your own HTML instead of the pin, or `color` and `scale` to change the pin. `anchor` says which part of the marker sits on the place: `center`, `top`, `bottom`, `left`, `right` or a corner such as `bottom-left`. The pin uses `bottom` and your own elements `center`. `offset` nudges it by `[x, y]` pixels.
@@ -382,7 +382,7 @@ A popup is a small card that points at a place. It doesn't need a marker:
 
 ```js
 map.on("click", "parks", (event) => {
-  new maplet.Popup()
+  new mapkern.Popup()
     .setLngLat(event.lngLat)
     .setHTML(`<strong>${event.features[0].properties.name}</strong>`)
     .addTo(map);
@@ -417,10 +417,10 @@ map.on("styleimagemissing", ({ id }) => {
 
 ## Tile files from the user's computer
 
-`maplet.openTileFile(file)` takes a PMTiles or MBTiles `File` (from a file input or a drop) and gives you back a URL to use as a source. Nothing is uploaded; tiles are read straight from the file as the map needs them.
+`mapkern.openTileFile(file)` takes a PMTiles or MBTiles `File` (from a file input or a drop) and gives you back a URL to use as a source. Nothing is uploaded; tiles are read straight from the file as the map needs them.
 
 ```js
-const url = await maplet.openTileFile(input.files[0]);
+const url = await mapkern.openTileFile(input.files[0]);
 map.addSource("mine", { type: "vector", url });
 ```
 
@@ -431,7 +431,7 @@ Once a tile source has loaded, its `bounds` tell you the area the file covers, a
 `addProtocol` lets you answer requests for a made-up URL scheme yourself, for example to serve tiles from IndexedDB or from a file someone picked:
 
 ```js
-maplet.addProtocol("local", async (request, signal) => {
+mapkern.addProtocol("local", async (request, signal) => {
   const bytes = await readTile(request.url, signal);
   return bytes ?? null;
 });
@@ -439,14 +439,14 @@ maplet.addProtocol("local", async (request, signal) => {
 map.addSource("offline", { type: "vector", tiles: ["local://roads/{z}/{x}/{y}"] });
 ```
 
-Return an `ArrayBuffer` or `Uint8Array`, or `null` when there's no tile. `maplet.removeProtocol("local")` undoes it. `pmtiles://` is built in.
+Return an `ArrayBuffer` or `Uint8Array`, or `null` when there's no tile. `mapkern.removeProtocol("local")` undoes it. `pmtiles://` is built in.
 
 ## Military data
 
 `militarySymbols(map)` draws MIL-STD-2525 symbols whenever a layer asks for an image named `sidc:` and a symbol code, so a single layer shows every unit in its own symbol:
 
 ```js
-maplet.militarySymbols(map);
+mapkern.militarySymbols(map);
 map.addLayer({
   id: "units",
   type: "symbol",
@@ -463,9 +463,9 @@ Cursor on Target events load in a GeoJSON source like any other file. `geoJSONTo
 
 ## Offline
 
-Maplet keeps what it downloads in the browser's storage: tiles, styles, TileJSON, fonts and icons. While a saved copy is fresh, as the server's own `Cache-Control` says, it is used without asking the server, which also saves data. When the device is offline, a request fails, or a server answers with an error, the saved copy is used however old it is, and for the next 30 seconds that server is skipped so tiles don't each wait for it to time out. Places you have looked at before keep working, and a style loads even with no connection.
+Mapkern keeps what it downloads in the browser's storage: tiles, styles, TileJSON, fonts and icons. While a saved copy is fresh, as the server's own `Cache-Control` says, it is used without asking the server, which also saves data. When the device is offline, a request fails, or a server answers with an error, the saved copy is used however old it is, and for the next 30 seconds that server is skipped so tiles don't each wait for it to time out. Places you have looked at before keep working, and a style loads even with no connection.
 
-Answers marked `no-store`, local addresses such as `localhost` and files the person picks from their computer are never stored. The oldest tiles go first once the cache is full. `maplet.clearDiskCache()` empties it, for example when someone signs out.
+Answers marked `no-store`, local addresses such as `localhost` and files the person picks from their computer are never stored. The oldest tiles go first once the cache is full. `mapkern.clearDiskCache()` empties it, for example when someone signs out.
 
 For a map that must work with no connection at all, ship the area as a PMTiles or MBTiles file and load it from the device; see [Tile files from the user's computer](#tile-files-from-the-users-computer).
 
