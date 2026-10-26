@@ -41,13 +41,14 @@ export interface SearchEvents {
 let instances = 0;
 
 export class SearchControl extends Emitter<SearchEvents> implements Control {
-  readonly defaultPosition: ControlPosition = "top-left";
+  readonly defaultPosition: ControlPosition = "bottom-right";
   private geocoder: Geocoder;
   private readonly options: SearchControlOptions;
   private readonly id = `mapkern-search-${++instances}`;
   private map: MapkernMap | null = null;
   private element: HTMLElement | null = null;
   private input: HTMLInputElement | null = null;
+  private toggle: HTMLButtonElement | null = null;
   private list: HTMLElement | null = null;
   private results: SearchResult[] = [];
   private active = -1;
@@ -130,6 +131,7 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
     this.element?.remove();
     this.element = null;
     this.input = null;
+    this.toggle = null;
     this.list = null;
     this.map = null;
   }
@@ -172,7 +174,7 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
   select(result: SearchResult): this {
     const map = this.map;
     if (this.input) this.input.value = result.label;
-    this.show([]);
+    this.open(false);
     if (map) {
       if (this.options.flyTo !== false) map.flyTo({ center: result.center, zoom: result.zoom });
       if (this.options.marker !== false) {
@@ -228,6 +230,7 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
     });
     const open = list.childElementCount > 0 && input.value.trim() !== "";
     this.element?.classList.toggle("mapkern-open", open);
+    if (results.length || notice) this.element?.classList.add("mapkern-expanded");
     input.setAttribute("aria-expanded", String(open && results.length > 0));
     input.removeAttribute("aria-activedescendant");
   }
@@ -263,12 +266,26 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
       }
     } else if (e.key === "Escape") {
       if (this.results.length) this.show([]);
-      else this.clear();
+      else this.open(false);
     }
   };
 
   private readonly outside = (e: Event) => {
     const el = this.element;
-    if (el?.classList.contains("mapkern-open") && !el.contains(e.target as Node)) this.show([]);
+    if (el?.classList.contains("mapkern-expanded") && !el.contains(e.target as Node)) this.open(false);
   };
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function magnifier(doc: Document): SVGSVGElement {
+  const svg = doc.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  for (const d of ["M10.5 4a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0-13z", "M15.5 15.5L20 20"]) {
+    const path = doc.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d);
+    svg.appendChild(path);
+  }
+  return svg;
 }
