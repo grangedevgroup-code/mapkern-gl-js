@@ -1,5 +1,5 @@
 import type { Transform } from "../camera/transform.ts";
-import { errorMessage, MapletError } from "../core/errors.ts";
+import { errorMessage, MapkernError } from "../core/errors.ts";
 import type { LngLatLike } from "../geo/mercator.ts";
 import { mercatorX, mercatorY, toLngLat } from "../geo/mercator.ts";
 import { changedKeys } from "../style/diff.ts";
@@ -84,7 +84,7 @@ export class ImageSource implements MapSource {
 
   updateImage(options: { url?: string; coordinates?: readonly LngLatLike[] }): this {
     if (this.spec.type !== "image") {
-      throw new MapletError("invalid-option", `updateImage works on image sources, not ${this.spec.type}`, {
+      throw new MapkernError("invalid-option", `updateImage works on image sources, not ${this.spec.type}`, {
         sourceId: this.id,
       });
     }
@@ -287,7 +287,7 @@ export class ImageSource implements MapSource {
   private block(reason: string, cause?: unknown): void {
     this.blocked = true;
     this.dirty = false;
-    this.ctx.error(new MapletError("source-error", `Source "${this.id}" ${reason}`, { sourceId: this.id }, cause));
+    this.ctx.error(new MapkernError("source-error", `Source "${this.id}" ${reason}`, { sourceId: this.id }, cause));
   }
 
   private begin(): AbortController {
@@ -314,7 +314,7 @@ export class ImageSource implements MapSource {
   private findCanvas(spec: CanvasSourceSpec): void {
     const found = typeof spec.canvas === "string" ? document.getElementById(spec.canvas) : spec.canvas;
     if (!(found instanceof HTMLCanvasElement)) {
-      throw new MapletError("source-error", `Canvas source "${this.id}" could not find its canvas`, {
+      throw new MapkernError("source-error", `Canvas source "${this.id}" could not find its canvas`, {
         sourceId: this.id,
       });
     }
@@ -328,7 +328,7 @@ export class ImageSource implements MapSource {
       const params = resolveRequest(url, "image", this.ctx.transformRequest);
       const result = await fetchBytes(params, signal, this.ctx.requestTimeoutMs, "image", this.ctx.diskCache);
       if (result.kind === "empty")
-        throw new MapletError("source-error", `There is no image at ${url}`, { sourceId: this.id });
+        throw new MapkernError("source-error", `There is no image at ${url}`, { sourceId: this.id });
       const type = result.contentType.split(";")[0]?.trim() || "image/png";
       let bitmap = await createImageBitmap(new Blob([result.data], { type }), {
         premultiplyAlpha: "premultiply",
@@ -383,7 +383,7 @@ export class ImageSource implements MapSource {
         if (error === undefined) resolve();
         else reject(error);
       };
-      const fail = (message: string) => settle(new MapletError("source-error", message, { sourceId: this.id }));
+      const fail = (message: string) => settle(new MapkernError("source-error", message, { sourceId: this.id }));
       const ready = () => settle();
       const missing = () => {
         failures++;
@@ -415,9 +415,9 @@ export class ImageSource implements MapSource {
     video.play().catch(() => {});
   }
 
-  private failure(error: unknown): MapletError {
-    if (error instanceof MapletError) return error;
-    return new MapletError(
+  private failure(error: unknown): MapkernError {
+    if (error instanceof MapkernError) return error;
+    return new MapkernError(
       "source-error",
       `Image source "${this.id}" could not load: ${errorMessage(error)}`,
       { sourceId: this.id },
@@ -472,7 +472,7 @@ function worldRect(corners: Corners): WorldRect {
 
 function corners(value: readonly LngLatLike[] | undefined, id: string): Corners {
   if (!Array.isArray(value) || value.length !== 4) {
-    throw new MapletError(
+    throw new MapkernError(
       "invalid-option",
       `Source "${id}" needs four corner coordinates: top left, top right, bottom right, bottom left`,
       { sourceId: id },
