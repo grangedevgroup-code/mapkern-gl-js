@@ -461,6 +461,18 @@ Cursor on Target events load in a GeoJSON source like any other file. `geoJSONTo
 
 `toMgrs([lng, lat], digits)` gives the MGRS grid reference of a place, `"10TET4998072946"` at full precision, and `fromMgrs(text)` reads one back, spaces and all, to the middle of its grid square. `toUtm()`, `fromUtm()` and `utmZone()` work with plain UTM, including the Norway and Svalbard zones. Both cover the world from 80° south to 84° north, where UTM applies.
 
+## Reading and writing files
+
+`readFeatures(file)` reads any of the formats a GeoJSON source understands and returns a feature collection, without a map. It takes a `File` or `Blob`, an `ArrayBuffer`, a typed array or text, and `{ name, format }` when the content alone doesn't say what it is. `FEATURE_FORMATS` lists the format names.
+
+Features go back out as other formats with `geoJSONToKml(data, { name })`, `geoJSONToGpx(data)`, `geoJSONToCsv(data)` and `geoJSONToWkt(data)`, next to `geoJSONToCot` for TAK. Each takes a feature, a feature collection or a bare geometry and returns text ready to save:
+
+```js
+const blob = new Blob([mapkern.geoJSONToKml(collection, { name: "Survey" })], { type: "application/vnd.google-earth.kml+xml" });
+```
+
+KML keeps names, descriptions and the other properties as extended data. GPX has no areas, so polygons are written as tracks around their outer edge. CSV puts the geometry in a `wkt` column, or in `longitude` and `latitude` columns when every feature is a point, and `{ geometry: "wkt" }` or `{ delimiter: ";" }` change that. `geometryToWkt(geometry)` writes a single geometry.
+
 ## Offline
 
 Mapkern keeps what it downloads in the browser's storage: tiles, styles, TileJSON, fonts and icons. While a saved copy is fresh, as the server's own `Cache-Control` says, it is used without asking the server, which also saves data. When the device is offline, a request fails, or a server answers with an error, the saved copy is used however old it is, and for the next 30 seconds that server is skipped so tiles don't each wait for it to time out. Places you have looked at before keep working, and a style loads even with no connection.
