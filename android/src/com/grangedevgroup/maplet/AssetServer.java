@@ -20,6 +20,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 final class AssetServer {
+    private static final int PORT = 23917;
+
     private final AssetManager assets;
     private final String root;
     private final Map<String, byte[]> small = new ConcurrentHashMap<>();
