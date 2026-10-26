@@ -31,7 +31,7 @@ import type { StyleUpdate } from "../style/style.ts";
 import { assertValid, Style } from "../style/style.ts";
 import type { LayerSpec, SkySpec, SourceSpec, StyleSpec, StyleSpecV8, SunSpec, TerrainSpec } from "../style/types.ts";
 import { sunTime, validateSky, validateSun } from "../style/validate.ts";
-import { metersToWorld, Terrain } from "../terrain/terrain.ts";
+import { highestClearZoom, metersToWorld, Terrain } from "../terrain/terrain.ts";
 import type { TransformRequest } from "../tiles/fetch.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileStats } from "../tiles/manager.ts";
