@@ -857,7 +857,9 @@ function fontList(value: unknown): string[] | null {
 
 export function fontOf(value: unknown): { families: string[]; bold: boolean; italic: boolean } | null {
   const list = fontList(value);
-  return list ? fontFromNames(list) : null;
+  if (!list) return null;
+  const font = fontFromNames(list);
+  return { families: [...font.families], bold: font.bold, italic: font.italic };
 }
 
 function spriteOf(sprite: unknown, base: string | undefined): unknown {
