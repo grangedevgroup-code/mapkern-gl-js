@@ -108,6 +108,30 @@ export function fromServer(unit: string): boolean {
   return cp <= 0xffff && !LOCAL.test(unit);
 }
 
+const GENERIC = new Set([
+  "serif",
+  "sans-serif",
+  "monospace",
+  "cursive",
+  "fantasy",
+  "system-ui",
+  "ui-serif",
+  "ui-sans-serif",
+  "ui-monospace",
+  "ui-rounded",
+  "emoji",
+  "math",
+  "fangsong",
+]);
+
+export function genericStack(stack: string): boolean {
+  const names = stack
+    .split(",")
+    .map((name) => name.trim().toLowerCase())
+    .filter((name) => name !== "");
+  return names.length > 0 && names.every((name) => GENERIC.has(name));
+}
+
 export class GlyphServer {
   readonly template: string;
   private readonly load: GlyphLoader;
