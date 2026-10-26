@@ -173,10 +173,7 @@ async function main(): Promise<void> {
     console.log(HELP);
     process.exit(values.help ? 0 : 1);
   }
-  const bbox = values.bbox.split(",").map(Number) as [number, number, number, number];
-  if (bbox.length !== 4 || bbox.some((v) => !Number.isFinite(v)) || bbox[0] >= bbox[2] || bbox[1] >= bbox[3]) {
-    throw new Error("--bbox must be west,south,east,north with west < east and south < north");
-  }
+  const bbox = parseBbox(values.bbox);
   const maxZoom = Number(values.maxzoom);
   if (!Number.isInteger(maxZoom) || maxZoom < 0 || maxZoom > 16)
     throw new Error("--maxzoom must be an integer from 0 to 16");
