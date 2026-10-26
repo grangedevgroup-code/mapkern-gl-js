@@ -1,3 +1,4 @@
+import { deepClone } from "../core/clone.ts";
 import { errorMessage, MapletError } from "../core/errors.ts";
 import type { MapSource } from "../sources/source.ts";
 import type { LayerUpdate } from "./diff.ts";
@@ -34,7 +35,7 @@ export class Style {
     this.factory = factory;
     this.events = events;
     const { sources, layers, ...meta } = spec;
-    this.meta = structuredClone(meta);
+    this.meta = deepClone(meta);
     for (const [id, source] of Object.entries(sources)) this.createSource(id, cloneSpec(source));
     for (const layer of layers) this.insertLayer(new StyleLayer(layer), undefined);
   }
@@ -137,7 +138,7 @@ export class Style {
     const sprite = !sameValue(this.meta.sprite, meta.sprite);
     const target = this.meta as Record<string, unknown>;
     for (const key of Object.keys(target)) delete target[key];
-    Object.assign(target, structuredClone(meta));
+    Object.assign(target, deepClone(meta));
     this.events.changed();
     return { dropped, sprite };
   }
@@ -145,7 +146,7 @@ export class Style {
   serialize(): StyleSpec {
     const sources: Record<string, SourceSpec> = {};
     for (const [id, source] of this.sources) sources[id] = cloneSpec(source.spec);
-    return { ...structuredClone(this.meta), sources, layers: this.layers.map((l) => l.serialize()) };
+    return { ...deepClone(this.meta), sources, layers: this.layers.map((l) => l.serialize()) };
   }
 
   destroy(): void {
@@ -202,7 +203,7 @@ export function assertValid(spec: unknown): asserts spec is StyleSpec {
 function cloneSpec(spec: SourceSpec): SourceSpec {
   if (spec.type === "canvas" && typeof spec.canvas !== "string") {
     const { canvas, ...rest } = spec;
-    return { ...structuredClone(rest), canvas };
+    return { ...deepClone(rest), canvas };
   }
-  return structuredClone(spec);
+  return deepClone(spec);
 }
