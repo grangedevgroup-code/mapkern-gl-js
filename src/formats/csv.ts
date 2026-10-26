@@ -1,10 +1,12 @@
 import type { Feature, FeatureCollection, Geometry } from "../geo/geojson.ts";
 import { fromMgrs } from "../geo/mgrs.ts";
+import { parseHexWkb } from "./wkb.ts";
 import { parseWkt } from "./wkt.ts";
 
 const LAT_NAMES = ["lat", "latitude", "y", "lat_dd", "latitude_dd", "ylat", "point_y"];
 const LON_NAMES = ["lon", "lng", "long", "longitude", "x", "lon_dd", "longitude_dd", "xlon", "point_x"];
-const WKT_NAMES = ["wkt", "geometry", "geom", "the_geom", "shape", "wkt_geom"];
+const WKT_NAMES = ["wkt", "geometry", "geom", "the_geom", "shape", "wkt_geom", "wkb_geometry", "wkb"];
+const HEX_WKB = /^(?:\\x)?(0[01][0-9a-f]{8,})$/i;
 const GRID_NAMES = ["mgrs", "grid", "mgrs_grid", "usng", "grid_ref", "gridref"];
 const NUMBER = /^-?(0|[1-9]\d*)(\.\d+)?([eE][-+]?\d+)?$/;
 
