@@ -106,7 +106,8 @@ export class SearchIndex implements Geocoder {
   private readonly termText: string[];
   private readonly contextVocab: Vocabulary;
   private readonly categoryVocab: Vocabulary;
-  private readonly categoryLabels: string[];
+  private readonly byContext: Groups;
+  private readonly byCategory: Groups;
   private grid: Map<number, number[]> | null = null;
 
   constructor(data: SearchData) {
