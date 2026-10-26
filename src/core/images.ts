@@ -1,6 +1,6 @@
 import type { RawImage, StyleImage } from "../render/images.ts";
 import { premultiplied } from "../render/images.ts";
-import { MapletError } from "./errors.ts";
+import { MapkernError } from "./errors.ts";
 
 export type ImageInput =
   | HTMLImageElement
@@ -24,17 +24,17 @@ export interface SpriteSheet {
 }
 
 export function styleImage(id: string, input: ImageInput, options: ImageOptions, sprite: boolean): StyleImage {
-  if (typeof id !== "string" || id === "") throw new MapletError("invalid-option", "Images need a non-empty name");
+  if (typeof id !== "string" || id === "") throw new MapkernError("invalid-option", "Images need a non-empty name");
   const pixelRatio = options.pixelRatio ?? 1;
   if (typeof pixelRatio !== "number" || !Number.isFinite(pixelRatio) || pixelRatio <= 0) {
-    throw new MapletError("invalid-option", "pixelRatio must be a number greater than 0", { image: id });
+    throw new MapkernError("invalid-option", "pixelRatio must be a number greater than 0", { image: id });
   }
   const raw = pixelsOf(input, id);
   const stretchX = zonesOf(options.stretchX, raw.width);
   const stretchY = zonesOf(options.stretchY, raw.height);
   const content = contentOf(options.content, raw.width, raw.height);
   if (stretchX === null || stretchY === null || content === null) {
-    throw new MapletError(
+    throw new MapkernError(
       "invalid-option",
       `Image "${id}": stretchX and stretchY need [from, to] pixel ranges and content needs [left, top, right, bottom] inside the image`,
       { image: id },
@@ -78,7 +78,7 @@ function contentOf(value: unknown, width: number, height: number): [number, numb
 
 export function pixelsOf(input: ImageInput, id: string): RawImage {
   if (typeof input !== "object" || input === null) {
-    throw new MapletError(
+    throw new MapkernError(
       "invalid-option",
       `Image "${id}" must be an image, canvas, bitmap or { width, height, data }`,
     );
@@ -86,10 +86,10 @@ export function pixelsOf(input: ImageInput, id: string): RawImage {
   if ("data" in input && !("getContext" in input)) {
     const { width, height, data } = input as RawImage;
     if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
-      throw new MapletError("invalid-option", `Image "${id}" needs a whole-number width and height`);
+      throw new MapkernError("invalid-option", `Image "${id}" needs a whole-number width and height`);
     }
     if (!(data instanceof Uint8Array || data instanceof Uint8ClampedArray) || data.length !== width * height * 4) {
-      throw new MapletError("invalid-option", `Image "${id}" needs ${width * height * 4} bytes of RGBA data`);
+      throw new MapkernError("invalid-option", `Image "${id}" needs ${width * height * 4} bytes of RGBA data`);
     }
     return { width, height, data };
   }
@@ -97,7 +97,7 @@ export function pixelsOf(input: ImageInput, id: string): RawImage {
   const width = "naturalWidth" in source ? (source as HTMLImageElement).naturalWidth : source.width;
   const height = "naturalHeight" in source ? (source as HTMLImageElement).naturalHeight : source.height;
   if (!(width > 0 && height > 0)) {
-    throw new MapletError("invalid-option", `Image "${id}" has no pixels yet; wait for it to load before adding it`);
+    throw new MapkernError("invalid-option", `Image "${id}" has no pixels yet; wait for it to load before adding it`);
   }
   const canvas: OffscreenCanvas | HTMLCanvasElement =
     typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(width, height) : document.createElement("canvas");
@@ -107,12 +107,12 @@ export function pixelsOf(input: ImageInput, id: string): RawImage {
     | CanvasRenderingContext2D
     | OffscreenCanvasRenderingContext2D
     | null;
-  if (!ctx) throw new MapletError("invalid-option", `Image "${id}" could not be read`);
+  if (!ctx) throw new MapkernError("invalid-option", `Image "${id}" could not be read`);
   ctx.drawImage(source, 0, 0);
   try {
     return { width, height, data: ctx.getImageData(0, 0, width, height).data };
   } catch (error) {
-    throw new MapletError(
+    throw new MapkernError(
       "invalid-option",
       `Image "${id}" comes from another site that doesn't allow reading it; serve it with CORS headers`,
       { image: id },
@@ -123,7 +123,7 @@ export function pixelsOf(input: ImageInput, id: string): RawImage {
 
 export function spriteImages(prefix: string, index: unknown, sheet: RawImage): StyleImage[] {
   if (typeof index !== "object" || index === null || Array.isArray(index)) {
-    throw new MapletError("invalid-style", "A sprite index must be a JSON object of images");
+    throw new MapkernError("invalid-style", "A sprite index must be a JSON object of images");
   }
   const out: StyleImage[] = [];
   for (const [name, entry] of Object.entries(index as Record<string, unknown>)) {
