@@ -4229,6 +4229,49 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "tiles saved on disk skip the network while fresh and come back when the server is down",
+    async run({ page, base, shot }) {
+      const remote = base.replace("127.0.0.1", "tiles.maplet.test");
+      const style = (age: number) =>
+        JSON.stringify({
+          version: 1,
+          sources: { fx: { type: "raster", tiles: [`${remote}/fixture/kept/${age}/{z}/{x}/{y}.png`], tileSize: 256 } },
+          layers: [{ id: "r", type: "raster", source: "fx", paint: { fadeDuration: 0 } }],
+        });
+      const requests = async (age: number) => {
+        const hits = (await (await fetch(`${base}/fixture/stats`)).json()) as Record<string, number>;
+        return Object.entries(hits)
+          .filter(([k]) => k.startsWith(`kept:${age}/`))
+          .reduce((n, [, v]) => n + v, 0);
+      };
+      await page.evaluate("maplet.clearDiskCache()");
+      await createMap(page, style(3600), { zoom: 3, center: [0, 0] });
+      await page.evaluate("new Promise((r) => setTimeout(r, 1000))");
+      const first = await requests(3600);
+      if (first === 0) fail("the first map should fetch its tiles");
+      await page.evaluate("window.map.remove()");
+      await createMap(page, style(3600), { zoom: 3, center: [0, 0] });
+      const again = await requests(3600);
+      if (again !== first) fail(`fresh tiles should come from disk, but the server saw ${again - first} more requests`);
+      await page.evaluate("window.map.remove()");
+      await createMap(page, style(0), { zoom: 3, center: [0, 0] });
+      await page.evaluate("new Promise((r) => setTimeout(r, 1000))");
+      await page.send("Network.enable");
+      await page.send("Network.setBlockedURLs", { urls: ["*tiles.maplet.test*"] });
+      try {
+        await page.evaluate("window.map.remove()");
+        await createMap(page, style(0), { zoom: 3, center: [0, 0] });
+        await shot("server-down");
+        const inside = await pixel(page, 440, 340);
+        if (!isZoomColor(inside, 4)) fail(`with the server down the saved tiles should still draw, got ${inside}`);
+      } finally {
+        await page.send("Network.setBlockedURLs", { urls: [] });
+      }
+      const errors = await page.evaluate<{ code: string }[]>("window.errors");
+      if (errors.some((e) => e.code !== "network")) fail(`unexpected errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
@@ -4457,7 +4500,7 @@ async function main(): Promise<void> {
   mkdirSync(output, { recursive: true });
   writeMbtilesFixture(join(output, "fixture.mbtiles"));
   const { server, url } = await startServer({ root, routes: [fixtureRoute], quiet: true });
-  const browser = await Browser.launch({ software });
+  const browser = await Browser.launch({ software, args: ["--host-resolver-rules=MAP tiles.maplet.test 127.0.0.1"] });
   let failed = 0;
   try {
     for (const spec of specs) {
