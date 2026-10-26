@@ -4368,7 +4368,7 @@ const specs: Spec[] = [
       await shot("symbols");
       const at = async (lng: number) => {
         const p = await page.evaluate<{ x: number; y: number }>(`window.map.project([${lng}, 0])`);
-        return pixel(page, Math.round(p.x), Math.round(p.y) + 14);
+        return pixel(page, Math.round(p.x), Math.round(p.y) + 6);
       };
       const friend = await at(-4);
       const hostile = await at(4);
