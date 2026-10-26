@@ -181,6 +181,14 @@ test("the nearer of two equal names comes first", () => {
   assert.equal(close.length, 2);
 });
 
+test("a single letter suggests towns, the nearest first", () => {
+  assert.deepEqual(
+    index.search("t", { near: [0.01, 0.01] }).map((r) => r.name),
+    ["Testville", "Teststate"],
+  );
+  assert.deepEqual(index.search("t", { kinds: ["street"] }), []);
+});
+
 test("kinds and bbox narrow the results", () => {
   assert.ok(index.search("main", { kinds: ["address"] }).every((r) => r.kind === "address"));
   assert.ok(index.search("main", { bbox: [0.5, 0.5, 1.5, 1.5] }).every((r) => r.center[0] > 0.5));
