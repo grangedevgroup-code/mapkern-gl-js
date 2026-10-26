@@ -1,4 +1,5 @@
 import { ringArea } from "../formats/mvt.ts";
+import { clipRing } from "../geo/clip.ts";
 import { triangulate } from "../render/tessellate.ts";
 
 export const LINE_STRIDE = 20;
@@ -419,11 +420,12 @@ function insideTile(rings: Int32Array[], extent: number): Int32Array[] {
   const out: Int32Array[] = [];
   for (let r = 0; r < rings.length; r++) {
     const clipped = clipRing(rings[r]!, tile);
-    if (!clipped || Math.abs(ringArea(clipped)) < 1) {
+    const ring = clipped ? Int32Array.from(clipped, Math.round) : null;
+    if (!ring || Math.abs(ringArea(ring)) < 1) {
       if (r === 0) return [];
       continue;
     }
-    out.push(Int32Array.from(clipped, Math.round));
+    out.push(ring);
   }
   return out;
 }
@@ -479,7 +481,7 @@ export class ExtrusionBuilder {
       const j = (i + 1) % n;
       const bx = ring[j * 2]!;
       const by = ring[j * 2 + 1]!;
-      if ((ax < 0 && bx < 0) || (ax > e && bx > e) || (ay < 0 && by < 0) || (ay > e && by > e)) continue;
+      if ((ax <= 0 && bx <= 0) || (ax >= e && bx >= e) || (ay <= 0 && by <= 0) || (ay >= e && by >= e)) continue;
       const dx = bx - ax;
       const dy = by - ay;
       const len = Math.hypot(dx, dy);
