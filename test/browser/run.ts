@@ -4133,6 +4133,166 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "the terrain button can switch to another elevation source and keep its view",
+    async run({ page, base }) {
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { center: HILL, zoom: 6 });
+      await page.call(
+        `(base) => {
+          window.terrain = new maplet.TerrainControl({
+            source: { type: "dem", tiles: [base + "/fixture/dem/{z}/{x}/{y}.png"], tileSize: 256, maxZoom: 12 },
+          });
+          window.map.addControl(window.terrain);
+          window.terrain.setView("tilted");
+        }`,
+        base,
+      );
+      await page.evaluate(`new Promise((r) => window.map.isMoving() ? window.map.once("moveend", () => r(0)) : r(0))`);
+      await idle(page);
+      const state = () =>
+        page.evaluate<{ view: string; tiles: string[] | undefined; terrain: string | undefined; pitch: number }>(
+          `({
+            view: window.terrain.view,
+            tiles: window.map.getStyle().sources["maplet-terrain"]?.tiles,
+            terrain: window.map.getTerrain()?.source,
+            pitch: window.map.getPitch(),
+          })`,
+        );
+      const before = await state();
+      if (before.view !== "tilted" || !before.tiles?.[0]?.includes("/fixture/dem/"))
+        fail(`should start tilted on the first source: ${JSON.stringify(before)}`);
+      await page.call(
+        `(base) => {
+          window.terrain.setSource({ type: "dem", tiles: [base + "/fixture/ridges/{z}/{x}/{y}.png"], tileSize: 256, maxZoom: 12 });
+        }`,
+        base,
+      );
+      await idle(page);
+      const after = await state();
+      if (after.view !== "tilted" || after.terrain !== "maplet-terrain" || Math.abs(after.pitch - before.pitch) > 0.01)
+        fail(`switching the source should keep the tilted view: ${JSON.stringify(after)}`);
+      if (!after.tiles?.[0]?.includes("/fixture/ridges/"))
+        fail(`the new source should be used: ${JSON.stringify(after)}`);
+      const flat = await page.call<string>(
+        `(base) => {
+          window.terrain.setView("flat");
+          window.terrain.setSource({ type: "dem", tiles: [base + "/fixture/dem/{z}/{x}/{y}.png"], tileSize: 256 });
+          return window.terrain.view + " " + String(window.map.getTerrain());
+        }`,
+        base,
+      );
+      if (flat !== "flat null") fail(`a flat map should stay flat when the source changes, got ${flat}`);
+      const rejected = await page.evaluate<string>(
+        `(() => { try { window.terrain.setSource({ type: "raster", tiles: [] }); return "accepted"; } catch (e) { return e.code; } })()`,
+      );
+      if (rejected !== "invalid-option") fail(`a non-elevation source should be refused, got ${rejected}`);
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
+    name: "the demo viewer puts the same controls in the same places on every page and keeps page layers",
+    async run({ page, base, shot }) {
+      await page.call(
+        `async (base) => {
+          const link = document.createElement("link");
+          link.rel = "stylesheet";
+          link.href = "/examples/viewer.css";
+          const loaded = new Promise((r) => (link.onload = r));
+          document.head.appendChild(link);
+          await loaded;
+          const { createViewer } = await import("/examples/viewer.js");
+          const raster = (name) => ({
+            version: 1,
+            sources: { r: { type: "raster", tiles: [base + "/fixture/raster/{z}/{x}/{y}.png"], tileSize: 256, attribution: name } },
+            layers: [{ id: "r", type: "raster", source: "r", paint: { fadeDuration: 0 } }],
+          });
+          window.errors = [];
+          window.runs = 0;
+          window.viewer = createViewer({
+            page: false,
+            basemaps: [{ name: "One", style: raster("Fixture one") }, { name: "Two", style: raster("Fixture two") }],
+            terrain: { type: "dem", tiles: [base + "/fixture/dem/{z}/{x}/{y}.png"], tileSize: 256, maxZoom: 12 },
+            overlay(map) {
+              window.runs++;
+              if (!map.getSource("pins")) map.addSource("pins", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+              if (!map.getLayer("pins")) map.addLayer({ id: "pins", type: "circle", source: "pins" });
+            },
+            center: [0, 0],
+            zoom: 3,
+            fadeDuration: 0,
+            preserveDrawingBuffer: true,
+          });
+          window.map = window.viewer.map;
+          window.map.on("error", (e) => window.errors.push(e.error.message));
+          await window.map.once("idle");
+        }`,
+        base,
+      );
+      const layout = await page.evaluate<{
+        order: string[];
+        stack: number[];
+        scale: number[] | null;
+        logo: number[] | null;
+        attribution: number[] | null;
+        corner: string | null;
+        maxPitch: number;
+        pins: boolean;
+      }>(`(() => {
+        const box = (el) => {
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return [r.left, r.top, r.right, r.bottom];
+        };
+        const corner = document.querySelector(".maplet-bottom-right");
+        const controls = [...corner.children].filter((c) => !c.classList.contains("maplet-scale"));
+        const order = controls.map((c) => [...c.classList].find((k) => k !== "maplet-control" && k.startsWith("maplet-")));
+        const lefts = controls.map((c) => c.getBoundingClientRect().left);
+        const rights = controls.map((c) => c.getBoundingClientRect().right);
+        const attribution = document.querySelector(".maplet-attribution");
+        return {
+          order,
+          stack: [Math.min(...lefts), Math.max(...rights)],
+          scale: box(document.querySelector(".maplet-scale")),
+          logo: box(document.querySelector(".maplet-logo")),
+          attribution: box(attribution),
+          corner: attribution?.parentElement?.className ?? null,
+          maxPitch: window.map.getMaxPitch(),
+          pins: Boolean(window.map.getLayer("pins")),
+        };
+      })()`);
+      await shot("viewer");
+      if (JSON.stringify(layout.order) !== '["maplet-navigation","maplet-terrain","maplet-basemaps"]')
+        fail(
+          `bottom-right should hold zoom and compass, then 2D/3D, then the basemap button: ${JSON.stringify(layout)}`,
+        );
+      const [stackLeft] = layout.stack;
+      if (!layout.scale || layout.scale[2] > stackLeft! || stackLeft! - layout.scale[2] > 24)
+        fail(`the scale should sit just left of the buttons: ${JSON.stringify(layout)}`);
+      if (!layout.logo || !layout.attribution || !layout.corner?.includes("maplet-bottom-left"))
+        fail(`the attribution should sit in the bottom-left corner: ${JSON.stringify(layout)}`);
+      if (layout.attribution[3] > layout.logo[1] + 0.5 || layout.attribution[2] > stackLeft!)
+        fail(`the attribution should sit above the logo and clear of the buttons: ${JSON.stringify(layout)}`);
+      if (layout.maxPitch !== 85) fail(`the viewer should allow tilting to 85 degrees, got ${layout.maxPitch}`);
+      if (!layout.pins) fail("the page's own layers should be added once the style loads");
+      await page.evaluate(
+        `new Promise((r) => { window.map.once("styleload", () => r(0)); window.viewer.basemaps.select(1); })`,
+      );
+      await idle(page);
+      const after = await page.evaluate<{ pins: boolean; runs: number; stored: string | null; text: string }>(`({
+        pins: Boolean(window.map.getLayer("pins")),
+        runs: window.runs,
+        stored: localStorage.getItem("maplet-viewer:" + location.pathname + ":basemap"),
+        text: document.querySelector(".maplet-attribution").textContent,
+      })`);
+      if (!after.pins || after.runs < 2)
+        fail(`page layers should come back after a basemap change: ${JSON.stringify(after)}`);
+      if (after.stored !== null) fail(`a viewer with page: false should not remember choices, stored ${after.stored}`);
+      if (!after.text.includes("Fixture two")) fail(`the attribution should follow the basemap: ${after.text}`);
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
     name: "terrain relief shades slopes even when looking straight down",
     async run({ page, base, shot }) {
       const style = (relief: number) =>
