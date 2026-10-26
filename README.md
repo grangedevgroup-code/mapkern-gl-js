@@ -90,6 +90,8 @@ The OpenStreetMap license asks you to credit the data. The style shows "© OpenS
 
 Vector and raster sources read PMTiles and MBTiles files, from a web server or from the user's own computer. GeoJSON sources also read KML, KMZ, GPX, CSV, TopoJSON, zipped Shapefiles and FlatGeobuf, from a URL or straight from a file the user picks, and data in UTM, state plane or Web Mercator coordinates is converted for you. You can replace the data with `setData()` while the map is running, move the camera with `easeTo` and `flyTo`, tilt and rotate the map, and style features from their own data with expressions like `match` and `interpolate`. Buildings can rise into 3D, and detailed ones like the Space Needle keep their shape instead of turning into one plain block. The map can be lit by the sun at any date and time, with night and twilight on any map, satellite included. Labels follow streets and keep out of each other's way, and `queryRenderedFeatures()` tells you what's under the pointer. Elevation tiles shade the hills and can raise the ground into 3D terrain, with the map, labels and buildings on top of it.
 
+To try it on an Android phone or tablet, `npm run android -- --install` builds a small app from `android/` that shows the map full screen and installs it on the connected device. It needs the Android SDK and a JDK, and `--run` starts it too. The app also carries this site and its examples.
+
 While you pan and zoom, Maplet fills gaps with tiles it already has from other zoom levels, so the map doesn't flash empty. Tiles are decoded in Web Workers, and the whole library, worker included, is about 160 KB gzipped.
 
 The API may still change before 1.0.
