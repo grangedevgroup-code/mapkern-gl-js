@@ -1,0 +1,205 @@
+{
+  "sources": {
+    "gml2-4326": "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<ogr:FeatureCollection\n     xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n     xsi:schemaLocation=\"http://ogr.maptools.org/ gml2-4326.xsd\"\n     xmlns:ogr=\"http://ogr.maptools.org/\"\n     xmlns:gml=\"http://www.opengis.net/gml\">\n  <gml:boundedBy>\n    <gml:Box>\n      <gml:coord><gml:X>-122.36</gml:X><gml:Y>47.59</gml:Y></gml:coord>\n      <gml:coord><gml:X>-122.27</gml:X><gml:Y>47.63</gml:Y></gml:coord>\n    </gml:Box>\n  </gml:boundedBy>\n                                                                                                                                      \n  <gml:featureMember>\n    <ogr:things fid=\"things.0\">\n      <ogr:geometryProperty><gml:Point srsName=\"EPSG:4326\"><gml:coordinates>-122.3493,47.6205</gml:coordinates></gml:Point></ogr:geometryProperty>\n      <ogr:name>needle</ogr:name>\n      <ogr:count>1</ogr:count>\n      <ogr:value>1.5</ogr:value>\n    </ogr:things>\n  </gml:featureMember>\n  <gml:featureMember>\n    <ogr:things fid=\"things.1\">\n      <ogr:geometryProperty><gml:LineString srsName=\"EPSG:4326\"><gml:coordinates>-122.34,47.61 -122.33,47.62 -122.32,47.615</gml:coordinates></gml:LineString></ogr:geometryProperty>\n      <ogr:name>road</ogr:name>\n      <ogr:count>2</ogr:count>\n      <ogr:value>2.25</ogr:value>\n    </ogr:things>\n  </gml:featureMember>\n  <gml:featureMember>\n    <ogr:things fid=\"things.2\">\n      <ogr:geometryProperty><gml:Polygon srsName=\"EPSG:4326\"><gml:outerBoundaryIs><gml:LinearRing><gml:coordinates>-122.36,47.6 -122.34,47.6 -122.34,47.62 -122.36,47.62 -122.36,47.6</gml:coordinates></gml:LinearRing></gml:outerBoundaryIs><gml:innerBoundaryIs><gml:LinearRing><gml:coordinates>-122.355,47.605 -122.355,47.615 -122.345,47.615 -122.345,47.605 -122.355,47.605</gml:coordinates></gml:LinearRing></gml:innerBoundaryIs></gml:Polygon></ogr:geometryProperty>\n      <ogr:name>park</ogr:name>\n      <ogr:count>3</ogr:count>\n      <ogr:value>3</ogr:value>\n    </ogr:things>\n  </gml:featureMember>\n  <gml:featureMember>\n    <ogr:things fid=\"things.3\">\n      <ogr:geometryProperty><gml:MultiPolygon srsName=\"EPSG:4326\"><gml:polygonMember><gml:Polygon><gml:outerBoundaryIs><gml:LinearRing><gml:coordinates>-122.3,47.6 -122.29,47.6 -122.29,47.61 -122.3,47.6</gml:coordinates></gml:LinearRing></gml:outerBoundaryIs></gml:Polygon></gml:polygonMember><gml:polygonMember><gml:Polygon><gml:outerBoundaryIs><gml:LinearRing><gml:coordinates>-122.28,47.6 -122.27,47.6 -122.27,47.61 -122.28,47.6</gml:coordinates></gml:LinearRing></gml:outerBoundaryIs></gml:Polygon></gml:polygonMember></gml:MultiPolygon></ogr:geometryProperty>\n      <ogr:name>islands</ogr:name>\n      <ogr:count>4</ogr:count>\n      <ogr:value>4.75</ogr:value>\n    </ogr:things>\n  </gml:featureMember>\n  <gml:featureMember>\n    <ogr:things fid=\"things.4\">\n      <ogr:geometryProperty><gml:MultiLineString srsName=\"EPSG:4326\"><gml:lineStringMember><gml:LineString><gml:coordinates>-122.3,47.6 -122.31,47.61</gml:coordinates></gml:LineString></gml:lineStringMember><gml:lineStringMember><gml:LineString><gml:coordinates>-122.29,47.59 -122.28,47.6</gml:coordinates></gml:LineString></gml:lineStringMember></gml:MultiLineString></ogr:geometryProperty>\n      <ogr:name>paths</ogr:name>\n      <ogr:count>5</ogr:count>\n      <ogr:value>5.5</ogr:value>\n    </ogr:things>\n  </gml:featureMember>\n  <gml:featureMember>\n    <ogr:things fid=\"things.5\">\n      <ogr:geometryProperty><gml:MultiPoint srsName=\"EPSG:4326\"><gml:pointMember><gml:Point><gml:coordinates>-122.31,47.62</gml:coordinates></gml:Point></gml:pointMember><gml:pointMember><gml:Point><gml:coordinates>-122.32,47.63</gml:coordinates></gml:Point></gml:pointMember></gml:MultiPoint></ogr:geometryProperty>\n      <ogr:name>spots</ogr:name>\n      <ogr:count>6</ogr:count>\n      <ogr:value>6.125</ogr:value>\n    </ogr:things>\n  </gml:featureMember>\n</ogr:FeatureCollection>\n",
+    "gml3-4326": "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<ogr:FeatureCollection\n     xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n     xsi:schemaLocation=\"http://ogr.maptools.org/ gml3-4326.xsd\"\n     xmlns:ogr=\"http://ogr.maptools.org/\"\n     xmlns:gml=\"http://www.opengis.net/gml\">\n  <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:lowerCorner>47.59 -122.36</gml:lowerCorner><gml:upperCorner>47.63 -122.27</gml:upperCorner></gml:Envelope></gml:boundedBy>\n                                                                                                                                                         \n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.0\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:lowerCorner>47.6205 -122.3493</gml:lowerCorner><gml:upperCorner>47.6205 -122.3493</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:Point srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:pos>47.6205 -122.3493</gml:pos></gml:Point></ogr:geometryProperty>\n      <ogr:name>needle</ogr:name>\n      <ogr:count>1</ogr:count>\n      <ogr:value>1.5</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.1\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:lowerCorner>47.61 -122.34</gml:lowerCorner><gml:upperCorner>47.62 -122.32</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:LineString srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:posList>47.61 -122.34 47.62 -122.33 47.615 -122.32</gml:posList></gml:LineString></ogr:geometryProperty>\n      <ogr:name>road</ogr:name>\n      <ogr:count>2</ogr:count>\n      <ogr:value>2.25</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.2\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:lowerCorner>47.6 -122.36</gml:lowerCorner><gml:upperCorner>47.62 -122.34</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:Polygon srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:exterior><gml:LinearRing><gml:posList>47.6 -122.36 47.6 -122.34 47.62 -122.34 47.62 -122.36 47.6 -122.36</gml:posList></gml:LinearRing></gml:exterior><gml:interior><gml:LinearRing><gml:posList>47.605 -122.355 47.615 -122.355 47.615 -122.345 47.605 -122.345 47.605 -122.355</gml:posList></gml:LinearRing></gml:interior></gml:Polygon></ogr:geometryProperty>\n      <ogr:name>park</ogr:name>\n      <ogr:count>3</ogr:count>\n      <ogr:value>3</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.3\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:lowerCorner>47.6 -122.3</gml:lowerCorner><gml:upperCorner>47.61 -122.27</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:MultiSurface srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:surfaceMember><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>47.6 -122.3 47.6 -122.29 47.61 -122.29 47.6 -122.3</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember><gml:surfaceMember><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>47.6 -122.28 47.6 -122.27 47.61 -122.27 47.6 -122.28</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember></gml:MultiSurface></ogr:geometryProperty>\n      <ogr:name>islands</ogr:name>\n      <ogr:count>4</ogr:count>\n      <ogr:value>4.75</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.4\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:lowerCorner>47.59 -122.31</gml:lowerCorner><gml:upperCorner>47.61 -122.28</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:MultiCurve srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:curveMember><gml:LineString><gml:posList>47.6 -122.3 47.61 -122.31</gml:posList></gml:LineString></gml:curveMember><gml:curveMember><gml:LineString><gml:posList>47.59 -122.29 47.6 -122.28</gml:posList></gml:LineString></gml:curveMember></gml:MultiCurve></ogr:geometryProperty>\n      <ogr:name>paths</ogr:name>\n      <ogr:count>5</ogr:count>\n      <ogr:value>5.5</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.5\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:lowerCorner>47.62 -122.32</gml:lowerCorner><gml:upperCorner>47.63 -122.31</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:MultiPoint srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:pointMember><gml:Point><gml:pos>47.62 -122.31</gml:pos></gml:Point></gml:pointMember><gml:pointMember><gml:Point><gml:pos>47.63 -122.32</gml:pos></gml:Point></gml:pointMember></gml:MultiPoint></ogr:geometryProperty>\n      <ogr:name>spots</ogr:name>\n      <ogr:count>6</ogr:count>\n      <ogr:value>6.125</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n</ogr:FeatureCollection>\n",
+    "gml32-4326": "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<ogr:FeatureCollection\n     gml:id=\"aFeatureCollection\"\n     xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n     xsi:schemaLocation=\"http://ogr.maptools.org/ gml32-4326.xsd\"\n     xmlns:ogr=\"http://ogr.maptools.org/\"\n     xmlns:gml=\"http://www.opengis.net/gml/3.2\">\n  <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:lowerCorner>47.59 -122.36</gml:lowerCorner><gml:upperCorner>47.63 -122.27</gml:upperCorner></gml:Envelope></gml:boundedBy>\n                                                                                                                                                         \n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.0\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:lowerCorner>47.6205 -122.3493</gml:lowerCorner><gml:upperCorner>47.6205 -122.3493</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:Point srsName=\"urn:ogc:def:crs:EPSG::4326\" gml:id=\"things.geom.0\"><gml:pos>47.6205 -122.3493</gml:pos></gml:Point></ogr:geometryProperty>\n      <ogr:name>needle</ogr:name>\n      <ogr:count>1</ogr:count>\n      <ogr:value>1.5</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.1\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:lowerCorner>47.61 -122.34</gml:lowerCorner><gml:upperCorner>47.62 -122.32</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:LineString srsName=\"urn:ogc:def:crs:EPSG::4326\" gml:id=\"things.geom.1\"><gml:posList>47.61 -122.34 47.62 -122.33 47.615 -122.32</gml:posList></gml:LineString></ogr:geometryProperty>\n      <ogr:name>road</ogr:name>\n      <ogr:count>2</ogr:count>\n      <ogr:value>2.25</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.2\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:lowerCorner>47.6 -122.36</gml:lowerCorner><gml:upperCorner>47.62 -122.34</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:Polygon srsName=\"urn:ogc:def:crs:EPSG::4326\" gml:id=\"things.geom.2\"><gml:exterior><gml:LinearRing><gml:posList>47.6 -122.36 47.6 -122.34 47.62 -122.34 47.62 -122.36 47.6 -122.36</gml:posList></gml:LinearRing></gml:exterior><gml:interior><gml:LinearRing><gml:posList>47.605 -122.355 47.615 -122.355 47.615 -122.345 47.605 -122.345 47.605 -122.355</gml:posList></gml:LinearRing></gml:interior></gml:Polygon></ogr:geometryProperty>\n      <ogr:name>park</ogr:name>\n      <ogr:count>3</ogr:count>\n      <ogr:value>3</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.3\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:lowerCorner>47.6 -122.3</gml:lowerCorner><gml:upperCorner>47.61 -122.27</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:MultiSurface srsName=\"urn:ogc:def:crs:EPSG::4326\" gml:id=\"things.geom.3\"><gml:surfaceMember><gml:Polygon gml:id=\"things.geom.3.0\"><gml:exterior><gml:LinearRing><gml:posList>47.6 -122.3 47.6 -122.29 47.61 -122.29 47.6 -122.3</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember><gml:surfaceMember><gml:Polygon gml:id=\"things.geom.3.1\"><gml:exterior><gml:LinearRing><gml:posList>47.6 -122.28 47.6 -122.27 47.61 -122.27 47.6 -122.28</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember></gml:MultiSurface></ogr:geometryProperty>\n      <ogr:name>islands</ogr:name>\n      <ogr:count>4</ogr:count>\n      <ogr:value>4.75</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.4\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:lowerCorner>47.59 -122.31</gml:lowerCorner><gml:upperCorner>47.61 -122.28</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:MultiCurve srsName=\"urn:ogc:def:crs:EPSG::4326\" gml:id=\"things.geom.4\"><gml:curveMember><gml:LineString gml:id=\"things.geom.4.0\"><gml:posList>47.6 -122.3 47.61 -122.31</gml:posList></gml:LineString></gml:curveMember><gml:curveMember><gml:LineString gml:id=\"things.geom.4.1\"><gml:posList>47.59 -122.29 47.6 -122.28</gml:posList></gml:LineString></gml:curveMember></gml:MultiCurve></ogr:geometryProperty>\n      <ogr:name>paths</ogr:name>\n      <ogr:count>5</ogr:count>\n      <ogr:value>5.5</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.5\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::4326\"><gml:lowerCorner>47.62 -122.32</gml:lowerCorner><gml:upperCorner>47.63 -122.31</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:MultiPoint srsName=\"urn:ogc:def:crs:EPSG::4326\" gml:id=\"things.geom.5\"><gml:pointMember><gml:Point gml:id=\"things.geom.5.0\"><gml:pos>47.62 -122.31</gml:pos></gml:Point></gml:pointMember><gml:pointMember><gml:Point gml:id=\"things.geom.5.1\"><gml:pos>47.63 -122.32</gml:pos></gml:Point></gml:pointMember></gml:MultiPoint></ogr:geometryProperty>\n      <ogr:name>spots</ogr:name>\n      <ogr:count>6</ogr:count>\n      <ogr:value>6.125</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n</ogr:FeatureCollection>\n",
+    "gml3-3857": "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<ogr:FeatureCollection\n     xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n     xsi:schemaLocation=\"http://ogr.maptools.org/ gml3-3857.xsd\"\n     xmlns:ogr=\"http://ogr.maptools.org/\"\n     xmlns:gml=\"http://www.opengis.net/gml\">\n  <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::3857\"><gml:lowerCorner>-13621052.893465 6038914.48269523</gml:lowerCorner><gml:upperCorner>-13611034.1392936 6045519.28099784</gml:upperCorner></gml:Envelope></gml:boundedBy>\n                                                                                                                \n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.0\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::3857\"><gml:lowerCorner>-13619861.7749135 6043950.18391843</gml:lowerCorner><gml:upperCorner>-13619861.7749135 6043950.18391843</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:Point srsName=\"urn:ogc:def:crs:EPSG::3857\"><gml:pos>-13619861.7749135 6043950.18391843</gml:pos></gml:Point></ogr:geometryProperty>\n      <ogr:name>needle</ogr:name>\n      <ogr:count>1</ogr:count>\n      <ogr:value>1.5</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.1\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::3857\"><gml:lowerCorner>-13618826.5036491 6042216.25041143</gml:lowerCorner><gml:upperCorner>-13616600.1138332 6043867.60776033</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:LineString srsName=\"urn:ogc:def:crs:EPSG::3857\"><gml:posList>-13618826.5036491 6042216.25041143 -13617713.3087412 6043867.60776033 -13616600.1138332 6043041.8896105</gml:posList></gml:LineString></ogr:geometryProperty>\n      <ogr:name>road</ogr:name>\n      <ogr:count>2</ogr:count>\n      <ogr:value>2.25</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.2\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::3857\"><gml:lowerCorner>-13621052.893465 6040565.20878006</gml:lowerCorner><gml:upperCorner>-13618826.5036491 6043867.60776033</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:Polygon srsName=\"urn:ogc:def:crs:EPSG::3857\"><gml:exterior><gml:LinearRing><gml:posList>-13621052.893465 6040565.20878006 -13618826.5036491 6040565.20878006 -13618826.5036491 6043867.60776033 -13621052.893465 6043867.60776033 -13621052.893465 6040565.20878006</gml:posList></gml:LinearRing></gml:exterior><gml:interior><gml:LinearRing><gml:posList>-13620496.296011 6041390.69014174 -13620496.296011 6043041.8896105 -13619383.1011031 6043041.8896105 -13619383.1011031 6041390.69014174 -13620496.296011 6041390.69014174</gml:posList></gml:LinearRing></gml:interior></gml:Polygon></ogr:geometryProperty>\n      <ogr:name>park</ogr:name>\n      <ogr:count>3</ogr:count>\n      <ogr:value>3</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.3\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::3857\"><gml:lowerCorner>-13614373.7240174 6040565.20878006</gml:lowerCorner><gml:upperCorner>-13611034.1392936 6042216.25041143</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:MultiSurface srsName=\"urn:ogc:def:crs:EPSG::3857\"><gml:surfaceMember><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>-13614373.7240174 6040565.20878006 -13613260.5291094 6040565.20878006 -13613260.5291094 6042216.25041143 -13614373.7240174 6040565.20878006</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember><gml:surfaceMember><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>-13612147.3342015 6040565.20878006 -13611034.1392936 6040565.20878006 -13611034.1392936 6042216.25041143 -13612147.3342015 6040565.20878006</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember></gml:MultiSurface></ogr:geometryProperty>\n      <ogr:name>islands</ogr:name>\n      <ogr:count>4</ogr:count>\n      <ogr:value>4.75</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.4\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::3857\"><gml:lowerCorner>-13615486.9189253 6038914.48269523</gml:lowerCorner><gml:upperCorner>-13612147.3342015 6042216.25041143</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:MultiCurve srsName=\"urn:ogc:def:crs:EPSG::3857\"><gml:curveMember><gml:LineString><gml:posList>-13614373.7240174 6040565.20878006 -13615486.9189253 6042216.25041143</gml:posList></gml:LineString></gml:curveMember><gml:curveMember><gml:LineString><gml:posList>-13613260.5291094 6038914.48269523 -13612147.3342015 6040565.20878006</gml:posList></gml:LineString></gml:curveMember></gml:MultiCurve></ogr:geometryProperty>\n      <ogr:name>paths</ogr:name>\n      <ogr:count>5</ogr:count>\n      <ogr:value>5.5</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.5\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::3857\"><gml:lowerCorner>-13616600.1138332 6043867.60776033</gml:lowerCorner><gml:upperCorner>-13615486.9189253 6045519.28099784</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:MultiPoint srsName=\"urn:ogc:def:crs:EPSG::3857\"><gml:pointMember><gml:Point><gml:pos>-13615486.9189253 6043867.60776033</gml:pos></gml:Point></gml:pointMember><gml:pointMember><gml:Point><gml:pos>-13616600.1138332 6045519.28099784</gml:pos></gml:Point></gml:pointMember></gml:MultiPoint></ogr:geometryProperty>\n      <ogr:name>spots</ogr:name>\n      <ogr:count>6</ogr:count>\n      <ogr:value>6.125</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n</ogr:FeatureCollection>\n",
+    "gml32-32610": "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<ogr:FeatureCollection\n     gml:id=\"aFeatureCollection\"\n     xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n     xsi:schemaLocation=\"http://ogr.maptools.org/ gml32-32610.xsd\"\n     xmlns:ogr=\"http://ogr.maptools.org/\"\n     xmlns:gml=\"http://www.opengis.net/gml/3.2\">\n  <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::32610\"><gml:lowerCorner>548090.567766617 5270976.26926506</gml:lowerCorner><gml:upperCorner>554874.190360282 5275401.56992647</gml:upperCorner></gml:Envelope></gml:boundedBy>\n                                                                                                                \n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.0\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::32610\"><gml:lowerCorner>548894.11266091 5274326.87371108</gml:lowerCorner><gml:upperCorner>548894.11266091 5274326.87371108</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:Point srsName=\"urn:ogc:def:crs:EPSG::32610\" gml:id=\"things.geom.0\"><gml:pos>548894.11266091 5274326.87371108</gml:pos></gml:Point></ogr:geometryProperty>\n      <ogr:name>needle</ogr:name>\n      <ogr:count>1</ogr:count>\n      <ogr:value>1.5</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.1\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::32610\"><gml:lowerCorner>549602.84860979 5273165.83250883</gml:lowerCorner><gml:upperCorner>551101.087660752 5274283.65201743</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:LineString srsName=\"urn:ogc:def:crs:EPSG::32610\" gml:id=\"things.geom.1\"><gml:posList>549602.84860979 5273165.83250883 550344.804092346 5274283.65201743 551101.087660752 5273734.50297442</gml:posList></gml:LineString></ogr:geometryProperty>\n      <ogr:name>road</ogr:name>\n      <ogr:count>2</ogr:count>\n      <ogr:value>2.25</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.2\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::32610\"><gml:lowerCorner>548090.567766617 5272041.86222376</gml:lowerCorner><gml:upperCorner>549612.303577745 5274277.2094448</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:Polygon srsName=\"urn:ogc:def:crs:EPSG::32610\" gml:id=\"things.geom.2\"><gml:exterior><gml:LinearRing><gml:posList>548108.906108693 5272041.86222376 549612.303577745 5272054.45749397 549593.392119055 5274277.2094448 548090.567766617 5274264.61496377 548108.906108693 5272041.86222376</gml:posList></gml:LinearRing></gml:exterior><gml:interior><gml:LinearRing><gml:posList>548480.135678543 5272600.66212151 548470.894868078 5273712.03839401 549222.378692782 5273718.33573342 549231.7627824 5272606.95965821 548480.135678543 5272600.66212151</gml:posList></gml:LinearRing></gml:interior></gml:Polygon></ogr:geometryProperty>\n      <ogr:name>park</ogr:name>\n      <ogr:count>3</ogr:count>\n      <ogr:value>3</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.3\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::32610\"><gml:lowerCorner>552619.096879806 5272080.81076831</gml:lowerCorner><gml:upperCorner>554874.190360282 5273212.96666824</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:MultiSurface srsName=\"urn:ogc:def:crs:EPSG::32610\" gml:id=\"things.geom.3\"><gml:surfaceMember><gml:Polygon gml:id=\"things.geom.3.0\"><gml:exterior><gml:LinearRing><gml:posList>552619.096879806 5272080.81076831 553370.794852529 5272087.64132517 553360.623537572 5273199.01530239 552619.096879806 5272080.81076831</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember><gml:surfaceMember><gml:Polygon gml:id=\"things.geom.3.1\"><gml:exterior><gml:LinearRing><gml:posList>554122.492680037 5272094.56877805 554874.190360282 5272101.59312732 554863.732502805 5273212.96666824 554122.492680037 5272094.56877805</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember></gml:MultiSurface></ogr:geometryProperty>\n      <ogr:name>islands</ogr:name>\n      <ogr:count>4</ogr:count>\n      <ogr:value>4.75</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.4\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::32610\"><gml:lowerCorner>551857.513989325 5270976.26926506</gml:lowerCorner><gml:upperCorner>554122.492680037 5273185.45150851</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:MultiCurve srsName=\"urn:ogc:def:crs:EPSG::32610\" gml:id=\"things.geom.4\"><gml:curveMember><gml:LineString gml:id=\"things.geom.4.0\"><gml:posList>552619.096879806 5272080.81076831 551857.513989325 5273185.45150851</gml:posList></gml:LineString></gml:curveMember><gml:curveMember><gml:LineString gml:id=\"things.geom.4.1\"><gml:posList>553380.964529066 5270976.26926506 554122.492680037 5272094.56877805</gml:posList></gml:LineString></gml:curveMember></gml:MultiCurve></ogr:geometryProperty>\n      <ogr:name>paths</ogr:name>\n      <ogr:count>5</ogr:count>\n      <ogr:value>5.5</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n  <ogr:featureMember>\n    <ogr:things gml:id=\"things.5\">\n      <gml:boundedBy><gml:Envelope srsName=\"urn:ogc:def:crs:EPSG::32610\"><gml:lowerCorner>551086.471284865 5274296.8278286</gml:lowerCorner><gml:upperCorner>551847.627622753 5275401.56992647</gml:upperCorner></gml:Envelope></gml:boundedBy>\n      <ogr:geometryProperty><gml:MultiPoint srsName=\"urn:ogc:def:crs:EPSG::32610\" gml:id=\"things.geom.5\"><gml:pointMember><gml:Point gml:id=\"things.geom.5.0\"><gml:pos>551847.627622753 5274296.8278286</gml:pos></gml:Point></gml:pointMember><gml:pointMember><gml:Point gml:id=\"things.geom.5.1\"><gml:pos>551086.471284865 5275401.56992647</gml:pos></gml:Point></gml:pointMember></gml:MultiPoint></ogr:geometryProperty>\n      <ogr:name>spots</ogr:name>\n      <ogr:count>6</ogr:count>\n      <ogr:value>6.125</ogr:value>\n    </ogr:things>\n  </ogr:featureMember>\n</ogr:FeatureCollection>\n"
+  },
+  "expected": {
+    "gml2-4326": [
+      { "type": "Point", "coordinates": [-122.3493, 47.6205], "name": "needle" },
+      { "type": "LineString", "coordinates": [[-122.34, 47.61], [-122.33, 47.62], [-122.32, 47.615]], "name": "road" },
+      {
+        "type": "Polygon",
+        "coordinates": [
+          [[-122.36, 47.6], [-122.34, 47.6], [-122.34, 47.62], [-122.36, 47.62], [-122.36, 47.6]],
+          [[-122.355, 47.605], [-122.355, 47.615], [-122.345, 47.615], [-122.345, 47.605], [-122.355, 47.605]]
+        ],
+        "name": "park"
+      },
+      {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [[[-122.3, 47.6], [-122.29, 47.6], [-122.29, 47.61], [-122.3, 47.6]]],
+          [[[-122.28, 47.6], [-122.27, 47.6], [-122.27, 47.61], [-122.28, 47.6]]]
+        ],
+        "name": "islands"
+      },
+      {
+        "type": "MultiLineString",
+        "coordinates": [[[-122.3, 47.6], [-122.31, 47.61]], [[-122.29, 47.59], [-122.28, 47.6]]],
+        "name": "paths"
+      },
+      { "type": "MultiPoint", "coordinates": [[-122.31, 47.62], [-122.32, 47.63]], "name": "spots" }
+    ],
+    "gml3-4326": [
+      { "type": "Point", "coordinates": [-122.3493, 47.6205], "name": "needle" },
+      { "type": "LineString", "coordinates": [[-122.34, 47.61], [-122.33, 47.62], [-122.32, 47.615]], "name": "road" },
+      {
+        "type": "Polygon",
+        "coordinates": [
+          [[-122.36, 47.6], [-122.34, 47.6], [-122.34, 47.62], [-122.36, 47.62], [-122.36, 47.6]],
+          [[-122.355, 47.605], [-122.355, 47.615], [-122.345, 47.615], [-122.345, 47.605], [-122.355, 47.605]]
+        ],
+        "name": "park"
+      },
+      {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [[[-122.3, 47.6], [-122.29, 47.6], [-122.29, 47.61], [-122.3, 47.6]]],
+          [[[-122.28, 47.6], [-122.27, 47.6], [-122.27, 47.61], [-122.28, 47.6]]]
+        ],
+        "name": "islands"
+      },
+      {
+        "type": "MultiLineString",
+        "coordinates": [[[-122.3, 47.6], [-122.31, 47.61]], [[-122.29, 47.59], [-122.28, 47.6]]],
+        "name": "paths"
+      },
+      { "type": "MultiPoint", "coordinates": [[-122.31, 47.62], [-122.32, 47.63]], "name": "spots" }
+    ],
+    "gml32-4326": [
+      { "type": "Point", "coordinates": [-122.3493, 47.6205], "name": "needle" },
+      { "type": "LineString", "coordinates": [[-122.34, 47.61], [-122.33, 47.62], [-122.32, 47.615]], "name": "road" },
+      {
+        "type": "Polygon",
+        "coordinates": [
+          [[-122.36, 47.6], [-122.34, 47.6], [-122.34, 47.62], [-122.36, 47.62], [-122.36, 47.6]],
+          [[-122.355, 47.605], [-122.355, 47.615], [-122.345, 47.615], [-122.345, 47.605], [-122.355, 47.605]]
+        ],
+        "name": "park"
+      },
+      {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [[[-122.3, 47.6], [-122.29, 47.6], [-122.29, 47.61], [-122.3, 47.6]]],
+          [[[-122.28, 47.6], [-122.27, 47.6], [-122.27, 47.61], [-122.28, 47.6]]]
+        ],
+        "name": "islands"
+      },
+      {
+        "type": "MultiLineString",
+        "coordinates": [[[-122.3, 47.6], [-122.31, 47.61]], [[-122.29, 47.59], [-122.28, 47.6]]],
+        "name": "paths"
+      },
+      { "type": "MultiPoint", "coordinates": [[-122.31, 47.62], [-122.32, 47.63]], "name": "spots" }
+    ],
+    "gml3-3857": [
+      { "type": "Point", "coordinates": [-122.34930000000028, 47.620500000000014], "name": "needle" },
+      {
+        "type": "LineString",
+        "coordinates": [
+          [-122.3400000000001, 47.609999999999985],
+          [-122.33000000000041, 47.620000000000005],
+          [-122.3199999999998, 47.61499999999999]
+        ],
+        "name": "road"
+      },
+      {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-122.3600000000004, 47.599999999999994],
+            [-122.3400000000001, 47.599999999999994],
+            [-122.3400000000001, 47.620000000000005],
+            [-122.3600000000004, 47.620000000000005],
+            [-122.3600000000004, 47.599999999999994]
+          ],
+          [
+            [-122.3550000000001, 47.60499999999997],
+            [-122.3550000000001, 47.61499999999999],
+            [-122.34500000000041, 47.61499999999999],
+            [-122.34500000000041, 47.60499999999997],
+            [-122.3550000000001, 47.60499999999997]
+          ]
+        ],
+        "name": "park"
+      },
+      {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [-122.30000000000038, 47.599999999999994],
+              [-122.28999999999978, 47.599999999999994],
+              [-122.28999999999978, 47.609999999999985],
+              [-122.30000000000038, 47.599999999999994]
+            ]
+          ],
+          [
+            [
+              [-122.28000000000006, 47.599999999999994],
+              [-122.27000000000037, 47.599999999999994],
+              [-122.27000000000037, 47.609999999999985],
+              [-122.28000000000006, 47.599999999999994]
+            ]
+          ]
+        ],
+        "name": "islands"
+      },
+      {
+        "type": "MultiLineString",
+        "coordinates": [
+          [[-122.30000000000038, 47.599999999999994], [-122.31000000000007, 47.609999999999985]],
+          [[-122.28999999999978, 47.58999999999998], [-122.28000000000006, 47.599999999999994]]
+        ],
+        "name": "paths"
+      },
+      {
+        "type": "MultiPoint",
+        "coordinates": [[-122.31000000000007, 47.620000000000005], [-122.3199999999998, 47.630000000000024]],
+        "name": "spots"
+      }
+    ],
+    "gml32-32610": [
+      { "type": "Point", "coordinates": [-122.3493, 47.62049999999998], "name": "needle" },
+      {
+        "type": "LineString",
+        "coordinates": [[-122.34, 47.60999999999997], [-122.33, 47.620000000000026], [-122.32, 47.614999999999945]],
+        "name": "road"
+      },
+      {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-122.36, 47.59999999999999],
+            [-122.34, 47.60000000000005],
+            [-122.34, 47.61999999999998],
+            [-122.36, 47.61999999999999],
+            [-122.36, 47.59999999999999]
+          ],
+          [
+            [-122.355, 47.605],
+            [-122.355, 47.61499999999997],
+            [-122.345, 47.614999999999974],
+            [-122.345, 47.60499999999998],
+            [-122.355, 47.605]
+          ]
+        ],
+        "name": "park"
+      },
+      {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [[[-122.3, 47.59999999999996], [-122.29, 47.6], [-122.29, 47.60999999999997], [-122.3, 47.59999999999996]]],
+          [[[-122.28, 47.6], [-122.27, 47.59999999999999], [-122.27, 47.61], [-122.28, 47.6]]]
+        ],
+        "name": "islands"
+      },
+      {
+        "type": "MultiLineString",
+        "coordinates": [
+          [[-122.3, 47.59999999999996], [-122.31, 47.61000000000004]],
+          [[-122.29, 47.590000000000025], [-122.28, 47.6]]
+        ],
+        "name": "paths"
+      },
+      {
+        "type": "MultiPoint",
+        "coordinates": [[-122.31, 47.61999999999999], [-122.32, 47.62999999999996]],
+        "name": "spots"
+      }
+    ]
+  }
+}
