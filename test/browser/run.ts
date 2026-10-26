@@ -3742,6 +3742,137 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "two fingers moved up or down together tilt the map, even slowly and a little out of step",
+    async run({ page }) {
+      const style = JSON.stringify({
+        version: 1,
+        sources: {},
+        layers: [{ id: "bg", type: "background", paint: { color: "#ffffff" } }],
+      });
+      await createMap(page, style, { zoom: 4, center: [0, 0], maxPitch: 85 });
+      const touch = (type: string, points: [number, number][]) =>
+        page.send("Input.dispatchTouchEvent", {
+          type,
+          touchPoints: points.map(([x, y], id) => ({ x, y, id })),
+        });
+      const camera = () =>
+        page.evaluate<{ zoom: number; bearing: number; pitch: number; lng: number; lat: number }>(
+          "({ zoom: window.map.getZoom(), bearing: window.map.getBearing(), pitch: window.map.getPitch(), lng: window.map.getCenter().lng, lat: window.map.getCenter().lat })",
+        );
+      const drag = async (from: [number, number][], step: (i: number) => [number, number][], count: number) => {
+        await touch("touchStart", from);
+        for (let i = 1; i <= count; i++) await touch("touchMove", step(i));
+        await touch("touchEnd", []);
+        await page.evaluate("new Promise((r) => setTimeout(r, 120))");
+      };
+      const reset = (pitch: number) =>
+        page.evaluate(`void window.map.jumpTo({ center: [0, 0], zoom: 4, bearing: 0, pitch: ${pitch} })`);
+      const still = (c: { zoom: number; bearing: number; lng: number; lat: number }, what: string) => {
+        if (Math.abs(c.zoom - 4) > 0.01 || Math.abs(c.bearing) > 0.01 || Math.hypot(c.lng, c.lat) > 0.01)
+          fail(`${what} should only tilt, got ${JSON.stringify(c)}`);
+      };
+
+      await drag(
+        [
+          [300, 450],
+          [500, 450],
+        ],
+        (i) => [
+          [300, 450 - 2 * i],
+          [500, 450 - 2 * i],
+        ],
+        60,
+      );
+      const up = await camera();
+      if (!(up.pitch > 35)) fail(`a slow two-finger drag up should tilt the map, got ${JSON.stringify(up)}`);
+      still(up, "a two-finger drag up");
+
+      await drag(
+        [
+          [300, 300],
+          [500, 300],
+        ],
+        (i) => [
+          [300 + (i % 3) - 1, 300 + 2 * i],
+          [500 - (i % 2), 300 + 2 * Math.max(0, i - 4)],
+        ],
+        60,
+      );
+      const down = await camera();
+      if (!(down.pitch < up.pitch - 30))
+        fail(`a two-finger drag down with one finger trailing should tilt back, got ${JSON.stringify(down)}`);
+      still(down, "a two-finger drag down");
+
+      await reset(60);
+      await drag(
+        [
+          [320, 450],
+          [480, 430],
+        ],
+        (i) => [
+          [320, 450 - 3 * i],
+          [480, 430 - 3 * i],
+        ],
+        30,
+      );
+      const higher = await camera();
+      if (!(higher.pitch > 80))
+        fail(`tilting up from 60 degrees should reach the 85 degree limit, got ${higher.pitch}`);
+
+      await reset(0);
+      await drag(
+        [
+          [400, 200],
+          [400, 400],
+        ],
+        (i) => [
+          [400, 200 - 3 * i],
+          [400, 400 - 3 * i],
+        ],
+        30,
+      );
+      const stacked = await camera();
+      if (stacked.pitch > 1) fail(`fingers one above the other should pan, not tilt, got pitch ${stacked.pitch}`);
+      if (Math.abs(stacked.lat) < 1)
+        fail(`fingers one above the other should pan the map, got ${JSON.stringify(stacked)}`);
+
+      await reset(0);
+      await drag(
+        [
+          [300, 300],
+          [500, 300],
+        ],
+        (i) => [
+          [300 - 3 * i, 300 - 2 * i],
+          [500 + 3 * i, 300 - 2 * i],
+        ],
+        30,
+      );
+      const spread = await camera();
+      if (spread.pitch > 1) fail(`spreading the fingers while moving up should zoom, not tilt, got ${spread.pitch}`);
+      if (!(spread.zoom > 4.5)) fail(`spreading the fingers should zoom in, got ${spread.zoom}`);
+
+      await reset(0);
+      await page.evaluate("void window.map.setMaxPitch(0)");
+      await drag(
+        [
+          [300, 450],
+          [500, 450],
+        ],
+        (i) => [
+          [300, 450 - 3 * i],
+          [500, 450 - 3 * i],
+        ],
+        30,
+      );
+      const locked = await camera();
+      if (locked.pitch !== 0 || Math.abs(locked.lat) < 1)
+        fail(`with tilting locked a two-finger drag should pan instead, got ${JSON.stringify(locked)}`);
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
     name: "imagery that repeats a 'no data' picture falls back to the tiles above it",
     async run({ page, shot, base }) {
       await createMap(page, rasterStyle(base, "/fixture/placeholder"), { zoom: 4.5, center: [10, 20] });
