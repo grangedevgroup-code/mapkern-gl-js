@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="maplet-viewer">
+<html lang="en" class="mapkern-viewer">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -10,7 +10,7 @@
   <body>
     <div id="map"></div>
     <script type="module">
-      import { createViewer, element, fileButton, maplet } from "../viewer.js";
+      import { createViewer, element, fileButton, mapkern } from "../viewer.js";
 
       const now = new Date();
       const later = new Date(now.getTime() + 3600000);
@@ -86,14 +86,14 @@
           }
         },
       });
-      maplet.militarySymbols(map);
+      mapkern.militarySymbols(map);
 
       map.on("click", "symbols", (e) => {
         const f = e.features?.[0];
         if (!f) return;
         const p = f.properties ?? {};
-        const at = maplet.toMgrs(f.geometry.coordinates) ?? "";
-        new maplet.Popup()
+        const at = mapkern.toMgrs(f.geometry.coordinates) ?? "";
+        new mapkern.Popup()
           .setLngLat(f.geometry.coordinates)
           .setText(`${p.callsign ?? p.uid}  ${p.type}  ${at}${p.remarks ? `\n${p.remarks}` : ""}`)
           .addTo(map);
@@ -108,7 +108,7 @@
         }),
       );
       const show = () => {
-        const text = maplet.toMgrs(map.getCenter(), 5);
+        const text = mapkern.toMgrs(map.getCenter(), 5);
         grid.textContent = text ? text.replace(/^(\d+\w)(\w\w)(\d{5})(\d{5})$/, "$1 $2 $3 $4") : "Outside MGRS";
       };
       map.on("move", show);
