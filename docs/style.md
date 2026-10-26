@@ -468,7 +468,7 @@ const style = {
 };
 ```
 
-`exaggeration` stretches the heights and is 1 unless you set it. You can also turn terrain on and off while the map runs with [`setTerrain()`](api.md#terrain).
+`exaggeration` stretches the heights and is 1 unless you set it. `relief`, from 0 to 1, shades the slopes as if lit from the top left of the screen, which makes the land readable on a plain street map and even when looking straight down; it is 0 unless you set it, and a [sun](#day-and-night) with `shade` takes over the lighting when there is one. You can also turn terrain on and off while the map runs with [`setTerrain()`](api.md#terrain).
 
 Everything flat gets drawn onto the ground: fills, lines, circles, rasters and hillshading. Labels and 3D buildings stand on it, and labels behind a hill are hidden. Where there's no elevation data the ground stays flat at sea level.
 
