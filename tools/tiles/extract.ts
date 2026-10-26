@@ -276,7 +276,7 @@ export async function extractRegion(
     for (const rel of relations) {
       const admin = rel.tags.type === "boundary" && rel.tags.boundary === "administrative";
       if (profile === "tiles" && admin) continue;
-      const wide = profile === "search" && admin && Number(rel.tags.admin_level) <= 4;
+      const wide = profile !== "tiles" && admin && Number(rel.tags.admin_level) <= 4;
       if (!wide && !rel.members.some((m) => sortedHas(ways.ids, m.ref))) continue;
       for (const m of rel.members) {
         if (!sortedHas(ways.ids, m.ref) && !hasBit(extra.bits, m.ref)) {
