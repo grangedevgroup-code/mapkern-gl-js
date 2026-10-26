@@ -110,6 +110,40 @@ async function main(): Promise<void> {
     log(`done in ${((performance.now() - started) / 1000).toFixed(1)} s`);
     return;
   }
+  if (process.argv[2] === "search") {
+    const { values } = parseArgs({
+      args: process.argv.slice(3),
+      options: {
+        input: { type: "string" },
+        bbox: { type: "string" },
+        output: { type: "string" },
+        threads: { type: "string" },
+        help: { type: "boolean", default: false },
+      },
+    });
+    if (values.help || !values.input || !values.bbox || !values.output) {
+      console.log(HELP);
+      process.exit(values.help ? 0 : 1);
+    }
+    const bbox = parseBbox(values.bbox);
+    const input = resolve(values.input);
+    const output = resolve(values.output);
+    mkdirSync(dirname(output), { recursive: true });
+    const log = (m: string) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}`);
+    const started = performance.now();
+    log(`reading ${input} (${(statSync(input).size / 1e9).toFixed(2)} GB) for ${bbox.join(", ")}`);
+    const region = await extractRegion(input, bbox, {
+      threads: values.threads ? Number(values.threads) : availableParallelism(),
+      log,
+      profile: "search",
+    });
+    const { data } = indexRegion(region, log);
+    const bytes = gzipSync(encodeSearchData(data), { level: 9 });
+    writeFileSync(output, bytes);
+    log(`wrote ${output}: ${(bytes.length / 1e6).toFixed(1)} MB`);
+    log(`done in ${((performance.now() - started) / 1000).toFixed(1)} s`);
+    return;
+  }
   if (process.argv[2] === "convert") {
     const [input, output] = process.argv.slice(3);
     if (!input || !output) {
