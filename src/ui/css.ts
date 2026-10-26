@@ -13,6 +13,7 @@ export const CSS = `
   outline: none;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .maplet-canvas-container:focus-visible {
   box-shadow: inset 0 0 0 2px var(--maplet-focus, #2f6fdb);
@@ -22,19 +23,26 @@ export const CSS = `
   left: 0;
   top: 0;
 }
+.maplet-map {
+  --maplet-margin: var(--maplet-control-margin, 10px);
+}
 .maplet-corner {
   position: absolute;
   z-index: 2;
   display: flex;
-  gap: 10px;
-  margin: 10px;
-  max-width: calc(100% - 20px);
+  gap: var(--maplet-margin);
+  margin: var(--maplet-margin);
+  max-width: calc(100% - 2 * var(--maplet-margin));
   pointer-events: none;
 }
 .maplet-top-left { top: 0; left: 0; flex-direction: column; align-items: flex-start; }
 .maplet-top-right { top: 0; right: 0; flex-direction: column; align-items: flex-end; }
-.maplet-bottom-left { bottom: 0; left: 0; flex-direction: column-reverse; align-items: flex-start; }
-.maplet-bottom-right { bottom: 0; right: 0; flex-direction: column-reverse; align-items: flex-end; margin: 0; max-width: 100%; }
+.maplet-bottom-left { bottom: 0; left: 0; flex-direction: column; align-items: flex-start; }
+.maplet-bottom-right { bottom: 0; right: 0; flex-direction: column; align-items: flex-end; }
+.maplet-bottom-right > .maplet-attribution {
+  margin: 0 calc(-1 * var(--maplet-margin)) calc(-1 * var(--maplet-margin)) 0;
+  max-width: calc(100% + var(--maplet-margin));
+}
 .maplet-control {
   pointer-events: auto;
   background: var(--maplet-control-bg, #ffffff);
@@ -82,6 +90,82 @@ export const CSS = `
 .maplet-compass svg {
   transition: transform 80ms linear;
 }
+.maplet-basemaps {
+  position: relative;
+  overflow: visible;
+}
+.maplet-basemaps > button {
+  border-radius: 8px;
+}
+.maplet-basemaps-menu {
+  position: absolute;
+  right: calc(100% + 8px);
+  bottom: 0;
+  display: none;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--maplet-control-bg, #ffffff);
+  box-shadow: 0 1px 2px rgba(16, 25, 29, 0.14), 0 2px 10px rgba(16, 25, 29, 0.08);
+}
+.maplet-basemaps.maplet-open .maplet-basemaps-menu {
+  display: flex;
+}
+.maplet-control .maplet-basemaps-menu button {
+  width: auto;
+  height: 36px;
+  justify-content: flex-start;
+  padding: 0 12px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.maplet-control .maplet-basemaps-menu button + button {
+  border-top: 0;
+}
+.maplet-control .maplet-basemaps-menu button[aria-checked="true"] {
+  font-weight: 600;
+  background: rgba(47, 111, 219, 0.12);
+}
+.maplet-control .maplet-terrain-button {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.maplet-terrain-label {
+  display: block;
+  transition: transform 160ms ease;
+}
+.maplet-tilted .maplet-terrain-label {
+  transform: perspective(24px) rotateX(28deg);
+}
+@media (pointer: coarse) {
+  .maplet-map {
+    --maplet-margin: var(--maplet-control-margin, 16px);
+  }
+  .maplet-control button {
+    width: 44px;
+    height: 44px;
+  }
+  .maplet-control svg {
+    width: 22px;
+    height: 22px;
+  }
+  .maplet-control .maplet-basemaps-menu button {
+    height: 44px;
+    font-size: 15px;
+  }
+  .maplet-control .maplet-terrain-button {
+    font-size: 14px;
+  }
+  .maplet-scale {
+    font-size: 12px;
+    line-height: 18px;
+  }
+}
 .maplet-attribution {
   pointer-events: auto;
   box-sizing: border-box;
@@ -113,15 +197,44 @@ export const CSS = `
 }
 .maplet-scale {
   pointer-events: none;
+  font-size: 11px;
+  line-height: 16px;
+  color: #10191d;
+  white-space: nowrap;
+}
+.maplet-scale > div {
+  box-sizing: border-box;
   padding: 0 6px;
   border: 2px solid rgba(16, 25, 29, 0.7);
   border-top: 0;
   background: rgba(255, 255, 255, 0.7);
-  font-size: 11px;
-  line-height: 16px;
-  color: #10191d;
-  box-sizing: border-box;
-  white-space: nowrap;
+}
+.maplet-scale-both {
+  padding: 1px 6px 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.7);
+}
+.maplet-scale-both > .maplet-scale-label {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.maplet-scale-both > .maplet-scale-line {
+  height: 5px;
+  margin-top: 1px;
+  padding: 0;
+  border-color: rgba(16, 25, 29, 0.85);
+  background: none;
+}
+.maplet-logo {
+  pointer-events: none;
+  line-height: 0;
+  opacity: 0.6;
+}
+.maplet-logo svg {
+  display: block;
+  width: 80px;
+  height: 26px;
 }
 .maplet-popup {
   position: absolute;
