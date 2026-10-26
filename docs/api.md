@@ -334,7 +334,7 @@ map.addControl(terrain);
 terrain.on("viewchange", ({ view }) => console.log(view));
 ```
 
-`source` is an elevation source to add, or the id of one already in the style. `exaggeration`, `relief` (0.5 unless you say otherwise) and `pitch` (60) tune the 3D views. `setView("flat" | "terrain" | "tilted")` switches from code and `view` reads it back, also after someone tilts the map by hand. Terrain stays on when the style changes, for example from a `BasemapControl`.
+`source` is an elevation source to add, or the id of one already in the style. `exaggeration`, `relief` (0.5 unless you say otherwise) and `pitch` (60) tune the 3D views. `setView("flat" | "terrain" | "tilted")` switches from code and `view` reads it back, also after someone tilts the map by hand. Terrain stays on when the style changes, for example from a `BasemapControl`. `setSource(source)` swaps in other elevation data, such as a file opened with `openTileFile`, and keeps the current view.
 
 `FullscreenControl` fills the screen with the map, or with the element you pass as `container`. Browsers without the Fullscreen API, such as Safari on iPhone, get the same effect by stretching the map over the page. It fires `fullscreenstart` and `fullscreenend`, and `isFullscreen()` tells you which state it's in.
 
