@@ -87,3 +87,18 @@ test("walls along the tile buffer are left out", () => {
   assert.equal(walls.length, 4 * 3);
   assert.ok(walls.every((p) => p.x >= 0 || p.y === 100 || p.y === 200));
 });
+
+test("buildings are cut at the tile edge so neighbouring tiles never draw the same part twice", () => {
+  const builder = new ExtrusionBuilder(4096);
+  builder.addPolygon([square(-64, 100, 200, 200), reversed(square(-32, 120, 100, 180))], 0);
+  builder.addPolygon([square(4000, 4000, 4200, 4300)], 1);
+  builder.addPolygon([square(-300, -300, -100, -100)], 2);
+  const all = vertices(builder);
+  assert.ok(all.length > 0);
+  assert.ok(
+    all.every((p) => p.x >= 0 && p.x <= 4096 && p.y >= 0 && p.y <= 4096),
+    JSON.stringify(all.filter((p) => p.x < 0 || p.x > 4096 || p.y < 0 || p.y > 4096)),
+  );
+  const roofs = all.filter((p) => p.nz > 0);
+  assert.ok(roofs.some((p) => p.x === 0 && p.y === 100) && roofs.some((p) => p.x === 4096 && p.y === 4096));
+});
