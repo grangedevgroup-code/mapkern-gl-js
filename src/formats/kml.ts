@@ -30,7 +30,27 @@ function readGeometry(parent: XmlElement): Geometry | null {
     if (g) geometries.push(g);
   }
   if (geometries.length === 0) return null;
-  return geometries.length === 1 ? geometries[0]! : { type: "GeometryCollection", geometries };
+  return geometries.length === 1 ? geometries[0]! : combine(geometries);
+}
+
+function combine(geometries: Geometry[]): Geometry {
+  const points: Position[] = [];
+  const lines: Position[][] = [];
+  const polygons: Position[][][] = [];
+  for (const g of geometries) {
+    if (g.type === "Point") points.push(g.coordinates);
+    else if (g.type === "MultiPoint") points.push(...g.coordinates);
+    else if (g.type === "LineString") lines.push(g.coordinates);
+    else if (g.type === "MultiLineString") lines.push(...g.coordinates);
+    else if (g.type === "Polygon") polygons.push(g.coordinates);
+    else if (g.type === "MultiPolygon") polygons.push(...g.coordinates);
+    else return { type: "GeometryCollection", geometries };
+  }
+  const kinds = [points, lines, polygons].filter((list) => list.length > 0).length;
+  if (kinds !== 1) return { type: "GeometryCollection", geometries };
+  if (points.length > 0) return { type: "MultiPoint", coordinates: points };
+  if (lines.length > 0) return { type: "MultiLineString", coordinates: lines };
+  return { type: "MultiPolygon", coordinates: polygons };
 }
 
 function geometry(node: XmlElement): Geometry | null {
