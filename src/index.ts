@@ -40,6 +40,10 @@ export type { LngLat, LngLatLike, LngLatObject } from "./geo/mercator.ts";
 export { distanceMeters, lngLatToWorld, metersPerPixel, worldToLngLat } from "./geo/mercator.ts";
 export type { SunPosition } from "./geo/sun.ts";
 export { sunAltitude, sunAzimuth, sunPosition } from "./geo/sun.ts";
+export type { SearchKind } from "./search/format.ts";
+export { SearchIndexError } from "./search/format.ts";
+export type { Geocoder, ReverseOptions, SearchIndexSource, SearchOptions, SearchResult } from "./search/index.ts";
+export { SearchIndex } from "./search/index.ts";
 export type { DemSource } from "./sources/dem.ts";
 export { openElevationFile } from "./sources/elevation.ts";
 export { openTileFile } from "./sources/files.ts";
@@ -100,6 +104,14 @@ export type { Alignment, MarkerEvent, MarkerEvents, MarkerOptions } from "./ui/m
 export { Marker } from "./ui/marker.ts";
 export type { PopupEvent, PopupEvents, PopupOptions } from "./ui/popup.ts";
 export { Popup } from "./ui/popup.ts";
+export type {
+  SearchControlOptions,
+  SearchErrorEvent,
+  SearchEvents,
+  SearchResultEvent,
+  SearchResultsEvent,
+} from "./ui/search.ts";
+export { SearchControl } from "./ui/search.ts";
 export type { SourceGeoJSONFeature } from "./worker/geojson.ts";
 
 declare const MAPKERN_VERSION: string | undefined;
