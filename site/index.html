@@ -8,6 +8,7 @@
     <title>Maplet GL JS</title>
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="site.css" />
+    <link rel="stylesheet" href="examples/viewer.css" />
   </head>
   <body>
     <header class="top">
@@ -84,7 +85,7 @@ const map = new maplet.Map({ container: "map" });</code></pre>
     </footer>
 
     <script type="module">
-      import * as maplet from "./dist/maplet.js";
+      import { createViewer } from "./examples/viewer.js";
 
       const container = document.getElementById("map");
       const supported = (() => {
@@ -96,9 +97,7 @@ const map = new maplet.Map({ container: "map" });</code></pre>
       })();
 
       if (supported) {
-        const map = new maplet.Map({ container, cooperativeGestures: true });
-        map.addControl(new maplet.NavigationControl());
-        window.map = map;
+        window.map = createViewer({ container, page: false, cooperativeGestures: true }).map;
       } else {
         container.classList.add("fallback");
         container.innerHTML = '<img src="assets/screenshot-world.webp" alt="The world drawn by Maplet" />';
