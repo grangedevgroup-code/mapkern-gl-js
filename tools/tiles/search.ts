@@ -1,18 +1,11 @@
-import { gzipSync } from "node:zlib";
-import type { SearchData, SearchKind } from "../../src/search/format.ts";
-import { encodeSearchData, NO_CATEGORY, NONE, SEARCH_KINDS } from "../../src/search/format.ts";
+import { deflateSync } from "node:zlib";
 import { tokenize } from "../../src/search/text.ts";
+import { writeSearchFile } from "../../src/search/write.ts";
 import type { RegionData } from "./extract.ts";
 import type { Ring } from "./geometry.ts";
 import { joinWays, pointInRing, ringBounds, simplify, splitRings } from "./geometry.ts";
 import type { Tags } from "./osm-pbf.ts";
 import { categoryOf, hasAddress, isNameKey, streetClass } from "./search-schema.ts";
-
-export interface SearchStats {
-  entries: number;
-  byKind: Record<SearchKind, number>;
-  terms: number;
-}
 
 const PLACE_RANK: Record<string, number> = {
   country: 250,
@@ -72,7 +65,20 @@ const STREET_RANK: Record<string, number> = {
 };
 
 const NEAREST_PLACE: Record<string, number> = { city: 15000, town: 8000, village: 4000, hamlet: 2000 };
-const OWN_LOCALITY = new Set(["city", "town", "village", "county", "state", "province", "region", "country", "island"]);
+const CONTEXT_ABOVE: Record<string, number> = {
+  country: 3,
+  state: 2,
+  province: 2,
+  region: 2,
+  county: 0,
+  district: 0,
+  municipality: 0,
+  city: 0,
+  town: 0,
+  village: 0,
+  island: 0,
+  archipelago: 0,
+};
 const GROUP_GAP = 0.02;
 
 interface Area {
@@ -178,13 +184,6 @@ function coarseKey(x: number, y: number): number {
   return (x + 400) * 1000 + (y + 200);
 }
 
-export function indexRegion(
-  data: RegionData,
-  log: (message: string) => void = () => undefined,
-): { data: SearchData; stats: SearchStats } {
-  return packEntries(data.bbox, collectEntries(data, log), log);
-}
-
 export function collectEntries(data: RegionData, log: (message: string) => void = () => undefined): Entry[] {
   const ids = data.nodeIds;
   const findNode = (id: number): number => {
@@ -239,7 +238,7 @@ export function collectEntries(data: RegionData, log: (message: string) => void 
   const areas: Area[] = [];
   const polygonPois: { tags: Tags; rings: Ring[]; osm: number }[] = [];
   for (const rel of data.relations) {
-    const rings = ringsOf(rel.members);
+    const rings = ringsOf(rel.members, rel.tags.type === "boundary");
     if (rel.tags.type === "boundary") {
       const level = Number(rel.tags.admin_level);
       if (!rings.length || !Number.isInteger(level)) continue;
@@ -325,6 +324,7 @@ export function collectEntries(data: RegionData, log: (message: string) => void 
   const nameTokens = (tags: Tags): Set<string> => {
     const out = new Set<string>();
     for (const key in tags) if (isNameKey(key)) for (const t of tokenize(tags[key]!)) out.add(t);
+    for (const code of [tags.iata, tags.icao]) if (code) for (const t of tokenize(code)) out.add(t);
     return out;
   };
   const addressOf = (tags: Tags): { number: string; street: string } | null => {
@@ -343,7 +343,7 @@ export function collectEntries(data: RegionData, log: (message: string) => void 
         rank: Math.min(255, rank),
         category: `place=${tags.place}`,
         name: tags.name,
-        context: contextOf(lon, lat, null, tags.name, OWN_LOCALITY.has(tags.place) ? 0 : -1),
+        context: contextOf(lon, lat, null, tags.name, CONTEXT_ABOVE[tags.place] ?? -1),
         number: null,
         street: null,
         lon,
@@ -489,104 +489,6 @@ export function collectEntries(data: RegionData, log: (message: string) => void 
   return entries;
 }
 
-export function packEntries(
-  bbox: [number, number, number, number],
-  entries: Entry[],
-  log: (message: string) => void,
-): { data: SearchData; stats: SearchStats } {
-  const strings: string[] = [];
-  const stringIds = new Map<string, number>();
-  const str = (s: string | null): number => {
-    if (s === null || s === "") return NONE;
-    let id = stringIds.get(s);
-    if (id === undefined) {
-      id = strings.length;
-      strings.push(s);
-      stringIds.set(s, id);
-    }
-    return id;
-  };
-  const categories: string[] = [];
-  const categoryIds = new Map<string, number>();
-  const n = entries.length;
-  const out: SearchData = {
-    bbox,
-    strings,
-    categories,
-    kind: new Uint8Array(n),
-    rank: new Uint8Array(n),
-    category: new Uint16Array(n),
-    name: new Uint32Array(n),
-    context: new Uint32Array(n),
-    number: new Uint32Array(n),
-    street: new Uint32Array(n),
-    lon: new Int32Array(n),
-    lat: new Int32Array(n),
-    shapes: new Uint32Array(n + 1),
-    parts: new Uint32Array(0),
-    coords: new Int32Array(0),
-    terms: new Uint32Array(0),
-    termStart: new Uint32Array(0),
-    postings: new Uint32Array(0),
-  };
-  const parts: number[] = [0];
-  const coords: number[] = [];
-  const postingLists = new Map<string, number[]>();
-  const byKind = Object.fromEntries(SEARCH_KINDS.map((k) => [k, 0])) as Record<SearchKind, number>;
-  entries.forEach((e, i) => {
-    byKind[SEARCH_KINDS[e.kind]!]++;
-    out.kind[i] = e.kind;
-    out.rank[i] = Math.max(0, Math.min(255, Math.round(e.rank)));
-    let cat = NO_CATEGORY;
-    if (e.category) {
-      cat = categoryIds.get(e.category) ?? -1;
-      if (cat < 0 && categories.length < NO_CATEGORY) {
-        cat = categories.length;
-        categories.push(e.category);
-        categoryIds.set(e.category, cat);
-      }
-      if (cat < 0) cat = NO_CATEGORY;
-    }
-    out.category[i] = cat;
-    out.name[i] = str(e.name);
-    out.context[i] = str(e.context);
-    out.number[i] = str(e.number);
-    out.street[i] = str(e.street);
-    out.lon[i] = Math.round(e.lon * 1e7);
-    out.lat[i] = Math.round(e.lat * 1e7);
-    if (e.shape) {
-      for (const l of e.shape) {
-        for (let k = 0; k < l.length; k++) coords.push(Math.round(l[k]! * 1e7));
-        parts.push(coords.length / 2);
-      }
-    }
-    out.shapes[i + 1] = parts.length - 1;
-    for (const t of e.tokens) {
-      const list = postingLists.get(t);
-      if (!list) postingLists.set(t, [i]);
-      else if (list[list.length - 1] !== i) list.push(i);
-    }
-  });
-  out.parts = Uint32Array.from(parts);
-  out.coords = Int32Array.from(coords);
-  const terms = [...postingLists.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  out.terms = Uint32Array.from(terms, (t) => str(t));
-  out.termStart = new Uint32Array(terms.length + 1);
-  let total = 0;
-  for (let i = 0; i < terms.length; i++) {
-    total += postingLists.get(terms[i]!)!.length;
-    out.termStart[i + 1] = total;
-  }
-  out.postings = new Uint32Array(total);
-  let at = 0;
-  for (const t of terms) for (const e of postingLists.get(t)!) out.postings[at++] = e;
-  const stats: SearchStats = { entries: n, byKind, terms: terms.length };
-  log(
-    `search entries: ${n.toLocaleString()} (${SEARCH_KINDS.map((k) => `${byKind[k].toLocaleString()} ${k}`).join(", ")}), terms: ${terms.length.toLocaleString()}`,
-  );
-  return { data: out, stats };
-}
-
 function cluster<T extends { lines: Float64Array[] }>(items: T[]): T[][] {
   const boxes = items.map((it) => {
     let x0 = Number.POSITIVE_INFINITY;
@@ -707,5 +609,47 @@ export function writeSearchIndex(
   entries: Entry[],
   log: (message: string) => void = () => undefined,
 ): Uint8Array {
-  return gzipSync(encodeSearchData(packEntries(bbox, entries, log).data), { level: 9 });
+  return writeSearchFile(entries, {
+    bbox,
+    compress: (bytes) => deflateSync(bytes, { level: 9 }),
+    attribution: "© OpenStreetMap contributors",
+    log,
+  });
+}
+
+export function stitch(chains: Float64Array[]): Ring[] {
+  const left = chains.map((c) => Array.from(c));
+  const rings: Ring[] = [];
+  while (left.length > 0) {
+    const ring = left.pop()!;
+    for (;;) {
+      const ex = ring[ring.length - 2]!;
+      const ey = ring[ring.length - 1]!;
+      let best = -1;
+      let flip = false;
+      let bestD = (ring[0]! - ex) ** 2 + (ring[1]! - ey) ** 2;
+      for (let i = 0; i < left.length; i++) {
+        const c = left[i]!;
+        const start = (c[0]! - ex) ** 2 + (c[1]! - ey) ** 2;
+        const end = (c[c.length - 2]! - ex) ** 2 + (c[c.length - 1]! - ey) ** 2;
+        if (start < bestD) {
+          bestD = start;
+          best = i;
+          flip = false;
+        }
+        if (end < bestD) {
+          bestD = end;
+          best = i;
+          flip = true;
+        }
+      }
+      if (best < 0) break;
+      const next = left.splice(best, 1)[0]!;
+      if (flip) for (let k = next.length - 2; k >= 0; k -= 2) ring.push(next[k]!, next[k + 1]!);
+      else ring.push(...next);
+    }
+    ring.push(ring[0]!, ring[1]!);
+    if (ring.length >= 8) rings.push(Float64Array.from(ring));
+  }
+  return rings;
 }
