@@ -86,12 +86,41 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
     list.id = `${this.id}-list`;
     list.className = "mapkern-search-results";
     list.setAttribute("role", "listbox");
-    el.append(input, list);
+    const panel = doc.createElement("div");
+    panel.className = "mapkern-search-panel";
+    panel.append(input, list);
+    const toggle = doc.createElement("button");
+    toggle.type = "button";
+    toggle.className = "mapkern-search-button";
+    toggle.title = map.text("search");
+    toggle.setAttribute("aria-label", map.text("search"));
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.appendChild(magnifier(doc));
+    toggle.addEventListener("click", () => this.open(!el.classList.contains("mapkern-expanded")));
+    el.append(panel, toggle);
     this.element = el;
+    this.toggle = toggle;
     this.input = input;
     this.list = list;
     doc.addEventListener("pointerdown", this.outside, true);
     return el;
+  }
+
+  open(open = true): this {
+    const el = this.element;
+    if (!el) return this;
+    el.classList.toggle("mapkern-expanded", open);
+    el.classList.toggle("mapkern-search-start", el.closest(".mapkern-top-left, .mapkern-bottom-left") !== null);
+    el.classList.toggle("mapkern-search-down", el.closest(".mapkern-top-left, .mapkern-top-right") !== null);
+    this.toggle?.setAttribute("aria-expanded", String(open));
+    if (open) {
+      this.input?.focus();
+      this.input?.select();
+    } else {
+      this.show([]);
+      if (el.contains(el.ownerDocument.activeElement)) this.input?.blur();
+    }
+    return this;
   }
 
   onRemove(map: MapkernMap): void {
@@ -128,11 +157,14 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
     try {
       results = await this.geocoder.search(text, options);
     } catch (error) {
-      if (id === this.sequence) this.emit("error", { type: "error", error });
+      if (id === this.sequence) {
+        this.show([], "searchFailed");
+        this.emit("error", { type: "error", error });
+      }
       return [];
     }
     if (id !== this.sequence) return results;
-    this.show(results);
+    this.show(results, "noResults");
     this.emit("results", { type: "results", query: text, results });
     return results;
   }
@@ -161,7 +193,7 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
     return this;
   }
 
-  private show(results: SearchResult[]): void {
+  private show(results: SearchResult[], notice: "noResults" | "searchFailed" | null = null): void {
     this.results = results;
     this.active = -1;
     const list = this.list;
@@ -169,10 +201,10 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
     if (!list || !input) return;
     const doc = list.ownerDocument;
     list.replaceChildren();
-    if (results.length === 0 && input.value.trim() && this.map) {
+    if (results.length === 0 && notice && this.map) {
       const empty = doc.createElement("li");
       empty.className = "mapkern-search-empty";
-      empty.textContent = this.map.text("noResults");
+      empty.textContent = this.map.text(notice);
       list.appendChild(empty);
     }
     results.forEach((r, i) => {
