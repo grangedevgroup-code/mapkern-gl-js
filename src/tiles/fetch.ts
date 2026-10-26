@@ -1,3 +1,5 @@
+import type { ResponseStore } from "./cache.ts";
+import { cacheable, freshUntil, markServer, offline, serverDown } from "./cache.ts";
 import type { ProtocolHandler, ProtocolRequest } from "./protocols.ts";
 import { protocolFor } from "./protocols.ts";
 import type { TileFailure } from "./tile.ts";
@@ -38,9 +40,44 @@ export async function fetchBytes(
   signal: AbortSignal,
   timeoutMs: number,
   kind: ResourceKind = "tile",
+  store: ResponseStore | null = null,
 ): Promise<FetchResult> {
   const handler = protocolFor(params.url);
   if (handler) return fetchWithProtocol(handler, { ...params, kind }, signal);
+  const cache = store && cacheable(params.url) ? store : null;
+  if (!cache) return fetchNetwork(params, signal, timeoutMs, null);
+  const state = cache.state(params.url);
+  if (state === "fresh" || (state !== "missing" && (offline() || serverDown(params.url)))) {
+    const hit = await cache.read(params.url);
+    if (signal.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
+    if (hit) return { kind: "data", data: hit.data, contentType: hit.type };
+  }
+  try {
+    const result = await fetchNetwork(params, signal, timeoutMs, cache);
+    markServer(params.url, true);
+    return result;
+  } catch (error) {
+    if (signal.aborted || !transient(error)) throw error;
+    markServer(params.url, false);
+    if (cache.state(params.url) === "missing") throw error;
+    const hit = await cache.read(params.url);
+    if (!hit) throw error;
+    return { kind: "data", data: hit.data, contentType: hit.type };
+  }
+}
+
+function transient(error: unknown): boolean {
+  if (!(error instanceof FetchFailure)) return false;
+  const { kind, status } = error.failure;
+  return kind === "network" || kind === "timeout" || kind === "rate-limit" || (kind === "http" && (status ?? 0) >= 500);
+}
+
+async function fetchNetwork(
+  params: RequestParameters,
+  signal: AbortSignal,
+  timeoutMs: number,
+  cache: ResponseStore | null,
+): Promise<FetchResult> {
   const timeout = new AbortController();
   const onAbort = () => timeout.abort(signal.reason);
   if (signal.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
@@ -95,7 +132,12 @@ export async function fetchBytes(
       throw new FetchFailure({ kind: "network", message: "Response body could not be read", retryable: true });
     }
     if (data.byteLength === 0) return { kind: "empty" };
-    return { kind: "data", data, contentType: response.headers.get("content-type") ?? "" };
+    const contentType = response.headers.get("content-type") ?? "";
+    if (cache) {
+      const expires = freshUntil(response.headers, Date.now());
+      if (expires !== null) cache.write(params.url, data.slice(0), contentType, expires);
+    }
+    return { kind: "data", data, contentType };
   } finally {
     if (timer !== undefined) clearTimeout(timer);
     signal.removeEventListener("abort", onAbort);
