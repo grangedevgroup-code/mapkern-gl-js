@@ -1,4 +1,14 @@
-export type FeatureFormat = "geojson" | "topojson" | "kml" | "kmz" | "gpx" | "csv" | "shapefile" | "flatgeobuf" | "wkt";
+export type FeatureFormat =
+  | "geojson"
+  | "topojson"
+  | "kml"
+  | "kmz"
+  | "gpx"
+  | "csv"
+  | "shapefile"
+  | "flatgeobuf"
+  | "wkt"
+  | "cot";
 
 export const FEATURE_FORMATS: readonly FeatureFormat[] = [
   "geojson",
@@ -10,4 +20,5 @@ export const FEATURE_FORMATS: readonly FeatureFormat[] = [
   "shapefile",
   "flatgeobuf",
   "wkt",
+  "cot",
 ];
