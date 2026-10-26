@@ -1,6 +1,7 @@
 import type { Feature, FeatureCollection } from "../geo/geojson.ts";
 import { cotToGeoJSON, isCot } from "./cot.ts";
 import { csvToGeoJSON } from "./csv.ts";
+import { esriJsonToGeoJSON, isEsriJson } from "./esrijson.ts";
 import type { FeatureFormat } from "./feature-format.ts";
 import { flatgeobufToGeoJSON, isFlatGeobuf } from "./flatgeobuf.ts";
 import { geopackageToGeoJSON, isGeoPackage } from "./geopackage.ts";
@@ -47,7 +48,9 @@ export async function bytesToGeoJSON(bytes: Uint8Array, name = "", format?: Feat
 }
 
 export function objectToGeoJSON(data: unknown): unknown {
-  return isTopology(data) ? topologyToGeoJSON(data) : data;
+  if (isTopology(data)) return topologyToGeoJSON(data);
+  if (isEsriJson(data)) return esriJsonToGeoJSON(data);
+  return data;
 }
 
 function detect(bytes: Uint8Array, name: string): FeatureFormat {
