@@ -443,8 +443,9 @@ export class Painter {
     gl.uniform1f(uniform(program, "u_world"), t.worldSize);
     gl.uniform1f(uniform(program, "u_exaggeration"), terrain.exaggeration);
     const sunLight = frame.sun?.light ?? null;
-    gl.uniform3f(uniform(program, "u_sun_light"), sunLight?.[0] ?? 0, sunLight?.[1] ?? 0, sunLight?.[2] ?? 1);
-    gl.uniform1f(uniform(program, "u_sun_gain"), sunLight ? 0.7 : 0);
+    const light = sunLight ?? (terrain.relief > 0 ? reliefLight(t.bearing) : null);
+    gl.uniform3f(uniform(program, "u_sun_light"), light?.[0] ?? 0, light?.[1] ?? 0, light?.[2] ?? 1);
+    gl.uniform1f(uniform(program, "u_sun_gain"), sunLight ? 0.7 : light ? terrain.relief : 0);
     const uMeters = uniform(program, "u_dem_meters");
     const uMatrix = uniform(program, "u_matrix");
     const uRect = uniform(program, "u_dem_rect");
@@ -819,4 +820,10 @@ function footprintRect(transform: Transform): [number, number, number, number] {
     y1 = Math.max(y1, y);
   }
   return [x0, y0, x1, y1];
+}
+
+function reliefLight(bearing: number): [number, number, number] {
+  const azimuth = ((315 + bearing) * Math.PI) / 180;
+  const altitude = Math.PI / 4;
+  return [Math.sin(azimuth) * Math.cos(altitude), -Math.cos(azimuth) * Math.cos(altitude), Math.sin(altitude)];
 }
