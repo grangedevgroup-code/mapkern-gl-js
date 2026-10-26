@@ -55,7 +55,7 @@ test("an SRTM .hgt tile is placed from its name and sampled smoothly between pos
   const grid = readHgt(bytes, "srtm/N47W123.hgt");
   assert.deepEqual(
     gridBounds(grid).map((v) => Number(v.toFixed(6))),
-    [-123.000416, 46.999584, -121.999584, 48.000416],
+    [-123.000417, 46.999583, -121.999583, 48.000417],
   );
   for (const [lon, lat] of [
     [-122.5, 47.5],
@@ -80,14 +80,19 @@ test("elevation tiles are cut from the grids and travel as raw heights into the 
   const latRad = (47.5 * Math.PI) / 180;
   const y = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
   const tile = renderElevationTile(set, z, x, y)!;
-  const lon = ((x + 10.5 / 256) / n) * 360 - 180;
-  const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + 20.5 / 256)) / n))) * 180) / Math.PI;
-  assert.ok(Math.abs(tile[20 * 256 + 10]! - surface(lon, lat)) < 0.51);
+  const col = Math.floor((((-122.5 + 180) / 360) * n - x) * 256);
+  const row = Math.floor((((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n - y) * 256);
+  const lon = ((x + (col + 0.5) / 256) / n) * 360 - 180;
+  const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + (row + 0.5) / 256)) / n))) * 180) / Math.PI;
+  assert.ok(
+    Math.abs(tile[row * 256 + col]! - surface(lon, lat)) < 0.51,
+    `${tile[row * 256 + col]} vs ${surface(lon, lat)}`,
+  );
   assert.equal(renderElevationTile(set, z, 0, 0), null);
   const raw = encodeRawElevation(tile, 256);
   assert.ok(isRawElevation(raw));
   const { result } = await decodeDemTile({ raw, unpack: [0, 0, 0, 0] }, new AbortController().signal);
   const grid = result!.grid;
   assert.equal(grid.size, 256);
-  assert.equal(grid.elevation[(20 + 2) * grid.stride + 10 + 2], tile[20 * 256 + 10]);
+  assert.equal(grid.elevation[(row + 2) * grid.stride + col + 2], tile[row * 256 + col]);
 });
