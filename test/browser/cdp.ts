@@ -275,6 +275,24 @@ export class Page {
     return result.result.value as T;
   }
 
+  async call<T>(fn: string, ...args: unknown[]): Promise<T> {
+    const scope = await this.send<{ result: { objectId?: string } }>("Runtime.evaluate", { expression: "globalThis" });
+    const result = await this.send<{
+      result: { value?: unknown };
+      exceptionDetails?: { text: string; exception?: { description?: string } };
+    }>("Runtime.callFunctionOn", {
+      functionDeclaration: fn,
+      objectId: scope.result.objectId,
+      arguments: args.map((value) => ({ value })),
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (result.exceptionDetails) {
+      throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
+    }
+    return result.result.value as T;
+  }
+
   async waitFor(expression: string, timeoutMs = 20000): Promise<void> {
     const end = Date.now() + timeoutMs;
     while (Date.now() < end) {
