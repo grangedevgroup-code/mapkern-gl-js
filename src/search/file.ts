@@ -1,18 +1,6 @@
 import type { RangeSource } from "../sources/pmtiles.ts";
 import type { EntryRecord, SearchMeta } from "./format.ts";
-import {
-  CONTEXT_BLOCK,
-  decoder,
-  ENTRY_BLOCK,
-  HEADER_SIZE,
-  MAGIC,
-  Reader,
-  readEntry,
-  SECTIONS,
-  SearchIndexError,
-  SUMMARY_CHUNK,
-  VERSION,
-} from "./format.ts";
+import { decoder, HEADER_SIZE, MAGIC, Reader, readEntry, SECTIONS, SearchIndexError, VERSION } from "./format.ts";
 
 export interface TermInfo {
   term: string;
@@ -146,6 +134,10 @@ export class SearchFile {
     return this.entryAt.length;
   }
 
+  get blockSize(): number {
+    return this.meta.entryBlock;
+  }
+
   async term(term: string): Promise<TermInfo | null> {
     const b = this.blockFor(term);
     if (b < 0) return null;
@@ -195,7 +187,8 @@ export class SearchFile {
 
   async summaries(ids: ArrayLike<number>): Promise<Map<number, Uint8Array>> {
     const chunks = new Set<number>();
-    for (let i = 0; i < ids.length; i++) chunks.add(Math.floor(ids[i]! / SUMMARY_CHUNK));
+    const size = this.meta.summaryChunk;
+    for (let i = 0; i < ids.length; i++) chunks.add(Math.floor(ids[i]! / size));
     const out = new Map<number, Uint8Array>();
     await Promise.all(
       [...chunks].map(async (c) => {
@@ -216,15 +209,15 @@ export class SearchFile {
   }
 
   async entry(id: number): Promise<EntryRecord> {
-    const block = await this.entryBlock(Math.floor(id / ENTRY_BLOCK));
-    const e = block[id % ENTRY_BLOCK];
+    const block = await this.entryBlock(Math.floor(id / this.meta.entryBlock));
+    const e = block[id % this.meta.entryBlock];
     if (!e) throw new SearchIndexError("the search index is damaged");
     return e;
   }
 
   async context(id: number): Promise<string> {
     if (id === 0) return "";
-    const b = Math.floor((id - 1) / CONTEXT_BLOCK);
+    const b = Math.floor((id - 1) / this.meta.contextBlock);
     const list = await this.load(`c${b}`, async () => {
       const r = new Reader(await this.bytes(this.contextAt[b]!, this.contextLength[b]!));
       const n = r.varint();
@@ -232,7 +225,7 @@ export class SearchFile {
       for (let i = 0; i < n; i++) out.push(r.text());
       return out;
     });
-    return list[(id - 1) % CONTEXT_BLOCK] ?? "";
+    return list[(id - 1) % this.meta.contextBlock] ?? "";
   }
 
   private blockFor(term: string): number {
