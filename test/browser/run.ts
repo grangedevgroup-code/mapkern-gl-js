@@ -4310,9 +4310,11 @@ const specs: Spec[] = [
         };
       })()`);
       await shot("viewer");
-      if (JSON.stringify(layout.order) !== '["mapkern-navigation","mapkern-terrain","mapkern-basemaps"]')
+      if (
+        JSON.stringify(layout.order) !== '["mapkern-search","mapkern-navigation","mapkern-terrain","mapkern-basemaps"]'
+      )
         fail(
-          `bottom-right should hold zoom and compass, then 2D/3D, then the basemap button: ${JSON.stringify(layout)}`,
+          `bottom-right should hold search, zoom and compass, 2D/3D, then the basemap button: ${JSON.stringify(layout)}`,
         );
       const stackLeft = layout.stack[0] ?? 0;
       const scaleRight = layout.scale?.[2] ?? Number.POSITIVE_INFINITY;
@@ -4948,6 +4950,8 @@ const specs: Spec[] = [
     async run({ page, base, shot }) {
       await createMap(page, rasterStyle(base, "/fixture/raster"), { zoom: 3 });
       const state = await page.evaluate<{
+        opened: boolean;
+        closed: boolean;
         options: string[];
         context: string[];
         expanded: string | null;
@@ -4979,6 +4983,8 @@ const specs: Spec[] = [
         let picked = null;
         control.on("result", (e) => (picked = e.result.name));
         map.addControl(control);
+        control.open();
+        const opened = document.activeElement === document.querySelector(".mapkern-search-input");
         const input = document.querySelector(".mapkern-search-input");
         const type = async (text) => {
           input.value = text;
@@ -4997,6 +5003,8 @@ const specs: Spec[] = [
         const center = map.getCenter();
         const zoom = map.getZoom();
         const pins = document.querySelectorAll(".mapkern-marker").length;
+        const chosen = input.value;
+        const closed = !document.querySelector(".mapkern-search").classList.contains("mapkern-expanded");
         await type("nothing here");
         const empty = document.querySelector(".mapkern-search-results")?.textContent ?? "";
         await type("broken");
@@ -5006,7 +5014,7 @@ const specs: Spec[] = [
         slow();
         await pending;
         const stale = [...document.querySelectorAll(".mapkern-search-results [role=option] .mapkern-search-name")].map((e) => e.textContent);
-        return { options, context, expanded, center, zoom, input: input.value, pins, picked, empty, failed, near, stale };
+        return { opened, closed, options, context, expanded, center, zoom, input: chosen, pins, picked, empty, failed, near, stale };
       })()`);
       await shot("search");
       if (JSON.stringify(state.options) !== '["Olympia","Olympia Avenue"]')
@@ -5018,6 +5026,8 @@ const specs: Spec[] = [
       if (Math.abs(state.center[0]! + 122.3) > 1e-6 || Math.abs(state.zoom - 16) > 1e-6)
         fail(`the map should fly to the pick: ${JSON.stringify(state)}`);
       if (state.pins !== 1) fail(`one pin should mark the pick: ${JSON.stringify(state)}`);
+      if (!state.opened || !state.closed)
+        fail(`the button should open the box with focus and a pick should close it: ${JSON.stringify(state)}`);
       if (state.empty !== "Nothing found") fail(`no matches should say so: ${JSON.stringify(state)}`);
       if (state.failed !== "Search is not available")
         fail(`a failing geocoder should say so: ${JSON.stringify(state)}`);
