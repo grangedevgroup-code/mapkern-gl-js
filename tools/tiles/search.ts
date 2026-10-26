@@ -69,6 +69,7 @@ const STREET_RANK: Record<string, number> = {
 };
 
 const NEAREST_PLACE: Record<string, number> = { city: 15000, town: 8000, village: 4000, hamlet: 2000 };
+const OWN_LOCALITY = new Set(["city", "town", "village", "county", "state", "province", "region", "country", "island"]);
 const CELL = 0.002;
 const GROUP_GAP = 0.02;
 
@@ -103,15 +104,17 @@ class AreaGrid {
   private readonly inside: Int32Array[];
   private readonly edges: Map<number, number[]>[];
 
-  constructor(
-    private readonly bbox: [number, number, number, number],
-    private readonly areas: Area[],
-  ) {
+  private readonly bbox: [number, number, number, number];
+  private readonly areas: Area[];
+
+  constructor(bbox: [number, number, number, number], areas: Area[]) {
+    this.bbox = bbox;
+    this.areas = areas;
     this.cols = Math.max(1, Math.ceil((bbox[2] - bbox[0]) / CELL));
     this.rows = Math.max(1, Math.ceil((bbox[3] - bbox[1]) / CELL));
     this.inside = [0, 1, 2, 3].map(() => new Int32Array(this.cols * this.rows).fill(-1));
     this.edges = [0, 1, 2, 3].map(() => new Map<number, number[]>());
-    areas.forEach((a, i) => this.add(a, i));
+    for (let i = 0; i < areas.length; i++) this.add(areas[i]!, i);
   }
 
   lookup(lon: number, lat: number): (Area | null)[] {
@@ -259,7 +262,6 @@ export function indexRegion(
   };
 
   const areas: Area[] = [];
-  const memberWays = new Set<number>();
   const polygonPois: { tags: Tags; rings: Ring[] }[] = [];
   for (const rel of data.relations) {
     const rings = ringsOf(rel.members);
@@ -282,7 +284,6 @@ export function indexRegion(
         ],
       });
     } else {
-      for (const m of rel.members) memberWays.add(m.ref);
       if (rings.length) polygonPois.push({ tags: rel.tags, rings });
     }
   }
@@ -321,19 +322,19 @@ export function indexRegion(
     return best;
   };
 
-  const contextOf = (lon: number, lat: number, tags: Tags | null, self: string | null): string => {
-    const [locality, county, state, country] = grid.lookup(lon, lat);
-    void county;
-    const city = locality?.name ?? tags?.["addr:city"] ?? nearestPlace(lon, lat);
+  const contextOf = (lon: number, lat: number, tags: Tags | null, self: string | null, above = -1): string => {
+    const [locality, , state, country] = grid.lookup(lon, lat);
+    const city = above >= 0 ? null : (locality?.name ?? tags?.["addr:city"] ?? nearestPlace(lon, lat));
     const parts: string[] = [];
     const add = (v: string | null | undefined) => {
       if (v && v !== self && parts[parts.length - 1] !== v) parts.push(v);
     };
     add(city);
     const postcode = tags?.["addr:postcode"];
-    if (state && postcode) add(`${state.name} ${postcode}`);
-    else add(state?.name ?? (postcode || null));
-    add(country?.name);
+    const region = above < 2 ? state?.name : undefined;
+    if (region && postcode) add(`${region} ${postcode}`);
+    else add(region ?? (postcode || null));
+    if (above < 3) add(country?.name);
     return parts.join(", ");
   };
 
@@ -358,7 +359,7 @@ export function indexRegion(
         rank: Math.min(255, rank),
         category: `place=${tags.place}`,
         name: tags.name,
-        context: contextOf(lon, lat, null, tags.name),
+        context: contextOf(lon, lat, null, tags.name, OWN_LOCALITY.has(tags.place) ? 0 : -1),
         number: null,
         street: null,
         lon,
@@ -406,28 +407,27 @@ export function indexRegion(
   for (const p of data.points) addFeature(p.tags, p.lon / 1e7, p.lat / 1e7);
 
   const streets = new Map<string, { tags: Tags; lines: Float64Array[] }[]>();
+  const group = (key: string, tags: Tags, pts: Float64Array) => {
+    const list = streets.get(key);
+    if (list) list.push({ tags, lines: [pts] });
+    else streets.set(key, [{ tags, lines: [pts] }]);
+  };
   for (let w = 0; w < data.wayIds.length; w++) {
     const tags = data.wayTags[w];
     if (!tags) continue;
     const pts = line(wayRefs(w));
     if (pts.length < 2) continue;
-    const street = streetClass(tags);
-    if (street) {
-      const name = tags.name ?? tags.ref!;
-      let groups = streets.get(name);
-      if (!groups) streets.set(name, (groups = []));
-      groups.push({ tags, lines: [pts] });
+    if (streetClass(tags)) {
+      group(tags.name ?? tags.ref!, tags, pts);
       continue;
     }
-    if (memberWays.has(data.wayIds[w]!) && !hasAddress(tags) && !tags.name) continue;
     if (tags.waterway && tags.name && !tags.place) {
-      const name = tags.name;
-      const key = `\u0001${tags.waterway}\u0001${name}`;
-      let groups = streets.get(key);
-      if (!groups) streets.set(key, (groups = []));
-      groups.push({ tags, lines: [pts] });
+      group(`\u0001${tags.waterway}\u0001${tags.name}`, tags, pts);
       continue;
     }
+    const refs = wayRefs(w);
+    const closed = refs.length >= 4 && refs[0] === refs[refs.length - 1];
+    if (!closed && !hasAddress(tags)) continue;
     const [lon, lat] = centerOf([pts]);
     addFeature(tags, lon, lat);
   }
@@ -472,9 +472,8 @@ export function indexRegion(
     if (!type) continue;
     const outer = a.rings.filter((_, i) => a.outer[i]);
     const [lon, lat] = centerOf(outer);
-    if (!inRegion(lon, lat) && !(lon < minLon || lon > maxLon || lat < minLat || lat > maxLat)) continue;
     if (entries.some((e) => e.kind === 0 && e.name === a.name && contains(a, e.lon, e.lat))) continue;
-    const parent = a.level > 2 ? contextOf(lon, lat, null, a.name) : "";
+    const parent = a.level > 2 ? contextOf(lon, lat, null, a.name, a.level === 4 ? 2 : 1) : "";
     entries.push({
       kind: 0,
       rank: PLACE_RANK[type]!,
