@@ -19,7 +19,7 @@ export class DebugOverlay {
 
   constructor(parent: HTMLElement) {
     const canvas = parent.ownerDocument.createElement("canvas");
-    canvas.className = "maplet-debug";
+    canvas.className = "mapkern-debug";
     canvas.setAttribute("aria-hidden", "true");
     parent.appendChild(canvas);
     this.canvas = canvas;
