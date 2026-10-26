@@ -1,15 +1,15 @@
 {
-  "name": "maplet-gl",
+  "name": "mapkern-gl",
   "version": "0.1.0",
   "description": "Fast WebGL2 map engine for the browser",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/grangedevgroup-code/maplet-gl-js.git"
+    "url": "git+https://github.com/grangedevgroup-code/mapkern-gl-js.git"
   },
-  "homepage": "https://github.com/grangedevgroup-code/maplet-gl-js",
-  "bugs": "https://github.com/grangedevgroup-code/maplet-gl-js/issues",
+  "homepage": "https://github.com/grangedevgroup-code/mapkern-gl-js",
+  "bugs": "https://github.com/grangedevgroup-code/mapkern-gl-js/issues",
   "keywords": [
     "map",
     "maps",
@@ -19,18 +19,18 @@
     "terrain",
     "gis"
   ],
-  "main": "./dist/maplet.js",
-  "module": "./dist/maplet.js",
+  "main": "./dist/mapkern.js",
+  "module": "./dist/mapkern.js",
   "types": "./dist/types/index.d.ts",
   "bin": {
-    "maplet-tiles": "./dist/tiles/cli.js"
+    "mapkern-tiles": "./dist/tiles/cli.js"
   },
   "exports": {
     ".": {
       "types": "./dist/types/index.d.ts",
-      "import": "./dist/maplet.js"
+      "import": "./dist/mapkern.js"
     },
-    "./maplet.css": "./dist/maplet.css",
+    "./mapkern.css": "./dist/mapkern.css",
     "./package.json": "./package.json"
   },
   "files": [
