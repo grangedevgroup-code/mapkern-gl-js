@@ -109,6 +109,10 @@ export function createViewer(options = {}) {
   if (terrainControl) map.addControl(terrainControl, "bottom-right");
   map.addControl(new mapkern.NavigationControl(), "bottom-right");
   map.addControl(new mapkern.ScaleControl(), "bottom-right");
+  const searchControl = search
+    ? new mapkern.SearchControl({ geocoder: typeof search.search === "function" ? search : lazyGeocoder(search) })
+    : null;
+  if (searchControl) map.addControl(searchControl, "top-left");
   picker?.on("change", (event) => stored.set("basemap", event.basemap.name));
   terrainControl?.on("viewchange", (event) => stored.set("view", event.view));
   const start = stored.get("view") ?? view;
