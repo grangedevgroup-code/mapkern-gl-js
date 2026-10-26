@@ -1,8 +1,10 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gunzipSync } from "node:zlib";
 import { buildAll } from "../../scripts/build.ts";
 import { startServer } from "../../scripts/server.ts";
+import { readDted, sampleGrid } from "../../src/formats/elevation.ts";
 import { latFromMercatorY, mercatorX, mercatorY } from "../../src/geo/mercator.ts";
 import type { Page } from "./cdp.ts";
 import { Browser } from "./cdp.ts";
@@ -4128,6 +4130,53 @@ const specs: Spec[] = [
       const views = await page.evaluate<string[]>("window.views");
       if (JSON.stringify(views) !== '["terrain","tilted","flat","terrain"]')
         fail(`viewchange events: ${JSON.stringify(views)}`);
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
+    name: "a DTED cell the user opens becomes 3D terrain at the right height",
+    async run({ page, base, shot }) {
+      const fixture = join(dirname(fileURLToPath(import.meta.url)), "../unit/fixtures/w123_n47.dt0.gz");
+      const grid = readDted(new Uint8Array(gunzipSync(readFileSync(fixture))));
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { center: [-122.5, 47.5], zoom: 8, pitch: 60 });
+      const result = await page.call<{ url: string; heights: (number | null)[]; bounds: number[] | null }>(
+        `async (base) => {
+          const gz = await (await fetch(base + "/test/unit/fixtures/w123_n47.dt0.gz")).arrayBuffer();
+          const stream = new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"));
+          const bytes = await new Response(stream).arrayBuffer();
+          const url = await mapkern.openElevationFile(new File([bytes], "w123_n47.dt0"));
+          window.map.addSource("cell", { type: "dem", url });
+          window.map.setTerrain({ source: "cell", exaggeration: 1 });
+          await new Promise((r) => {
+            const check = () => (window.map.loaded() ? r(0) : setTimeout(check, 100));
+            setTimeout(check, 300);
+            setTimeout(r, 20000);
+          });
+          const mx = (lon) => (lon + 180) / 360;
+          const my = (lat) => (1 - Math.log(Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180)) / Math.PI) / 2;
+          const heights = [[-122.5, 47.5], [-122.3, 47.7], [-122.8, 47.2]].map(([lon, lat]) => window.map.terrain.elevationAt(mx(lon), my(lat)));
+          return { url, heights, bounds: window.map.getSource("cell").bounds };
+        }`,
+        base,
+      );
+      await shot("dted");
+      if (!result.url.startsWith("elevation://")) fail(`openElevationFile returned ${result.url}`);
+      const want = [
+        [-122.5, 47.5],
+        [-122.3, 47.7],
+        [-122.8, 47.2],
+      ].map(([lon, lat]) => sampleGrid(grid, lon!, lat!));
+      result.heights.forEach((h, i) => {
+        if (h === null || Math.abs(h - want[i]!) > 15)
+          fail(`terrain height ${i} should be near ${want[i]!.toFixed(1)} m, got ${h}: ${JSON.stringify(result)}`);
+      });
+      if (
+        !result.bounds ||
+        Math.abs(result.bounds[0]! + 123.004) > 0.001 ||
+        Math.abs(result.bounds[3]! - 48.004) > 0.001
+      )
+        fail(`the source should report the cell's bounds: ${JSON.stringify(result.bounds)}`);
       const errors = await page.evaluate<unknown[]>("window.errors");
       if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
     },
