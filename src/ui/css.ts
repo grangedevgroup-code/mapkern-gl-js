@@ -129,6 +129,70 @@ export const CSS = `
   font-weight: 600;
   background: rgba(47, 111, 219, 0.12);
 }
+.mapkern-search {
+  position: relative;
+  width: min(320px, calc(100vw - 4 * var(--mapkern-margin) - 32px));
+  overflow: visible;
+}
+.mapkern-search-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 40px;
+  margin: 0;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+}
+.mapkern-search-input:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--mapkern-focus, #2f6fdb);
+}
+.mapkern-search-results {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: min(360px, 60vh);
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border-radius: 8px;
+  background: var(--mapkern-control-bg, #ffffff);
+  box-shadow: 0 1px 2px rgba(16, 25, 29, 0.14), 0 2px 10px rgba(16, 25, 29, 0.08);
+}
+.mapkern-search.mapkern-open .mapkern-search-results {
+  display: block;
+}
+.mapkern-search-results li {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.mapkern-search-results li[aria-selected="true"],
+.mapkern-search-results li[role="option"]:hover {
+  background: rgba(47, 111, 219, 0.12);
+}
+.mapkern-search-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+.mapkern-search-context {
+  font-size: 12px;
+  opacity: 0.7;
+}
+.mapkern-search-results .mapkern-search-empty {
+  cursor: default;
+  opacity: 0.7;
+}
 .mapkern-control .mapkern-terrain-button {
   font: inherit;
   font-size: 12px;
