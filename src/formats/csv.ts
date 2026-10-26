@@ -1,9 +1,11 @@
 import type { Feature, FeatureCollection, Geometry } from "../geo/geojson.ts";
+import { fromMgrs } from "../geo/mgrs.ts";
 import { parseWkt } from "./wkt.ts";
 
 const LAT_NAMES = ["lat", "latitude", "y", "lat_dd", "latitude_dd", "ylat", "point_y"];
 const LON_NAMES = ["lon", "lng", "long", "longitude", "x", "lon_dd", "longitude_dd", "xlon", "point_x"];
 const WKT_NAMES = ["wkt", "geometry", "geom", "the_geom", "shape", "wkt_geom"];
+const GRID_NAMES = ["mgrs", "grid", "mgrs_grid", "usng", "grid_ref", "gridref"];
 const NUMBER = /^-?(0|[1-9]\d*)(\.\d+)?([eE][-+]?\d+)?$/;
 
 export class CsvError extends Error {
@@ -29,8 +31,9 @@ export function csvToGeoJSON(text: string): FeatureCollection {
   const latIndex = find(LAT_NAMES);
   const lonIndex = find(LON_NAMES);
   const wktIndex = find(WKT_NAMES);
-  if (wktIndex < 0 && (latIndex < 0 || lonIndex < 0)) {
-    throw new CsvError("The CSV file needs latitude and longitude columns, or a WKT geometry column");
+  const gridIndex = find(GRID_NAMES);
+  if (wktIndex < 0 && gridIndex < 0 && (latIndex < 0 || lonIndex < 0)) {
+    throw new CsvError("The CSV file needs latitude and longitude columns, an MGRS column, or a WKT geometry column");
   }
   const features: Feature[] = [];
   for (const row of rows) {
@@ -49,6 +52,10 @@ export function csvToGeoJSON(text: string): FeatureCollection {
       if (row[latIndex]?.trim() && row[lonIndex]?.trim() && Number.isFinite(lat) && Number.isFinite(lon)) {
         geometry = { type: "Point", coordinates: [lon, lat] };
       }
+    }
+    if (!geometry && gridIndex >= 0 && row[gridIndex]?.trim()) {
+      const point = fromMgrs(row[gridIndex]!);
+      if (point) geometry = { type: "Point", coordinates: point.lngLat };
     }
     if (!geometry) continue;
     const properties: Record<string, unknown> = {};
