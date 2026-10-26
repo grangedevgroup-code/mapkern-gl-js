@@ -262,6 +262,7 @@ export class VectorSource implements MapSource, VectorTileSource {
       this.ctx.transformRequest,
       this.ctx.requestTimeoutMs,
       signal,
+      this.ctx.diskCache,
     );
     if (signal.aborted) return;
     this.tileSet = set;
@@ -324,7 +325,13 @@ export class VectorSource implements MapSource, VectorTileSource {
   ): Promise<VectorTile | null> {
     const ctx = this.ctx;
     const url = tileUrl(set, tile.z, tile.x, tile.y);
-    const result = await fetchBytes(resolveRequest(url, "tile", ctx.transformRequest), signal, ctx.requestTimeoutMs);
+    const result = await fetchBytes(
+      resolveRequest(url, "tile", ctx.transformRequest),
+      signal,
+      ctx.requestTimeoutMs,
+      "tile",
+      ctx.diskCache,
+    );
     if (result.kind === "empty") return null;
     onDecoding();
     const { programs, signature } = this.layers;
