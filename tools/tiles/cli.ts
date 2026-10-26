@@ -55,11 +55,12 @@ const FIELDS: Record<string, Record<string, string>> = {
   housenumber: { housenumber: "String" },
 };
 
-const HELP = `Build a vector tile archive (.pmtiles) from an OpenStreetMap .osm.pbf file,
-turn elevation GeoTIFFs into elevation tiles, or convert an MBTiles file to PMTiles.
+const HELP = `Build a vector tile archive (.pmtiles) or a search index from an OpenStreetMap
+.osm.pbf file, turn elevation GeoTIFFs into elevation tiles, or convert an MBTiles file to PMTiles.
 
 Usage:
   mapkern-tiles --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.pmtiles>
+  mapkern-tiles search --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.search>
   mapkern-tiles dem <file.tif>... --output <file.pmtiles>
   mapkern-tiles convert <file.mbtiles> <file.pmtiles>
 
