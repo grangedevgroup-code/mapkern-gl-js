@@ -1,31 +1,21 @@
 export const SEARCH_KINDS = ["place", "address", "street", "poi"] as const;
 export type SearchKind = (typeof SEARCH_KINDS)[number];
-export const NONE = 0xffffffff;
-export const NO_CATEGORY = 0xffff;
 
-const MAGIC = 0x58534b4d;
-const VERSION = 1;
+export const MAGIC = "MKS2";
+export const VERSION = 2;
+export const ENTRY_BLOCK = 128;
+export const SUMMARY_CHUNK = 4096;
+export const CONTEXT_BLOCK = 256;
+export const POSTING_CHUNK = 4096;
+export const INLINE_POSTINGS = 512;
+export const HEAD = 64;
+export const COORD = 1e6;
+export const SECTIONS = ["meta", "terms", "entries", "summaries", "contexts"] as const;
+export const HEADER_SIZE = 8 + 4 + SECTIONS.length * 16;
 
-export interface SearchData {
-  bbox: [number, number, number, number];
-  strings: string[];
-  categories: string[];
-  kind: Uint8Array;
-  rank: Uint8Array;
-  category: Uint16Array;
-  name: Uint32Array;
-  context: Uint32Array;
-  number: Uint32Array;
-  street: Uint32Array;
-  lon: Int32Array;
-  lat: Int32Array;
-  shapes: Uint32Array;
-  parts: Uint32Array;
-  coords: Int32Array;
-  terms: Uint32Array;
-  termStart: Uint32Array;
-  postings: Uint32Array;
-}
+export const CONTEXT_WORD = "\u0001";
+export const CATEGORY_WORD = "\u0002";
+export const PREFIX_TOP = "\u0003";
 
 export class SearchIndexError extends Error {
   constructor(message: string) {
@@ -34,133 +24,221 @@ export class SearchIndexError extends Error {
   }
 }
 
-type Typed = Uint8Array | Uint16Array | Uint32Array | Int32Array;
-
-export function encodeSearchData(data: SearchData): Uint8Array {
-  const encoder = new TextEncoder();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  const push = (bytes: Uint8Array) => {
-    chunks.push(bytes);
-    size += bytes.length;
-    const pad = (4 - (bytes.length % 4)) % 4;
-    if (pad) {
-      chunks.push(new Uint8Array(pad));
-      size += pad;
-    }
-  };
-  const u32 = (...values: number[]) => push(new Uint8Array(Uint32Array.from(values).buffer));
-  const array = (a: Typed) => {
-    u32(a.byteLength);
-    push(new Uint8Array(a.buffer, a.byteOffset, a.byteLength));
-  };
-  const strings = (list: string[]) => {
-    const encoded = list.map((s) => encoder.encode(s));
-    const offsets = new Uint32Array(list.length + 1);
-    for (let i = 0; i < encoded.length; i++) offsets[i + 1] = offsets[i]! + encoded[i]!.length;
-    const bytes = new Uint8Array(offsets[list.length]!);
-    for (let i = 0; i < encoded.length; i++) bytes.set(encoded[i]!, offsets[i]!);
-    array(offsets);
-    array(bytes);
-  };
-  u32(MAGIC, VERSION);
-  push(new Uint8Array(Float64Array.from(data.bbox).buffer));
-  strings(data.strings);
-  strings(data.categories);
-  for (const a of [
-    data.kind,
-    data.rank,
-    data.category,
-    data.name,
-    data.context,
-    data.number,
-    data.street,
-    data.lon,
-    data.lat,
-    data.shapes,
-    data.parts,
-    data.coords,
-    data.terms,
-    data.termStart,
-    data.postings,
-  ])
-    array(a);
-  const out = new Uint8Array(size);
-  let at = 0;
-  for (const c of chunks) {
-    out.set(c, at);
-    at += c.length;
-  }
-  return out;
+export interface SearchMeta {
+  version: number;
+  bbox: [number, number, number, number];
+  entries: number;
+  terms: number;
+  categories: string[];
+  attribution?: string;
 }
 
-export function decodeSearchData(input: ArrayBuffer | Uint8Array): SearchData {
-  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-  const buffer = bytes.byteOffset % 8 === 0 ? bytes.buffer : bytes.slice().buffer;
-  const base = bytes.byteOffset % 8 === 0 ? bytes.byteOffset : 0;
-  const end = base + bytes.byteLength;
-  let at = base;
-  const need = (n: number) => {
-    if (at + n > end) throw new SearchIndexError("the search index is truncated");
-  };
-  const u32 = () => {
-    need(4);
-    const v = new DataView(buffer, at, 4).getUint32(0, true);
-    at += 4;
-    return v;
-  };
-  const view = <T extends Typed>(make: new (b: ArrayBufferLike, o: number, n: number) => T, unit: number): T => {
-    const length = u32();
-    if (length % unit) throw new SearchIndexError("the search index is damaged");
-    need(length);
-    const a = new make(buffer, at, length / unit);
-    at += length + ((4 - (length % 4)) % 4);
-    return a;
-  };
-  const decoder = new TextDecoder();
-  const strings = () => {
-    const offsets = view(Uint32Array, 4);
-    const text = view(Uint8Array, 1);
-    const out = new Array<string>(Math.max(0, offsets.length - 1));
-    for (let i = 0; i < out.length; i++) out[i] = decoder.decode(text.subarray(offsets[i]!, offsets[i + 1]!));
-    return out;
-  };
-  if (bytes.byteLength < 16 || u32() !== MAGIC) throw new SearchIndexError("this is not a Mapkern search index");
-  const version = u32();
-  if (version !== VERSION) throw new SearchIndexError(`search index version ${version} is not supported`);
-  need(32);
-  const box = new DataView(buffer, at, 32);
-  const bbox: [number, number, number, number] = [
-    box.getFloat64(0, true),
-    box.getFloat64(8, true),
-    box.getFloat64(16, true),
-    box.getFloat64(24, true),
-  ];
-  at += 32;
-  const data: SearchData = {
-    bbox,
-    strings: strings(),
-    categories: strings(),
-    kind: view(Uint8Array, 1),
-    rank: view(Uint8Array, 1),
-    category: view(Uint16Array, 2),
-    name: view(Uint32Array, 4),
-    context: view(Uint32Array, 4),
-    number: view(Uint32Array, 4),
-    street: view(Uint32Array, 4),
-    lon: view(Int32Array, 4),
-    lat: view(Int32Array, 4),
-    shapes: view(Uint32Array, 4),
-    parts: view(Uint32Array, 4),
-    coords: view(Int32Array, 4),
-    terms: view(Uint32Array, 4),
-    termStart: view(Uint32Array, 4),
-    postings: view(Uint32Array, 4),
-  };
-  const n = data.kind.length;
-  for (const a of [data.rank, data.category, data.name, data.context, data.number, data.street, data.lon, data.lat])
-    if (a.length !== n) throw new SearchIndexError("the search index is damaged");
-  if (data.shapes.length !== n + 1 || data.termStart.length !== data.terms.length + 1)
+export interface EntryRecord {
+  kind: number;
+  rank: number;
+  category: number;
+  osm: number;
+  name: string;
+  number: string;
+  street: string;
+  context: number;
+  lon: number;
+  lat: number;
+  shape: number[][] | null;
+}
+
+export class Writer {
+  private bytes = new Uint8Array(1024);
+  length = 0;
+
+  private room(n: number): void {
+    if (this.length + n <= this.bytes.length) return;
+    let size = this.bytes.length * 2;
+    while (size < this.length + n) size *= 2;
+    const next = new Uint8Array(size);
+    next.set(this.bytes.subarray(0, this.length));
+    this.bytes = next;
+  }
+
+  byte(v: number): void {
+    this.room(1);
+    this.bytes[this.length++] = v;
+  }
+
+  varint(value: number): void {
+    let v = value;
+    this.room(10);
+    while (v >= 128) {
+      this.bytes[this.length++] = (v % 128) | 128;
+      v = Math.floor(v / 128);
+    }
+    this.bytes[this.length++] = v;
+  }
+
+  signed(v: number): void {
+    this.varint(v >= 0 ? v * 2 : -v * 2 - 1);
+  }
+
+  raw(bytes: Uint8Array): void {
+    this.room(bytes.length);
+    this.bytes.set(bytes, this.length);
+    this.length += bytes.length;
+  }
+
+  text(s: string): void {
+    const bytes = encoder.encode(s);
+    this.varint(bytes.length);
+    this.raw(bytes);
+  }
+
+  finish(): Uint8Array {
+    return this.bytes.slice(0, this.length);
+  }
+}
+
+export class Reader {
+  at = 0;
+  private readonly bytes: Uint8Array;
+
+  constructor(bytes: Uint8Array) {
+    this.bytes = bytes;
+  }
+
+  get done(): boolean {
+    return this.at >= this.bytes.length;
+  }
+
+  byte(): number {
+    if (this.at >= this.bytes.length) throw new SearchIndexError("the search index is damaged");
+    return this.bytes[this.at++]!;
+  }
+
+  varint(): number {
+    let result = 0;
+    let scale = 1;
+    for (let i = 0; i < 8; i++) {
+      const b = this.byte();
+      result += (b & 127) * scale;
+      if (b < 128) return result;
+      scale *= 128;
+    }
     throw new SearchIndexError("the search index is damaged");
-  return data;
+  }
+
+  signed(): number {
+    const v = this.varint();
+    return v % 2 === 0 ? v / 2 : -(v + 1) / 2;
+  }
+
+  raw(n: number): Uint8Array {
+    if (this.at + n > this.bytes.length) throw new SearchIndexError("the search index is damaged");
+    const out = this.bytes.subarray(this.at, this.at + n);
+    this.at += n;
+    return out;
+  }
+
+  text(): string {
+    return decoder.decode(this.raw(this.varint()));
+  }
+}
+
+export const encoder = new TextEncoder();
+export const decoder = new TextDecoder();
+
+export function writeEntry(w: Writer, e: EntryRecord, prev: { lon: number; lat: number }): void {
+  w.byte(e.kind);
+  w.byte(e.rank);
+  w.varint(e.category);
+  w.varint(e.osm);
+  w.text(e.name);
+  w.text(e.number);
+  w.text(e.street);
+  w.varint(e.context);
+  const lon = Math.round(e.lon * COORD);
+  const lat = Math.round(e.lat * COORD);
+  w.signed(lon - prev.lon);
+  w.signed(lat - prev.lat);
+  prev.lon = lon;
+  prev.lat = lat;
+  const parts = e.shape ?? [];
+  w.varint(parts.length);
+  for (const part of parts) {
+    w.varint(part.length / 2);
+    let x = lon;
+    let y = lat;
+    for (let i = 0; i < part.length; i += 2) {
+      const px = Math.round(part[i]! * COORD);
+      const py = Math.round(part[i + 1]! * COORD);
+      w.signed(px - x);
+      w.signed(py - y);
+      x = px;
+      y = py;
+    }
+  }
+}
+
+export function readEntry(r: Reader, prev: { lon: number; lat: number }): EntryRecord {
+  const kind = r.byte();
+  const rank = r.byte();
+  const category = r.varint();
+  const osm = r.varint();
+  const name = r.text();
+  const number = r.text();
+  const street = r.text();
+  const context = r.varint();
+  const lon = prev.lon + r.signed();
+  const lat = prev.lat + r.signed();
+  prev.lon = lon;
+  prev.lat = lat;
+  const count = r.varint();
+  let shape: number[][] | null = null;
+  if (count > 0) {
+    shape = [];
+    for (let p = 0; p < count; p++) {
+      const n = r.varint();
+      const part: number[] = [];
+      let x = lon;
+      let y = lat;
+      for (let i = 0; i < n; i++) {
+        x += r.signed();
+        y += r.signed();
+        part.push(x / COORD, y / COORD);
+      }
+      shape.push(part);
+    }
+  }
+  return { kind, rank, category, osm, name, number, street, context, lon: lon / COORD, lat: lat / COORD, shape };
+}
+
+export function quantize(lon: number, lat: number): [number, number] {
+  return [
+    Math.max(0, Math.min(65535, Math.round(((lon + 180) / 360) * 65535))),
+    Math.max(0, Math.min(65535, Math.round(((lat + 90) / 180) * 65535))),
+  ];
+}
+
+export function unquantize(x: number, y: number): [number, number] {
+  return [(x / 65535) * 360 - 180, (y / 65535) * 180 - 90];
+}
+
+export function hilbert(lon: number, lat: number): number {
+  const n = 65536;
+  let x = Math.max(0, Math.min(n - 1, Math.floor(((lon + 180) / 360) * n)));
+  let y = Math.max(0, Math.min(n - 1, Math.floor(((lat + 90) / 180) * n)));
+  let d = 0;
+  for (let s = n / 2; s >= 1; s /= 2) {
+    const rx = (x & s) > 0 ? 1 : 0;
+    const ry = (y & s) > 0 ? 1 : 0;
+    d += s * s * ((3 * rx) ^ ry);
+    if (ry === 0) {
+      if (rx === 1) {
+        x = s - 1 - x;
+        y = s - 1 - y;
+      }
+      const t = x;
+      x = y;
+      y = t;
+    }
+  }
+  return d;
 }
