@@ -19,8 +19,59 @@ interface OsmMember {
   role: string;
 }
 
+class NodeStore {
+  private ids = new Float64Array(4096);
+  private lons = new Float64Array(4096);
+  private lats = new Float64Array(4096);
+  private count = 0;
+  private sorted = true;
+  readonly tags = new Map<number, Tags>();
+
+  add(id: number, lon: number, lat: number, tags: Tags | null): void {
+    if (this.count === this.ids.length) {
+      const grow = (a: Float64Array) => {
+        const b = new Float64Array(a.length * 2);
+        b.set(a);
+        return b;
+      };
+      this.ids = grow(this.ids);
+      this.lons = grow(this.lons);
+      this.lats = grow(this.lats);
+    }
+    if (this.count > 0 && id <= this.ids[this.count - 1]!) this.sorted = false;
+    this.ids[this.count] = id;
+    this.lons[this.count] = lon;
+    this.lats[this.count] = lat;
+    this.count++;
+    if (tags) this.tags.set(id, tags);
+  }
+
+  finish(): void {
+    if (this.sorted) return;
+    const order = Array.from({ length: this.count }, (_, i) => i).sort((a, b) => this.ids[a]! - this.ids[b]!);
+    const pick = (a: Float64Array) => Float64Array.from(order, (i) => a[i]!);
+    this.ids = pick(this.ids);
+    this.lons = pick(this.lons);
+    this.lats = pick(this.lats);
+    this.sorted = true;
+  }
+
+  get(id: number): Position | null {
+    let lo = 0;
+    let hi = this.count - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const v = this.ids[mid]!;
+      if (v === id) return [this.lons[mid]!, this.lats[mid]!];
+      if (v < id) lo = mid + 1;
+      else hi = mid - 1;
+    }
+    return null;
+  }
+}
+
 interface OsmData {
-  nodes: Map<number, { lon: number; lat: number; tags: Tags | null }>;
+  nodes: NodeStore;
   ways: { id: number; refs: number[]; tags: Tags }[];
   relations: { id: number; members: OsmMember[]; tags: Tags }[];
 }
@@ -112,7 +163,7 @@ export function isOsmPbf(bytes: Uint8Array): boolean {
 export function osmXmlToGeoJSON(text: string): FeatureCollection {
   const root = parseXml(text).children.find((c) => c.name === "osm");
   if (!root) throw new OsmError("The file has no <osm> element");
-  const data: OsmData = { nodes: new Map(), ways: [], relations: [] };
+  const data: OsmData = { nodes: new NodeStore(), ways: [], relations: [] };
   const tagsOf = (e: XmlElement): Tags => {
     const tags: Tags = {};
     for (const c of e.children) if (c.name === "tag" && c.attrs.k !== undefined) tags[c.attrs.k] = c.attrs.v ?? "";
@@ -122,7 +173,7 @@ export function osmXmlToGeoJSON(text: string): FeatureCollection {
     const id = Number(e.attrs.id);
     if (e.name === "node") {
       const tags = e.children.length > 0 ? tagsOf(e) : null;
-      data.nodes.set(id, { lon: Number(e.attrs.lon), lat: Number(e.attrs.lat), tags });
+      data.nodes.add(id, Number(e.attrs.lon), Number(e.attrs.lat), tags);
     } else if (e.name === "way") {
       const refs = e.children.filter((c) => c.name === "nd").map((c) => Number(c.attrs.ref));
       data.ways.push({ id, refs, tags: tagsOf(e) });
@@ -142,7 +193,7 @@ async function inflate(data: Uint8Array): Promise<Uint8Array> {
 }
 
 export async function osmPbfToGeoJSON(bytes: Uint8Array): Promise<FeatureCollection> {
-  const data: OsmData = { nodes: new Map(), ways: [], relations: [] };
+  const data: OsmData = { nodes: new NodeStore(), ways: [], relations: [] };
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let pos = 0;
   while (pos + 4 <= bytes.length) {
@@ -289,7 +340,7 @@ function readNode(
         r.skip(tag & 7);
     }
   }
-  data.nodes.set(id, { lon: lon(lo), lat: lat(la), tags: keys.length > 0 ? tagsFrom(keys, vals) : null });
+  data.nodes.add(id, lon(lo), lat(la), keys.length > 0 ? tagsFrom(keys, vals) : null);
 }
 
 function readDense(
@@ -337,7 +388,7 @@ function readDense(
       k += 2;
     }
     k++;
-    data.nodes.set(id, { lon: lon(lo), lat: lat(la), tags });
+    data.nodes.add(id, lon(lo), lat(la), tags);
   }
 }
 
@@ -438,25 +489,27 @@ function joinRings(ways: number[][]): number[][] {
 }
 
 function build(data: OsmData): FeatureCollection {
+  data.nodes.finish();
   const features: Feature[] = [];
   const ways = new Map(data.ways.map((w) => [w.id, w]));
   const coords = (refs: number[]): Position[] => {
     const out: Position[] = [];
     for (const ref of refs) {
       const n = data.nodes.get(ref);
-      if (n) out.push([n.lon, n.lat]);
+      if (n) out.push(n);
     }
     return out;
   };
   const inRelation = new Set<number>();
   for (const rel of data.relations) for (const m of rel.members) if (m.type === "way") inRelation.add(m.ref);
-  for (const [id, n] of data.nodes) {
-    if (interesting(n.tags)) {
+  for (const [id, tags] of data.nodes.tags) {
+    const at = data.nodes.get(id);
+    if (at && interesting(tags)) {
       features.push({
         type: "Feature",
         id: `node/${id}`,
-        properties: { ...n.tags },
-        geometry: { type: "Point", coordinates: [n.lon, n.lat] },
+        properties: { ...tags },
+        geometry: { type: "Point", coordinates: at },
       });
     }
   }
