@@ -11,7 +11,7 @@ const args = process.argv.slice(2);
 const install = args.includes("--install") || args.includes("--run");
 const run = args.includes("--run");
 const windows = process.platform === "win32";
-const PACKAGE = "com.grangedevgroup.maplet";
+const PACKAGE = "com.grangedevgroup.mapkern";
 
 function sdkRoot(): string {
   const candidates = [
@@ -190,7 +190,7 @@ if (!existsSync(keystore)) {
     "CN=Android Debug,O=Android,C=US",
   ]);
 }
-const apk = join(out, "maplet-demo.apk");
+const apk = join(out, "mapkern-demo.apk");
 exec(java("java"), [
   "-jar",
   jar(buildTools, "apksigner"),
