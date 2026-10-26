@@ -1,72 +1,36 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="maplet-viewer">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Day and night</title>
     <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
-    <style>
-      html,
-      body {
-        margin: 0;
-        height: 100%;
-        font: 14px/1.4 system-ui, sans-serif;
-      }
-      #map {
-        position: absolute;
-        inset: 0;
-      }
-      .panel {
-        position: absolute;
-        left: 12px;
-        right: 12px;
-        bottom: 28px;
-        max-width: 520px;
-        margin: 0 auto;
-        padding: 10px 14px;
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.92);
-        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
-        display: grid;
-        grid-template-columns: auto 1fr auto;
-        gap: 8px 12px;
-        align-items: center;
-      }
-      .panel input[type="range"] {
-        width: 100%;
-      }
-      .panel output {
-        grid-column: 1 / -1;
-        color: #444;
-      }
-    </style>
+    <link rel="stylesheet" href="../viewer.css" />
   </head>
   <body>
     <div id="map"></div>
-    <div class="panel">
-      <input id="date" type="date" aria-label="Date" />
-      <input id="time" type="range" min="0" max="1439" step="5" aria-label="Time of day in UTC" />
-      <button id="now" type="button">Now</button>
-      <output id="label"></output>
-    </div>
     <script type="module">
-      import * as maplet from "../../dist/maplet.js";
+      import { BASEMAPS, button, createViewer, element, row } from "../viewer.js";
 
       const params = new URLSearchParams(location.search);
       const imagery = params.get("imagery");
-      const style = imagery
-        ? {
-            version: 1,
-            sources: { imagery: { type: "raster", tiles: [imagery], tileSize: 256 } },
-            layers: [{ id: "imagery", type: "raster", source: "imagery" }],
-          }
-        : undefined;
-      const map = new maplet.Map({ container: "map", maxPitch: 75, ...(style ? { style } : {}) });
-      map.addControl(new maplet.NavigationControl());
+      const basemaps = imagery
+        ? [
+            {
+              name: "Your imagery",
+              style: {
+                version: 1,
+                sources: { imagery: { type: "raster", tiles: [imagery], tileSize: 256 } },
+                layers: [{ id: "imagery", type: "raster", source: "imagery" }],
+              },
+            },
+            ...BASEMAPS,
+          ]
+        : BASEMAPS;
 
-      const date = document.getElementById("date");
-      const time = document.getElementById("time");
-      const label = document.getElementById("label");
+      const date = element("input", { type: "date", ariaLabel: "Date" });
+      const time = element("input", { type: "range", min: "0", max: "1439", step: "5", ariaLabel: "Time of day in UTC" });
+      const label = element("output");
       let live = true;
 
       function show(ms) {
@@ -77,7 +41,7 @@
         label.textContent = `${live ? "Now: " : ""}${local} your time, ${when.toISOString().slice(11, 16)} UTC`;
       }
 
-      function apply() {
+      function apply(map) {
         if (live) {
           map.setSun({ time: "now" });
           show(Date.now());
@@ -90,22 +54,28 @@
         show(ms);
       }
 
-      map.once("styleload").then(apply);
-      date.addEventListener("input", () => {
-        live = false;
-        apply();
-      });
-      time.addEventListener("input", () => {
-        live = false;
-        apply();
-      });
-      document.getElementById("now").addEventListener("click", () => {
-        live = true;
-        apply();
-      });
+      const { map, panel } = createViewer({ basemaps, overlay: apply });
+      panel(
+        row(
+          date,
+          button("Now", () => {
+            live = true;
+            apply(map);
+          }),
+        ),
+        time,
+        label,
+      );
+      for (const input of [date, time]) {
+        input.addEventListener("input", () => {
+          live = false;
+          apply(map);
+        });
+      }
       setInterval(() => {
         if (live) show(Date.now());
       }, 30000);
+      window.map = map;
     </script>
   </body>
 </html>
