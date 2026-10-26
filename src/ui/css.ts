@@ -255,7 +255,7 @@ export const CSS = `
   box-shadow: 0 2px 12px rgba(16, 25, 29, 0.18);
   overflow-wrap: break-word;
 }
-.maplet-popup-content:has(> .maplet-popup-close) {
+.maplet-popup-content.maplet-popup-closable {
   padding-right: 30px;
 }
 .maplet-popup-close {
