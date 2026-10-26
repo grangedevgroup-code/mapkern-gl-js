@@ -118,7 +118,6 @@ export class SearchIndex implements Geocoder {
     const contexts = new Map<number, string>();
     for (const c of data.context) if (c !== NONE && !contexts.has(c)) contexts.set(c, data.strings[c]!);
     this.contextVocab = new Vocabulary(contexts);
-    this.categoryLabels = data.categories.map(categoryLabel);
     const categories = new Map<number, string>();
     data.categories.forEach((c, i) => {
       const value = c.slice(c.indexOf("=") + 1);
