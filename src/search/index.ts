@@ -82,6 +82,17 @@ const PLACE_ZOOM: Record<string, number> = {
 
 const REVERSE_RADIUS: Record<SearchKind, number> = { address: 100, poi: 80, street: 300, place: 20000 };
 const REVERSE_ORDER: SearchKind[] = ["address", "poi", "street", "place"];
+const PLACE_REACH: Record<string, number> = {
+  city: 15000,
+  town: 8000,
+  borough: 4000,
+  village: 4000,
+  suburb: 2000,
+  hamlet: 2000,
+  quarter: 1500,
+  locality: 1500,
+  neighbourhood: 1000,
+};
 const MAX_PREFIX_TERMS = 4000;
 const CELL = 0.01;
 
@@ -109,6 +120,7 @@ export class SearchIndex implements Geocoder {
   private readonly byContext: Groups;
   private readonly byCategory: Groups;
   private grid: Map<number, number[]> | null = null;
+  private readonly places: number[] = [];
 
   constructor(data: SearchData) {
     this.data = data;
@@ -126,6 +138,8 @@ export class SearchIndex implements Geocoder {
     this.categoryVocab = new Vocabulary(categories);
     this.byContext = new Groups(data.context, NONE);
     this.byCategory = new Groups(data.category, NO_CATEGORY);
+    const place = SEARCH_KINDS.indexOf("place");
+    for (let e = 0; e < this.size; e++) if (data.kind[e] === place) this.places.push(e);
   }
 
   static fromBytes(bytes: ArrayBuffer | Uint8Array): SearchIndex {
@@ -307,11 +321,7 @@ export class SearchIndex implements Geocoder {
       const limit = token.length >= 8 ? 2 : 1;
       for (let t = 0; t < this.termText.length; t++) {
         const text = this.termText[t]!;
-        const edits = withinEdits(
-          token,
-          prefix && text.length > token.length ? text.slice(0, token.length) : text,
-          limit,
-        );
+        const edits = withinEdits(token, text, limit, prefix ? Math.min(text.length, token.length) : text.length);
         if (edits > 0) add(t, edits === 1 ? 0.75 : 0.6);
       }
     }
@@ -408,7 +418,9 @@ export class SearchIndex implements Geocoder {
         if (list[list.length - 1] !== e) list.push(e);
       } else grid.set(key, [e]);
     };
+    const place = SEARCH_KINDS.indexOf("place");
     for (let e = 0; e < this.size; e++) {
+      if (d.kind[e] === place) continue;
       const from = d.shapes[e]!;
       const to = d.shapes[e + 1]!;
       if (from === to) {
