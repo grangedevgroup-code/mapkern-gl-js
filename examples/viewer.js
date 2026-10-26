@@ -131,13 +131,13 @@ export function button(label, onClick) {
   return el;
 }
 
-export function fileButton(label, accept, onFile) {
-  const input = element("input", { type: "file" });
+export function fileButton(label, accept, onFile, { multiple = false } = {}) {
+  const input = element("input", { type: "file", multiple });
   if (accept) input.accept = accept;
   input.addEventListener("change", () => {
-    const file = input.files?.[0];
+    const files = [...(input.files ?? [])];
     input.value = "";
-    if (file) onFile(file);
+    if (files.length > 0) onFile(multiple ? files : files[0]);
   });
   return element("label", { className: "mapkern-viewer-file" }, input, element("span", { textContent: label }));
 }
