@@ -3,6 +3,7 @@ import { createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip, deflateSync } from "node:zlib";
+import { CODE_WORD, OTHER_NAME } from "../../src/search/format.ts";
 import { table, tokenize } from "../../src/search/text.ts";
 import { writeSearchFile } from "../../src/search/write.ts";
 import type { RegionData } from "./extract.ts";
@@ -13,9 +14,9 @@ import { categoryOf, hasAddress, isNameKey, streetClass } from "./search-schema.
 
 const PLACE_RANK: Record<string, number> = table({
   country: 250,
-  state: 230,
-  province: 230,
-  region: 220,
+  state: 225,
+  province: 225,
+  region: 215,
   county: 190,
   city: 200,
   town: 170,
@@ -94,7 +95,20 @@ interface Area {
   bbox: [number, number, number, number];
 }
 
-export const ENTRY_VERSION = 1;
+export const ENTRY_VERSION = 2;
+const MAIN_NAMES = ["name", "name:en", "int_name", "short_name"];
+const SETTLEMENTS = new Set([
+  "city",
+  "town",
+  "village",
+  "hamlet",
+  "borough",
+  "suburb",
+  "quarter",
+  "neighbourhood",
+  "locality",
+  "municipality",
+]);
 
 export interface Entry {
   osm: number;
@@ -346,7 +360,8 @@ export function collectEntries(data: RegionData, log: (message: string) => void 
     const address = addressOf(tags);
     const category = tags.name ? categoryOf(tags) : null;
     if (tags.name && tags.place) {
-      const rank = (PLACE_RANK[tags.place] ?? 60) + Math.min(40, Math.log10(Number(tags.population) || 1) * 6);
+      const people = SETTLEMENTS.has(tags.place) ? Math.min(40, Math.log10(Number(tags.population) || 1) * 6) : 0;
+      const rank = (PLACE_RANK[tags.place] ?? 60) + people;
       entries.push({
         osm,
         kind: 0,
@@ -618,9 +633,11 @@ export function writeSearchIndex(
   bbox: [number, number, number, number],
   entries: Entry[],
   log: (message: string) => void = () => undefined,
+  shapes = true,
 ): Uint8Array {
   return writeSearchFile(entries, {
     bbox,
+    shapes,
     compress: (bytes) => deflateSync(bytes, { level: 9 }),
     attribution: "© OpenStreetMap contributors",
     log,
