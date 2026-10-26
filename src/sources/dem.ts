@@ -8,7 +8,8 @@ import { backfill, frameStrips, NEIGHBORS, sampleElevation, unpackFor, writeFram
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileLoader, TileStats } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
-import type { DemReply, DemRequest } from "../worker/dem-task.ts";
+import type { DemReply } from "../worker/dem-task.ts";
+import { NO_OFFSCREEN, readPixels } from "../worker/dem-task.ts";
 import type { MapSource, SourceContext } from "./source.ts";
 import { tileEvents } from "./source.ts";
 import type { TileSet } from "./tilejson.ts";
@@ -77,6 +78,7 @@ export class DemSource implements MapSource {
       this.ctx.transformRequest,
       this.ctx.requestTimeoutMs,
       signal,
+      this.ctx.diskCache,
     );
     if (signal.aborted) return;
     this.tileSet = set;
@@ -196,11 +198,12 @@ export class DemSource implements MapSource {
           resolveRequest(url, "tile", ctx.transformRequest),
           signal,
           ctx.requestTimeoutMs,
+          "tile",
+          ctx.diskCache,
         );
         if (result.kind === "empty") return null;
         onDecoding();
-        const request: DemRequest = { bytes: result.data, unpack };
-        const reply = await ctx.workers().send<DemReply | null>("dem", request, [result.data], signal, tile.x + tile.y);
+        const reply = await decodeElevation(ctx, result.data, unpack, signal, tile.x + tile.y);
         if (!reply) return null;
         return {
           z: tile.z,
@@ -239,4 +242,39 @@ export class DemSource implements MapSource {
       byteSize: demBytes,
     };
   }
+}
+
+let workerDecodes: boolean | undefined;
+
+async function decodeElevation(
+  ctx: SourceContext,
+  bytes: ArrayBuffer,
+  unpack: Unpack,
+  signal: AbortSignal,
+  key: number,
+): Promise<DemReply | null> {
+  let source = bytes;
+  if (workerDecodes !== false) {
+    const spare = workerDecodes === undefined ? bytes.slice(0) : null;
+    try {
+      const reply = await ctx.workers().send<DemReply | null>("dem", { bytes, unpack }, [bytes], signal, key);
+      workerDecodes = true;
+      return reply;
+    } catch (error) {
+      if (!spare || !(error instanceof Error) || error.message !== NO_OFFSCREEN) throw error;
+      workerDecodes = false;
+      source = spare;
+    }
+  }
+  const pixels = await readPixels(source, signal, pageCanvas);
+  return ctx.workers().send<DemReply | null>("dem", { pixels, unpack }, [pixels.data.buffer], signal, key);
+}
+
+function pageCanvas(size: number): OffscreenCanvas | HTMLCanvasElement | null {
+  if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(size, size);
+  if (typeof document === "undefined") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  return canvas;
 }
