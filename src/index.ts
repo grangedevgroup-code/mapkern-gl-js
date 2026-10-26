@@ -61,6 +61,10 @@ export { addProtocol, removeProtocol } from "./tiles/protocols.ts";
 export type { Anchor } from "./ui/anchor.ts";
 export type {
   AttributionOptions,
+  Basemap,
+  BasemapChangeEvent,
+  BasemapEvents,
+  BasemapOptions,
   Control,
   ControlPosition,
   FullscreenEvent,
@@ -74,14 +78,22 @@ export type {
   GeolocateTrackEvent,
   NavigationOptions,
   ScaleOptions,
+  ScaleUnit,
+  TerrainControlOptions,
+  TerrainEvents,
+  TerrainView,
+  TerrainViewEvent,
 } from "./ui/controls.ts";
 export {
   AttributionControl,
+  BasemapControl,
   FullscreenControl,
   GeolocateControl,
   NavigationControl,
   ScaleControl,
+  TerrainControl,
 } from "./ui/controls.ts";
+export { LogoControl } from "./ui/logo.ts";
 export type { Alignment, MarkerEvent, MarkerEvents, MarkerOptions } from "./ui/marker.ts";
 export { Marker } from "./ui/marker.ts";
 export type { PopupEvent, PopupEvents, PopupOptions } from "./ui/popup.ts";
