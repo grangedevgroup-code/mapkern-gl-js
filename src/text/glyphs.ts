@@ -26,7 +26,30 @@ export interface FontSpec {
 const STYLE_WORDS =
   /\b(regular|normal|book|roman|medium|semi ?bold|demi ?bold|extra ?bold|ultra ?bold|bold|black|heavy|extra ?light|ultra ?light|light|thin|hairline|italic|oblique|condensed|narrow)\b/gi;
 
-export function fontFromNames(names: readonly string[]): { families: string[]; bold: boolean; italic: boolean } {
+interface NamedFont {
+  readonly families: string[];
+  readonly bold: boolean;
+  readonly italic: boolean;
+}
+
+const namedFonts = new Map<string, NamedFont>();
+const cssFamilies = new Map<string, string>();
+
+function remember<T>(cache: Map<string, T>, key: string, make: () => T): T {
+  let value = cache.get(key);
+  if (value === undefined) {
+    if (cache.size > 512) cache.clear();
+    value = make();
+    cache.set(key, value);
+  }
+  return value;
+}
+
+export function fontFromNames(names: readonly string[]): NamedFont {
+  return remember(namedFonts, names.join("\u0000"), () => readFontNames(names));
+}
+
+function readFontNames(names: readonly string[]): NamedFont {
   const families = [
     ...new Set(names.map((name) => name.replace(STYLE_WORDS, " ").replace(/\s+/g, " ").trim()).filter(Boolean)),
   ];
@@ -46,23 +69,26 @@ export function fontKey(font: FontSpec): string {
 }
 
 export function cssFamily(stack: readonly string[]): string {
-  const generic = new Set([
-    "serif",
-    "sans-serif",
-    "monospace",
-    "cursive",
-    "fantasy",
-    "system-ui",
-    "ui-sans-serif",
-    "ui-serif",
-    "ui-monospace",
-    "ui-rounded",
-    "emoji",
-    "math",
-    "fangsong",
-  ]);
-  return stack.map((f) => (generic.has(f) ? f : `"${f.replace(/["\\]/g, "")}"`)).join(", ");
+  return remember(cssFamilies, stack.join("\u0000"), () =>
+    stack.map((f) => (GENERIC_FAMILIES.has(f) ? f : `"${f.replace(/["\\]/g, "")}"`)).join(", "),
+  );
 }
+
+const GENERIC_FAMILIES = new Set([
+  "serif",
+  "sans-serif",
+  "monospace",
+  "cursive",
+  "fantasy",
+  "system-ui",
+  "ui-sans-serif",
+  "ui-serif",
+  "ui-monospace",
+  "ui-rounded",
+  "emoji",
+  "math",
+  "fangsong",
+]);
 
 export class GlyphAtlas {
   width = 1024;
