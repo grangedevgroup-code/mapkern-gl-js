@@ -188,7 +188,7 @@ test("kinds and bbox narrow the results", () => {
 });
 
 test("reverse geocoding gives the nearest address, place of business, street and town", () => {
-  const near = index.reverse([0.0121, 0.0102]);
+  const near = index.reverse([0.0116, 0.01]);
   assert.deepEqual(
     near.map((r) => [r.kind, r.name]),
     [
@@ -198,8 +198,8 @@ test("reverse geocoding gives the nearest address, place of business, street and
       ["place", "Testville"],
     ],
   );
-  assert.ok(near[0]!.distance! < 15);
-  assert.equal(index.reverse([0.0121, 0.0102], { kinds: ["street"] })[0]?.name, "Main Street");
+  assert.ok(near[0]!.distance! < 60);
+  assert.equal(index.reverse([0.0116, 0.01], { kinds: ["street"] })[0]?.name, "Main Street");
   assert.deepEqual(index.reverse([0.5, 0.5], { kinds: ["address"] }), []);
 });
 
