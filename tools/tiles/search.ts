@@ -627,7 +627,7 @@ export function stitch(chains: Float64Array[]): Ring[] {
       const ey = ring[ring.length - 1]!;
       let best = -1;
       let flip = false;
-      let bestD = (ring[0]! - ex) ** 2 + (ring[1]! - ey) ** 2;
+      let bestD = Number.POSITIVE_INFINITY;
       for (let i = 0; i < left.length; i++) {
         const c = left[i]!;
         const start = (c[0]! - ex) ** 2 + (c[1]! - ey) ** 2;
