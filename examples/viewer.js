@@ -31,20 +31,35 @@ export const TERRAIN = {
   attribution: '<a href="https://mapterhorn.com/attribution">© Mapterhorn</a>',
 };
 
-export const SEARCH = new URL("../data/places.search", import.meta.url).href;
+export const SEARCH = ["seattle", "olympia"].map((name) => new URL(`../data/${name}.search`, import.meta.url).href);
 
-export function lazyGeocoder(source) {
+export function lazyGeocoder(sources) {
+  const list = Array.isArray(sources) ? sources : [sources];
   let loading = null;
-  const index = () => {
-    loading ??= mapkern.SearchIndex.load(source).catch((error) => {
-      loading = null;
-      throw error;
+  const indexes = () => {
+    loading ??= Promise.allSettled(list.map((source) => mapkern.SearchIndex.load(source))).then((results) => {
+      const loaded = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
+      if (loaded.length === 0) {
+        loading = null;
+        throw results[0].reason;
+      }
+      return loaded;
     });
     return loading;
   };
+  const inside = (index, [lng, lat]) => {
+    const [w, s, e, n] = index.bbox;
+    return lng >= w && lng <= e && lat >= s && lat <= n;
+  };
   return {
-    search: async (query, options) => (await index()).search(query, options),
-    reverse: async (position, options) => (await index()).reverse(position, options),
+    async search(query, options = {}) {
+      const all = (await indexes()).flatMap((index) => index.search(query, options));
+      return all.sort((a, b) => b.score - a.score).slice(0, options.limit ?? 8);
+    },
+    async reverse(position, options) {
+      const loaded = await indexes();
+      return (loaded.find((index) => inside(index, position)) ?? loaded[0]).reverse(position, options);
+    },
   };
 }
 
