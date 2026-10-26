@@ -12,7 +12,7 @@ import {
   SUMMARY_CHUNK,
   unquantize,
 } from "./format.ts";
-import { expandPrefix, isNumber, tokenize, withinEdits } from "./text.ts";
+import { expandPrefix, isNumber, table, tokenize, withinEdits } from "./text.ts";
 
 export interface SearchResult {
   id: number;
@@ -56,7 +56,7 @@ export interface SearchIndexOptions {
 }
 
 const KIND_ZOOM: Record<SearchKind, number> = { place: 12, address: 18, street: 16, poi: 17 };
-const PLACE_ZOOM: Record<string, number> = {
+const PLACE_ZOOM: Record<string, number> = table({
   country: 5,
   state: 7,
   region: 7,
@@ -76,10 +76,10 @@ const PLACE_ZOOM: Record<string, number> = {
   island: 12,
   archipelago: 8,
   islet: 15,
-};
+});
 const REVERSE_RADIUS: Record<SearchKind, number> = { address: 100, poi: 80, street: 300, place: 20000 };
 const REVERSE_ORDER: SearchKind[] = ["address", "poi", "street", "place"];
-const PLACE_REACH: Record<string, number> = {
+const PLACE_REACH: Record<string, number> = table({
   city: 15000,
   town: 8000,
   borough: 4000,
@@ -89,7 +89,7 @@ const PLACE_REACH: Record<string, number> = {
   quarter: 1500,
   locality: 1500,
   neighbourhood: 1000,
-};
+});
 const POSTING_LIMIT = 200_000;
 const CANDIDATE_LIMIT = 30_000;
 const PREFIX_BLOCKS = 4;
