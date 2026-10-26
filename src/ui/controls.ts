@@ -1,6 +1,6 @@
-import { MapletError } from "../core/errors.ts";
+import { MapkernError } from "../core/errors.ts";
 import { Emitter } from "../core/events.ts";
-import type { FitBoundsOptions, MapletMap, UiText } from "../core/map.ts";
+import type { FitBoundsOptions, MapkernMap, UiText } from "../core/map.ts";
 import { distanceMeters, metersPerPixel } from "../geo/mercator.ts";
 import type { DemSourceSpec, StyleSpec, StyleSpecV8 } from "../style/types.ts";
 import { Marker } from "./marker.ts";
@@ -9,8 +9,8 @@ import { safeLinkFragment } from "./sanitize.ts";
 export type ControlPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
 export interface Control {
-  onAdd(map: MapletMap): HTMLElement;
-  onRemove(map: MapletMap): void;
+  onAdd(map: MapkernMap): HTMLElement;
+  onRemove(map: MapkernMap): void;
   readonly defaultPosition?: ControlPosition;
 }
 
@@ -64,22 +64,22 @@ export class NavigationControl implements Control {
     this.options = { showZoom: options.showZoom ?? true, showCompass: options.showCompass ?? true };
   }
 
-  onAdd(map: MapletMap): HTMLElement {
+  onAdd(map: MapkernMap): HTMLElement {
     const doc = map.getContainer().ownerDocument;
     const el = doc.createElement("div");
-    el.className = "maplet-control maplet-navigation";
+    el.className = "mapkern-control mapkern-navigation";
     if (this.options.showZoom) {
-      this.zoomIn = button(doc, map.text("zoomIn"), "maplet-zoom-in", icon(doc, ["M12 6v12", "M6 12h12"]), () =>
+      this.zoomIn = button(doc, map.text("zoomIn"), "mapkern-zoom-in", icon(doc, ["M12 6v12", "M6 12h12"]), () =>
         map.zoomIn(),
       );
-      this.zoomOut = button(doc, map.text("zoomOut"), "maplet-zoom-out", icon(doc, ["M6 12h12"]), () => map.zoomOut());
+      this.zoomOut = button(doc, map.text("zoomOut"), "mapkern-zoom-out", icon(doc, ["M6 12h12"]), () => map.zoomOut());
       el.append(this.zoomIn, this.zoomOut);
     }
     if (this.options.showCompass) {
       this.needle = icon(doc, ["M12 3l4 9h-8z", "M12 21l-4-9h8z"]);
       const north = this.needle.firstElementChild;
       if (north) north.setAttribute("fill", "#d9473f");
-      this.compass = button(doc, map.text("resetNorth"), "maplet-compass", this.needle, () =>
+      this.compass = button(doc, map.text("resetNorth"), "mapkern-compass", this.needle, () =>
         map.easeTo({ bearing: 0, pitch: 0 }),
       );
       el.append(this.compass);
@@ -91,16 +91,16 @@ export class NavigationControl implements Control {
     return el;
   }
 
-  onRemove(map: MapletMap): void {
+  onRemove(map: MapkernMap): void {
     map.off("move", this.update);
     map.off("resize", this.update);
     this.element?.remove();
     this.element = null;
   }
 
-  private mapRef: MapletMap | null = null;
+  private mapRef: MapkernMap | null = null;
 
-  private refresh(map?: MapletMap): void {
+  private refresh(map?: MapkernMap): void {
     if (map) this.mapRef = map;
     const m = this.mapRef;
     if (!m) return;
@@ -132,16 +132,16 @@ export class AttributionControl implements Control {
   private element: HTMLElement | null = null;
   private last = "";
   private readonly update = () => this.refresh();
-  private mapRef: MapletMap | null = null;
+  private mapRef: MapkernMap | null = null;
 
   constructor(options: AttributionOptions = {}) {
     this.custom = options.custom === undefined ? [] : Array.isArray(options.custom) ? options.custom : [options.custom];
   }
 
-  onAdd(map: MapletMap): HTMLElement {
+  onAdd(map: MapkernMap): HTMLElement {
     const doc = map.getContainer().ownerDocument;
     const el = doc.createElement("div");
-    el.className = "maplet-attribution";
+    el.className = "mapkern-attribution";
     el.setAttribute("role", "contentinfo");
     this.element = el;
     this.mapRef = map;
@@ -151,7 +151,7 @@ export class AttributionControl implements Control {
     return el;
   }
 
-  onRemove(map: MapletMap): void {
+  onRemove(map: MapkernMap): void {
     map.off("sourcedata", this.update);
     map.off("styleload", this.update);
     this.element?.remove();
@@ -192,7 +192,7 @@ export class ScaleControl implements Control {
   private element: HTMLElement | null = null;
   private label: HTMLElement | null = null;
   private line: HTMLElement | null = null;
-  private mapRef: MapletMap | null = null;
+  private mapRef: MapkernMap | null = null;
   private lastVisibility = "";
   private lastWidth = "";
   private lastLabel = "";
@@ -209,9 +209,9 @@ export class ScaleControl implements Control {
     this.refresh();
   }
 
-  onAdd(map: MapletMap): HTMLElement {
+  onAdd(map: MapkernMap): HTMLElement {
     const el = map.getContainer().ownerDocument.createElement("div");
-    el.className = "maplet-scale";
+    el.className = "mapkern-scale";
     this.element = el;
     this.mapRef = map;
     this.build();
@@ -220,7 +220,7 @@ export class ScaleControl implements Control {
     return el;
   }
 
-  onRemove(map: MapletMap): void {
+  onRemove(map: MapkernMap): void {
     map.off("move", this.update);
     this.element?.remove();
     this.element = null;
@@ -233,16 +233,16 @@ export class ScaleControl implements Control {
     const el = this.element;
     if (!el) return;
     const doc = el.ownerDocument;
-    el.classList.toggle("maplet-scale-both", this.unit === "both");
+    el.classList.toggle("mapkern-scale-both", this.unit === "both");
     el.textContent = "";
     const label = doc.createElement("div");
-    label.className = "maplet-scale-label";
+    label.className = "mapkern-scale-label";
     el.appendChild(label);
     this.label = label;
     this.line = null;
     if (this.unit === "both") {
       const line = doc.createElement("div");
-      line.className = "maplet-scale-line";
+      line.className = "mapkern-scale-line";
       el.appendChild(line);
       this.line = line;
     }
@@ -357,7 +357,7 @@ type FullscreenElement = HTMLElement & { webkitRequestFullscreen?: () => void };
 export class FullscreenControl extends Emitter<FullscreenEvents> implements Control {
   readonly defaultPosition: ControlPosition = "top-right";
   private readonly options: FullscreenOptions;
-  private map: MapletMap | null = null;
+  private map: MapkernMap | null = null;
   private target: FullscreenElement | null = null;
   private element: HTMLElement | null = null;
   private button: HTMLButtonElement | null = null;
@@ -369,13 +369,13 @@ export class FullscreenControl extends Emitter<FullscreenEvents> implements Cont
     this.options = { ...options };
   }
 
-  onAdd(map: MapletMap): HTMLElement {
+  onAdd(map: MapkernMap): HTMLElement {
     const doc = map.getContainer().ownerDocument;
     this.map = map;
     this.target = (this.options.container ?? map.getContainer()) as FullscreenElement;
     const el = doc.createElement("div");
-    el.className = "maplet-control maplet-fullscreen";
-    this.button = button(doc, map.text("fullscreen"), "maplet-fullscreen-button", icon(doc, EXPAND), () =>
+    el.className = "mapkern-control mapkern-fullscreen";
+    this.button = button(doc, map.text("fullscreen"), "mapkern-fullscreen-button", icon(doc, EXPAND), () =>
       this.toggle(),
     );
     el.appendChild(this.button);
@@ -385,7 +385,7 @@ export class FullscreenControl extends Emitter<FullscreenEvents> implements Cont
     return el;
   }
 
-  onRemove(map: MapletMap): void {
+  onRemove(map: MapkernMap): void {
     const doc = map.getContainer().ownerDocument as FullscreenDocument;
     doc.removeEventListener("fullscreenchange", this.onChange);
     doc.removeEventListener("webkitfullscreenchange", this.onChange);
@@ -426,7 +426,7 @@ export class FullscreenControl extends Emitter<FullscreenEvents> implements Cont
 
   private setPseudo(on: boolean): void {
     this.pseudo = on;
-    this.target?.classList.toggle("maplet-pseudo-fullscreen", on);
+    this.target?.classList.toggle("mapkern-pseudo-fullscreen", on);
     this.changed(on);
   }
 
@@ -498,7 +498,7 @@ export class GeolocateControl extends Emitter<GeolocateEvents> implements Contro
   private readonly options: Required<Omit<GeolocateOptions, "fitBoundsOptions">> & {
     fitBoundsOptions: FitBoundsOptions;
   };
-  private map: MapletMap | null = null;
+  private map: MapkernMap | null = null;
   private element: HTMLElement | null = null;
   private button: HTMLButtonElement | null = null;
   private watch: number | null = null;
@@ -519,12 +519,12 @@ export class GeolocateControl extends Emitter<GeolocateEvents> implements Contro
     };
   }
 
-  onAdd(map: MapletMap): HTMLElement {
+  onAdd(map: MapkernMap): HTMLElement {
     const doc = map.getContainer().ownerDocument;
     this.map = map;
     const el = doc.createElement("div");
-    el.className = "maplet-control maplet-geolocate";
-    this.button = button(doc, map.text("geolocate"), "maplet-geolocate-button", icon(doc, TARGET), () =>
+    el.className = "mapkern-control mapkern-geolocate";
+    this.button = button(doc, map.text("geolocate"), "mapkern-geolocate-button", icon(doc, TARGET), () =>
       this.trigger(),
     );
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -539,7 +539,7 @@ export class GeolocateControl extends Emitter<GeolocateEvents> implements Contro
     return el;
   }
 
-  onRemove(map: MapletMap): void {
+  onRemove(map: MapkernMap): void {
     map.off("movestart", this.onMoveStart);
     map.off("zoom", this.onZoom);
     this.stopWatch();
@@ -608,12 +608,12 @@ export class GeolocateControl extends Emitter<GeolocateEvents> implements Contro
     if (this.options.showUserLocation) {
       if (!this.dot) {
         const el = map.getContainer().ownerDocument.createElement("div");
-        el.className = "maplet-user-location";
+        el.className = "mapkern-user-location";
         this.dot = new Marker({ element: el, label: map.text("yourLocation") });
       }
       if (this.options.showAccuracyCircle && !this.ring) {
         const ring = map.getContainer().ownerDocument.createElement("div");
-        ring.className = "maplet-user-accuracy";
+        ring.className = "mapkern-user-accuracy";
         this.ringElement = ring;
         this.ring = new Marker({ element: ring, label: map.text("yourLocation") });
       }
@@ -659,7 +659,7 @@ export class GeolocateControl extends Emitter<GeolocateEvents> implements Contro
     this.state = state;
     const b = this.button;
     if (!b) return;
-    for (const s of ["waiting", "active", "background", "error"]) b.classList.toggle(`maplet-${s}`, s === state);
+    for (const s of ["waiting", "active", "background", "error"]) b.classList.toggle(`mapkern-${s}`, s === state);
     b.setAttribute("aria-pressed", String(state === "active" || state === "background"));
   }
 
@@ -709,7 +709,7 @@ export class BasemapControl extends Emitter<BasemapEvents> implements Control {
   readonly defaultPosition: ControlPosition = "bottom-right";
   private readonly basemaps: Basemap[];
   private index: number;
-  private map: MapletMap | null = null;
+  private map: MapkernMap | null = null;
   private element: HTMLElement | null = null;
   private toggle: HTMLButtonElement | null = null;
   private items: HTMLButtonElement[] = [];
@@ -718,11 +718,11 @@ export class BasemapControl extends Emitter<BasemapEvents> implements Control {
     super();
     const list = options?.basemaps;
     if (!Array.isArray(list) || list.length === 0) {
-      throw new MapletError("invalid-option", "BasemapControl needs a list of basemaps");
+      throw new MapkernError("invalid-option", "BasemapControl needs a list of basemaps");
     }
     for (const b of list) {
       if (typeof b?.name !== "string" || b.name === "" || b.style === undefined || b.style === null) {
-        throw new MapletError("invalid-option", "Each basemap needs a name and a style");
+        throw new MapkernError("invalid-option", "Each basemap needs a name and a style");
       }
     }
     this.basemaps = list.map((b) => ({ name: b.name, style: b.style }));
@@ -734,18 +734,18 @@ export class BasemapControl extends Emitter<BasemapEvents> implements Control {
     return this.index;
   }
 
-  onAdd(map: MapletMap): HTMLElement {
+  onAdd(map: MapkernMap): HTMLElement {
     const doc = map.getContainer().ownerDocument;
     this.map = map;
     const el = doc.createElement("div");
-    el.className = "maplet-control maplet-basemaps";
-    this.toggle = button(doc, map.text("basemaps"), "maplet-basemaps-button", icon(doc, LAYERS), () =>
-      this.open(!el.classList.contains("maplet-open")),
+    el.className = "mapkern-control mapkern-basemaps";
+    this.toggle = button(doc, map.text("basemaps"), "mapkern-basemaps-button", icon(doc, LAYERS), () =>
+      this.open(!el.classList.contains("mapkern-open")),
     );
     this.toggle.setAttribute("aria-haspopup", "menu");
     this.toggle.setAttribute("aria-expanded", "false");
     const menu = doc.createElement("div");
-    menu.className = "maplet-basemaps-menu";
+    menu.className = "mapkern-basemaps-menu";
     menu.setAttribute("role", "menu");
     this.items = this.basemaps.map((b, i) => {
       const item = doc.createElement("button");
@@ -764,7 +764,7 @@ export class BasemapControl extends Emitter<BasemapEvents> implements Control {
     return el;
   }
 
-  onRemove(map: MapletMap): void {
+  onRemove(map: MapkernMap): void {
     const doc = map.getContainer().ownerDocument;
     doc.removeEventListener("pointerdown", this.outside, true);
     doc.removeEventListener("keydown", this.escape);
@@ -778,7 +778,7 @@ export class BasemapControl extends Emitter<BasemapEvents> implements Control {
   select(index: number): this {
     const basemap = this.basemaps[index];
     if (!Number.isInteger(index) || !basemap) {
-      throw new MapletError("invalid-option", `There is no basemap number ${String(index)}`);
+      throw new MapkernError("invalid-option", `There is no basemap number ${String(index)}`);
     }
     this.open(false);
     if (index === this.index) return this;
@@ -792,7 +792,7 @@ export class BasemapControl extends Emitter<BasemapEvents> implements Control {
   private open(open: boolean): void {
     const el = this.element;
     if (!el) return;
-    el.classList.toggle("maplet-open", open);
+    el.classList.toggle("mapkern-open", open);
     this.toggle?.setAttribute("aria-expanded", String(open));
   }
 
@@ -804,7 +804,7 @@ export class BasemapControl extends Emitter<BasemapEvents> implements Control {
 
   private readonly outside = (e: Event) => {
     const el = this.element;
-    if (el?.classList.contains("maplet-open") && !el.contains(e.target as Node)) this.open(false);
+    if (el?.classList.contains("mapkern-open") && !el.contains(e.target as Node)) this.open(false);
   };
 
   private readonly escape = (e: KeyboardEvent) => {
@@ -830,13 +830,13 @@ export interface TerrainEvents {
   viewchange: TerrainViewEvent;
 }
 
-const TERRAIN_SOURCE = "maplet-terrain";
+const TERRAIN_SOURCE = "mapkern-terrain";
 const VIEWS: readonly TerrainView[] = ["flat", "terrain", "tilted"];
 
 function demSource(source: string | DemSourceSpec | undefined): string | DemSourceSpec {
   if (typeof source === "string" && source !== "") return source;
   if (typeof source === "object" && source !== null && source.type === "dem") return { ...source };
-  throw new MapletError("invalid-option", "TerrainControl needs a dem source or the id of one");
+  throw new MapkernError("invalid-option", "TerrainControl needs a dem source or the id of one");
 }
 const VIEW_TEXT: Record<TerrainView, UiText> = { flat: "flatView", terrain: "terrainView", tilted: "tiltedView" };
 const TILTED = 5;
@@ -847,7 +847,7 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
   private readonly exaggeration: number;
   private readonly relief: number;
   private readonly pitch: number;
-  private map: MapletMap | null = null;
+  private map: MapkernMap | null = null;
   private element: HTMLElement | null = null;
   private button: HTMLButtonElement | null = null;
   private label: HTMLElement | null = null;
@@ -869,18 +869,18 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
     return map.getPitch() > TILTED ? "tilted" : "terrain";
   }
 
-  onAdd(map: MapletMap): HTMLElement {
+  onAdd(map: MapkernMap): HTMLElement {
     const doc = map.getContainer().ownerDocument;
     this.map = map;
     this.wanted = this.wanted || map.getTerrain() !== null;
     const el = doc.createElement("div");
-    el.className = "maplet-control maplet-terrain";
+    el.className = "mapkern-control mapkern-terrain";
     const label = doc.createElement("span");
-    label.className = "maplet-terrain-label";
+    label.className = "mapkern-terrain-label";
     label.setAttribute("aria-hidden", "true");
     const b = doc.createElement("button");
     b.type = "button";
-    b.className = "maplet-terrain-button";
+    b.className = "mapkern-terrain-button";
     b.appendChild(label);
     b.addEventListener("click", () => {
       const current = VIEWS.indexOf(this.target ?? this.view);
@@ -898,7 +898,7 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
     return el;
   }
 
-  onRemove(map: MapletMap): void {
+  onRemove(map: MapkernMap): void {
     map.off("pitch", this.render);
     map.off("moveend", this.settle);
     map.off("styleload", this.restyle);
@@ -911,7 +911,7 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
   }
 
   setView(view: TerrainView): this {
-    if (!VIEWS.includes(view)) throw new MapletError("invalid-option", `Unknown terrain view "${String(view)}"`);
+    if (!VIEWS.includes(view)) throw new MapkernError("invalid-option", `Unknown terrain view "${String(view)}"`);
     this.wanted = view !== "flat";
     const map = this.map;
     if (!map) return this;
@@ -954,7 +954,7 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
     try {
       if (typeof this.source !== "string" && !map.getSource(id)) map.addSource(id, this.source);
     } catch (error) {
-      if (error instanceof MapletError && error.code === "invalid-style") return false;
+      if (error instanceof MapkernError && error.code === "invalid-style") return false;
       throw error;
     }
     if (map.getSource(id)?.type !== "dem") return false;
@@ -985,7 +985,7 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
     const first = this.shown === null;
     this.shown = view;
     label.textContent = view === "flat" ? "2D" : "3D";
-    button.classList.toggle("maplet-tilted", view === "tilted");
+    button.classList.toggle("mapkern-tilted", view === "tilted");
     const name = map.text(VIEW_TEXT[view]);
     button.title = name;
     button.setAttribute("aria-label", name);
