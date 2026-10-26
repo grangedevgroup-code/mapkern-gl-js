@@ -553,6 +553,8 @@ export interface DrawnSymbol {
 }
 
 const STROKE = 4;
+const MIN_LINE = 1.25;
+const MIN_DOT = 1.4;
 const INK = "#000000";
 
 export function drawSymbol(sidc: string, options: SymbolOptions = {}): DrawnSymbol | null {
@@ -584,9 +586,11 @@ export function drawSymbol(sidc: string, options: SymbolOptions = {}): DrawnSymb
   if (code.letter) marks.push({ text: [code.letter, 172, Math.max(top, frame.top) + 4, 34] });
   const label = options.label?.trim() ?? "";
   const labelWidth = label ? label.length * 22 + 12 : 0;
-  const half = Math.max(100 - top, bottom - 100, 80) + STROKE;
-  const sideHalf = Math.max(100 + labelWidth, 100) + STROKE;
-  const unit = (options.size ?? 40) / 100;
+  const unit = (options.size ?? 16) / 100;
+  const stroke = Math.max(STROKE, MIN_LINE / unit);
+  const dot = (r: number) => Math.max(r, MIN_DOT / unit);
+  const half = Math.max(100 - top, bottom - 100, 80) + stroke;
+  const sideHalf = Math.max(100 + labelWidth, 100) + stroke;
   const width = Math.ceil(sideHalf * 2 * unit);
   const height = Math.ceil(half * 2 * unit);
   const offsetX = sideHalf - 100;
@@ -598,16 +602,17 @@ export function drawSymbol(sidc: string, options: SymbolOptions = {}): DrawnSymb
     code.affiliation === "pending" ||
     code.affiliation === "assumed-friend" ||
     code.affiliation === "suspect";
-  const dashArray = dash ? "16 10" : "";
+  const dashes = [stroke * 4, stroke * 2.5];
+  const dashArray = dash ? dashes.join(" ") : "";
   const parts: string[] = [];
   if (frame.closed && fill !== "none") parts.push(`<path d="${frame.path}" fill="${fill}" stroke="none"/>`);
   if (!frame.closed && fill !== "none") parts.push(`<path d="${frame.path} Z" fill="${fill}" stroke="none"/>`);
   parts.push(
-    `<path d="${frame.path}" fill="none" stroke="${INK}" stroke-width="${STROKE}"${dash ? ` stroke-dasharray="${dashArray}"` : ""}/>`,
+    `<path d="${frame.path}" fill="none" stroke="${INK}" stroke-width="${stroke}"${dash ? ` stroke-dasharray="${dashArray}"` : ""}/>`,
   );
   for (const mark of marks) {
-    if (mark.path) parts.push(`<path d="${mark.path}" fill="none" stroke="${INK}" stroke-width="${STROKE}"/>`);
-    for (const [x, y, r] of mark.dots ?? []) parts.push(`<circle cx="${x}" cy="${y}" r="${r}" fill="${INK}"/>`);
+    if (mark.path) parts.push(`<path d="${mark.path}" fill="none" stroke="${INK}" stroke-width="${stroke}"/>`);
+    for (const [x, y, r] of mark.dots ?? []) parts.push(`<circle cx="${x}" cy="${y}" r="${dot(r)}" fill="${INK}"/>`);
     if (mark.text) {
       const [text, x, y, size] = mark.text;
       parts.push(
@@ -620,7 +625,7 @@ export function drawSymbol(sidc: string, options: SymbolOptions = {}): DrawnSymb
     const scale = unit * pixelRatio;
     context.save();
     context.setTransform(scale, 0, 0, scale, offsetX * scale, offsetY * scale);
-    context.lineWidth = STROKE;
+    context.lineWidth = stroke;
     context.lineJoin = "round";
     context.lineCap = "round";
     context.strokeStyle = INK;
@@ -628,7 +633,7 @@ export function drawSymbol(sidc: string, options: SymbolOptions = {}): DrawnSymb
       context.fillStyle = fill;
       context.fill(new Path2D(frame.closed ? frame.path : `${frame.path} Z`));
     }
-    context.setLineDash(dash ? [16, 10] : []);
+    context.setLineDash(dash ? dashes : []);
     context.stroke(new Path2D(frame.path));
     context.setLineDash([]);
     context.fillStyle = INK;
@@ -636,7 +641,7 @@ export function drawSymbol(sidc: string, options: SymbolOptions = {}): DrawnSymb
       if (mark.path) context.stroke(new Path2D(mark.path));
       for (const [x, y, r] of mark.dots ?? []) {
         context.beginPath();
-        context.arc(x, y, r, 0, Math.PI * 2);
+        context.arc(x, y, dot(r), 0, Math.PI * 2);
         context.fill();
       }
       if (mark.text) {
