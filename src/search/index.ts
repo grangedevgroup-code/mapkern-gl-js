@@ -124,6 +124,8 @@ export class SearchIndex implements Geocoder {
       categories.set(i, [categoryLabel(c), ...(SYNONYMS[value] ?? [])].join(" "));
     });
     this.categoryVocab = new Vocabulary(categories);
+    this.byContext = new Groups(data.context);
+    this.byCategory = new Groups(data.category);
   }
 
   static fromBytes(bytes: ArrayBuffer | Uint8Array): SearchIndex {
