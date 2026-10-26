@@ -167,7 +167,7 @@ export function igcToGeoJSON(text: string): FeatureCollection {
   return { type: "FeatureCollection", features };
 }
 
-const SENTENCE = /^\$([A-Z]{2})([A-Z]{3}),([^*]*)(?:\*([0-9A-Fa-f]{2}))?\s*$/;
+const SENTENCE = /^\$([A-Z]{2})([A-Z]{3}),([^*]*)(?:\*([0-9A-Fa-f]{2}))?$/;
 
 export function isNmea(text: string): boolean {
   const lines = text.split(/\r?\n/, 20).filter((l) => l.trim());
