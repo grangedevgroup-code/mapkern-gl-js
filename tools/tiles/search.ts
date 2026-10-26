@@ -1,5 +1,6 @@
+import { gzipSync } from "node:zlib";
 import type { SearchData, SearchKind } from "../../src/search/format.ts";
-import { NO_CATEGORY, NONE, SEARCH_KINDS } from "../../src/search/format.ts";
+import { encodeSearchData, NO_CATEGORY, NONE, SEARCH_KINDS } from "../../src/search/format.ts";
 import { tokenize } from "../../src/search/text.ts";
 import type { RegionData } from "./extract.ts";
 import type { Ring } from "./geometry.ts";
@@ -11,7 +12,6 @@ export interface SearchStats {
   entries: number;
   byKind: Record<SearchKind, number>;
   terms: number;
-  areas: number;
 }
 
 const PLACE_RANK: Record<string, number> = {
@@ -76,6 +76,7 @@ const OWN_LOCALITY = new Set(["city", "town", "village", "county", "state", "pro
 const GROUP_GAP = 0.02;
 
 interface Area {
+  osm: number;
   name: string;
   level: number;
   rings: Ring[];
@@ -180,10 +181,11 @@ function coarseKey(x: number, y: number): number {
 export function indexRegion(
   data: RegionData,
   log: (message: string) => void = () => undefined,
-): {
-  data: SearchData;
-  stats: SearchStats;
-} {
+): { data: SearchData; stats: SearchStats } {
+  return packEntries(data.bbox, collectEntries(data, log), log);
+}
+
+export function collectEntries(data: RegionData, log: (message: string) => void = () => undefined): Entry[] {
   const ids = data.nodeIds;
   const findNode = (id: number): number => {
     let lo = 0;
@@ -222,14 +224,16 @@ export function indexRegion(
   const [minLon, minLat, maxLon, maxLat] = data.bbox;
   const inRegion = (lon: number, lat: number) => lon >= minLon && lon <= maxLon && lat >= minLat && lat <= maxLat;
 
-  const ringsOf = (members: { ref: number; role: string }[]): Ring[] => {
+  const ringsOf = (members: { ref: number; role: string }[], repair: boolean): Ring[] => {
     const parts: Float64Array[] = [];
     for (const m of members) {
       const w = findWay(m.ref);
       if (w >= 0) parts.push(wayRefs(w));
     }
-    const { closed } = joinWays(parts);
-    return closed.map((refs) => line(refs)).filter((r) => r.length >= 8);
+    const { closed, open } = joinWays(parts);
+    const rings = closed.map((refs) => line(refs)).filter((r) => r.length >= 8);
+    if (repair) rings.push(...stitch(open.map((refs) => line(refs)).filter((c) => c.length >= 4)));
+    return rings;
   };
 
   const areas: Area[] = [];
@@ -255,13 +259,19 @@ export function indexRegion(
         bounds[3] = Math.max(bounds[3], b.y1);
       }
       if (bounds[0] > maxLon || bounds[2] < minLon || bounds[1] > maxLat || bounds[3] < minLat) continue;
-      areas.push({ name: rel.tags.name!, level, rings: all, outer: all.map((_, i) => i < outer.length), bbox: bounds });
+      areas.push({
+        osm: rel.id * 4 + 2,
+        name: rel.tags.name!,
+        level,
+        rings: all,
+        outer: all.map((_, i) => i < outer.length),
+        bbox: bounds,
+      });
     } else {
       if (rings.length) polygonPois.push({ tags: rel.tags, rings, osm: rel.id * 4 + 2 });
     }
   }
   const grid = new AreaIndex(areas);
-  log(`administrative areas: ${areas.length.toLocaleString()}`);
 
   const places = data.points.filter((p) => p.tags.place && p.tags.name && NEAREST_PLACE[p.tags.place]);
   const placeGrid = new Map<number, number[]>();
@@ -406,7 +416,7 @@ export function indexRegion(
     const closed = refs.length >= 4 && refs[0] === refs[refs.length - 1];
     if (!closed && !hasAddress(tags)) continue;
     const [lon, lat] = centerOf([pts]);
-    addFeature(tags, lon, lat, data.wayIds[w]! * 4 + 1);
+    addFeature(tags, lon, lat, osm);
   }
   for (const poi of polygonPois) {
     const { outer } = splitRings(poi.rings);
@@ -475,13 +485,13 @@ export function indexRegion(
     });
   });
 
-  return pack(data.bbox, entries, areas.length, log);
+  log(`administrative areas: ${areas.length.toLocaleString()}, entries: ${entries.length.toLocaleString()}`);
+  return entries;
 }
 
-function pack(
+export function packEntries(
   bbox: [number, number, number, number],
   entries: Entry[],
-  areas: number,
   log: (message: string) => void,
 ): { data: SearchData; stats: SearchStats } {
   const strings: string[] = [];
@@ -570,7 +580,7 @@ function pack(
   out.postings = new Uint32Array(total);
   let at = 0;
   for (const t of terms) for (const e of postingLists.get(t)!) out.postings[at++] = e;
-  const stats: SearchStats = { entries: n, byKind, terms: terms.length, areas };
+  const stats: SearchStats = { entries: n, byKind, terms: terms.length };
   log(
     `search entries: ${n.toLocaleString()} (${SEARCH_KINDS.map((k) => `${byKind[k].toLocaleString()} ${k}`).join(", ")}), terms: ${terms.length.toLocaleString()}`,
   );
@@ -690,4 +700,12 @@ function metres(lon1: number, lat1: number, lon2: number, lat2: number): number 
   const dx = (lon2 - lon1) * k;
   const dy = lat2 - lat1;
   return Math.sqrt(dx * dx + dy * dy) * 111195;
+}
+
+export function writeSearchIndex(
+  bbox: [number, number, number, number],
+  entries: Entry[],
+  log: (message: string) => void = () => undefined,
+): Uint8Array {
+  return gzipSync(encodeSearchData(packEntries(bbox, entries, log).data), { level: 9 });
 }
