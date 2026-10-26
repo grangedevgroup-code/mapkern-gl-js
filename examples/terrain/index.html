@@ -1,115 +1,45 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="maplet-viewer">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Maplet terrain</title>
     <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
-    <style>
-      html,
-      body {
-        margin: 0;
-        height: 100%;
-        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      }
-      #map {
-        position: absolute;
-        inset: 0;
-      }
-      .panel {
-        position: absolute;
-        top: 10px;
-        left: 10px;
-        display: flex;
-        gap: 12px;
-        align-items: center;
-        padding: 8px 12px;
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.92);
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
-      }
-      .panel label {
-        display: flex;
-        gap: 6px;
-        align-items: center;
-        cursor: pointer;
-      }
-      .open input {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        opacity: 0;
-      }
-      .open span {
-        padding: 4px 10px;
-        border: 1px solid #b9bdb7;
-        border-radius: 6px;
-      }
-      .open input:focus-visible + span {
-        outline: 2px solid #246a50;
-      }
-    </style>
+    <link rel="stylesheet" href="../viewer.css" />
   </head>
   <body>
     <div id="map"></div>
-    <div class="panel">
-      <label class="open"><input id="file" type="file" accept=".pmtiles,.mbtiles" /><span>Open elevation file</span></label>
-      <label><input id="three" type="checkbox" checked /> 3D</label>
-    </div>
     <script type="module">
-      import * as maplet from "../../dist/maplet.js";
+      import { BASEMAPS, TERRAIN, createViewer, fileButton, maplet } from "../viewer.js";
 
       const params = new URLSearchParams(location.search);
       const tiles = params.get("tiles");
+      const elevation = params.get("elevation");
 
-      function makeStyle(elevation) {
-        if (tiles) return maplet.lightStyle({ url: tiles, elevation, terrain: true });
-        return {
-          version: 1,
-          sources: { dem: { type: "dem", url: elevation } },
-          layers: [
-            { id: "background", type: "background", paint: { color: "#f3f2ed" } },
-            {
-              id: "hillshade",
-              type: "hillshade",
-              source: "dem",
-              paint: { exaggeration: 0.6, shadowColor: "#4d473d", accentColor: "#4d473d" },
-            },
-          ],
-          terrain: { source: "dem" },
-        };
-      }
-
-      const map = new maplet.Map({
-        container: "map",
-        style: makeStyle(params.get("elevation") ?? "../../data/terrain.pmtiles"),
-        zoom: 10,
-        pitch: 60,
+      const { map, terrain, panel } = createViewer({
+        basemaps: tiles ? [{ name: "Your tiles", style: maplet.lightStyle({ url: tiles }) }, ...BASEMAPS] : BASEMAPS,
+        terrain: elevation ? { type: "dem", url: elevation } : TERRAIN,
+        view: "tilted",
+        center: [-121.76, 46.85],
+        zoom: 10.5,
       });
-      map.addControl(new maplet.NavigationControl());
-      map.addControl(new maplet.ScaleControl());
       map.on("error", (event) => console.warn(event.error.message));
 
-      let arrived = false;
+      let fit = Boolean(elevation);
       map.on("sourcedata", (event) => {
-        if (arrived || event.sourceId !== "dem" || event.kind !== "metadata") return;
-        arrived = true;
-        const bounds = map.getSource("dem").bounds;
+        if (!fit || event.sourceId !== "maplet-terrain" || event.kind !== "metadata") return;
+        fit = false;
+        const bounds = map.getSource("maplet-terrain")?.bounds;
         if (bounds) map.fitBounds(bounds, { padding: 40, maxZoom: 11 });
       });
 
-      document.getElementById("file").addEventListener("change", async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        arrived = false;
-        map.setStyle(makeStyle(await maplet.openTileFile(file)));
-        document.getElementById("three").checked = true;
-      });
-
-      document.getElementById("three").addEventListener("change", (event) => {
-        map.setTerrain(event.target.checked ? { source: "dem" } : null);
-      });
-
+      panel(
+        fileButton("Open elevation file", ".pmtiles,.mbtiles", async (file) => {
+          fit = true;
+          terrain.setSource({ type: "dem", url: await maplet.openTileFile(file) });
+          if (terrain.view === "flat") terrain.setView("tilted");
+        }),
+      );
       window.map = map;
     </script>
   </body>
