@@ -260,6 +260,7 @@ export class LabelRenderer {
     this.gl.deleteVertexArray(this.iconVao);
     this.reset();
     this.labels.clear();
+    this.job = null;
   }
 
   debugBoxes(): number[][] {
