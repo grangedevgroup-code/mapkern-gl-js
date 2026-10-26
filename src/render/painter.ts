@@ -320,6 +320,8 @@ export class Painter {
     const turning = layers.some((l) => l.type === "hillshade" && l.fixed<string>("illuminationAnchor") !== "map");
     const bearing = turning ? Math.round(t.bearing / 4) * 4 : 0;
     const deadline = performance.now() + 6;
+    const zoomed = layers.some(drapeFollowsZoom);
+    const tolerance = !zoomed ? Number.POSITIVE_INFINITY : frame.moving ? MOVING_ZOOM_STEP : RESTING_ZOOM_STEP;
     this.drapes.begin();
     this.drapesBehind = false;
     const common = this.hash.reset().add(bearing).add(frame.pixelRatio);
