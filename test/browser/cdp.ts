@@ -95,6 +95,7 @@ export class Browser {
       `--user-data-dir=${profile}`,
       "--remote-debugging-pipe",
       "--do-not-de-elevate",
+      "--disable-gpu-shader-disk-cache",
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-extensions",
@@ -334,7 +335,7 @@ const PROFILE_PREFIX = "maplet-chrome-";
 
 function removeStaleProfiles(): void {
   const root = tmpdir();
-  const old = Date.now() - 60 * 60 * 1000;
+  const old = Date.now() - 10 * 60 * 1000;
   for (const name of readdirSync(root)) {
     if (!name.startsWith(PROFILE_PREFIX)) continue;
     const path = join(root, name);
