@@ -98,3 +98,17 @@ test("track files are recognized by their content", async () => {
   assert.ok(!isNmea("lat,lon\n1,2\n"));
   assert.ok(!isIgc("A,B\n"));
 });
+
+test("long runs of spaces in NMEA lines and digits in GML coordinate systems read in linear time", async () => {
+  const { gmlToGeoJSON } = await import("../../src/formats/gml.ts");
+  const started = performance.now();
+  const line = `$GPRMC,${" ".repeat(200000)}x`;
+  assert.ok(!isNmea(line));
+  assert.equal(nmeaToGeoJSON(line).features.length, 0);
+  const srs = `EPSG:${"1".repeat(200000)}x`;
+  const fc = gmlToGeoJSON(
+    `<gml:Point xmlns:gml="http://www.opengis.net/gml" srsName="${srs}"><gml:coordinates>1,2</gml:coordinates></gml:Point>`,
+  );
+  assert.deepEqual(fc.features[0]!.geometry, { type: "Point", coordinates: [1, 2] });
+  assert.ok(performance.now() - started < 1000, `took ${performance.now() - started} ms`);
+});
