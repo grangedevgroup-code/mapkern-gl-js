@@ -106,6 +106,12 @@ declare const MAPKERN_VERSION: string | undefined;
 export const version: string = typeof MAPKERN_VERSION === "string" ? MAPKERN_VERSION : "0.0.0-dev";
 export type { CotWriteOptions } from "./formats/cot.ts";
 export { cotToGeoJSON, cotTypeToSidc, geoJSONToCot, sidcToCotType } from "./formats/cot.ts";
+export type { CsvWriteOptions, GpxWriteOptions, KmlWriteOptions } from "./formats/export.ts";
+export { geoJSONToCsv, geoJSONToGpx, geoJSONToKml, geoJSONToWkt, geometryToWkt } from "./formats/export.ts";
+export type { FeatureFormat } from "./formats/feature-format.ts";
+export { FEATURE_FORMATS } from "./formats/feature-format.ts";
+export type { ReadOptions } from "./formats/read.ts";
+export { readFeatures } from "./formats/read.ts";
 export type { MgrsPoint, Utm } from "./geo/mgrs.ts";
 export { fromMgrs, fromUtm, toMgrs, toUtm, utmZone } from "./geo/mgrs.ts";
 export type {
