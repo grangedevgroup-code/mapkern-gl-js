@@ -306,6 +306,7 @@ export type LayerType = LayerSpec["type"];
 export interface TerrainSpec {
   source: string;
   exaggeration?: number;
+  relief?: number;
 }
 
 export interface StyleSpecV8 {
