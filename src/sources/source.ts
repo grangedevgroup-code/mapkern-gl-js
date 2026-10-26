@@ -3,6 +3,7 @@ import { MapletError } from "../core/errors.ts";
 import type { GL } from "../render/gl.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { SourceSpec } from "../style/types.ts";
+import type { ResponseStore } from "../tiles/cache.ts";
 import type { TransformRequest } from "../tiles/fetch.ts";
 import type { ManagerEvents, TileStats } from "../tiles/manager.ts";
 import type { RequestScheduler } from "../tiles/scheduler.ts";
@@ -14,6 +15,7 @@ export interface SourceContext {
   workers(): WorkerPool;
   readonly transformRequest: TransformRequest | undefined;
   readonly requestTimeoutMs: number;
+  readonly diskCache: ResponseStore | null;
   readonly cacheBytes: number;
   readonly fadeDuration: number;
   readonly prefetchLimit: number;
