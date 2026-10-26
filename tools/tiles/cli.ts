@@ -3,11 +3,13 @@ import { availableParallelism } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { gzipSync } from "node:zlib";
+import { encodeSearchData } from "../../src/search/format.ts";
 import { convertMbtiles } from "./convert.ts";
 import { buildDem } from "./dem.ts";
 import { extractRegion } from "./extract.ts";
 import { buildFeatures, regionRect } from "./features.ts";
 import { Compression, PMTilesWriter, TileType } from "./pmtiles-writer.ts";
+import { indexRegion } from "./search.ts";
 import { buildTiles } from "./tiler.ts";
 
 const FIELDS: Record<string, Record<string, string>> = {
