@@ -157,26 +157,27 @@ export class SearchIndex implements Geocoder {
     const matches = tokens.map((t, i) => this.match(t, prefixLast && i === tokens.length - 1));
     const kinds = options.kinds ? new Set(options.kinds.map((k) => SEARCH_KINDS.indexOf(k))) : null;
     const d = this.data;
-    let anchor = -1;
-    let smallest = Number.POSITIVE_INFINITY;
-    for (let i = 0; i < matches.length; i++) {
-      const m = matches[i]!;
-      let count = m.postings;
-      for (const c of m.contexts.keys()) count += this.byContext.count(c);
-      for (const c of m.categories.keys()) count += this.byCategory.count(c);
-      if (count > 0 && count < smallest) {
-        smallest = count;
-        anchor = i;
-      }
-    }
-    if (anchor < 0) return [];
-    const candidates = new Set<number>();
-    const a = matches[anchor]!;
-    for (const { term } of a.terms)
-      for (let p = d.termStart[term]!; p < d.termStart[term + 1]!; p++) candidates.add(d.postings[p]!);
-    for (const c of a.contexts.keys()) this.byContext.each(c, (e) => candidates.add(e));
-    for (const c of a.categories.keys()) this.byCategory.each(c, (e) => candidates.add(e));
     const allowMissing = tokens.length >= 3 ? 1 : 0;
+    const withContext = matches.length > 1;
+    const sizes = matches.map((m) => {
+      let count = m.postings;
+      for (const c of m.categories.keys()) count += this.byCategory.count(c);
+      if (withContext) for (const c of m.contexts.keys()) count += this.byContext.count(c);
+      return count;
+    });
+    const order = sizes
+      .map((_, i) => i)
+      .filter((i) => sizes[i]! > 0)
+      .sort((a, b) => sizes[a]! - sizes[b]!);
+    if (order.length === 0 || order.length < matches.length - allowMissing) return [];
+    const candidates = new Set<number>();
+    for (const i of order.slice(0, allowMissing + 1)) {
+      const m = matches[i]!;
+      for (const { term } of m.terms)
+        for (let p = d.termStart[term]!; p < d.termStart[term + 1]!; p++) candidates.add(d.postings[p]!);
+      for (const c of m.categories.keys()) this.byCategory.each(c, (e) => candidates.add(e));
+      if (withContext) for (const c of m.contexts.keys()) this.byContext.each(c, (e) => candidates.add(e));
+    }
     const scored: Scored[] = [];
     for (const e of candidates) {
       if (kinds && !kinds.has(d.kind[e]!)) continue;
