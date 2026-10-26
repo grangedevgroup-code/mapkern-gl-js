@@ -179,6 +179,19 @@ export const fixtureRoute: Route = async (req, res, url) => {
     );
     return true;
   }
+  const kept = /^\/fixture\/kept\/(\d+)\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(path);
+  if (kept) {
+    const [age, z, x, y] = [Number(kept[1]), Number(kept[2]), Number(kept[3]), Number(kept[4])];
+    const key = `kept:${age}/${z}/${x}/${y}`;
+    hits.set(key, (hits.get(key) ?? 0) + 1);
+    res.writeHead(200, {
+      "content-type": "image/png",
+      "cache-control": `public, max-age=${age}`,
+      "access-control-allow-origin": "*",
+    });
+    res.end(tile(z, x, y));
+    return true;
+  }
   if (path === "/fixture/geojson/square.json") {
     res.writeHead(200, { "content-type": "application/geo+json", "cache-control": "no-store" });
     res.end(JSON.stringify(square(10, "#0000ff")));
