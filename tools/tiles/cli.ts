@@ -172,7 +172,7 @@ async function main(): Promise<void> {
         entries.push(entry);
       }
     }
-    const bytes = writeSearchIndex(bbox, entries, log);
+    const bytes = writeSearchIndex(bbox, entries, log, !values.world);
     writeFileSync(output, bytes);
     log(`wrote ${output}: ${(bytes.length / 1e6).toFixed(1)} MB`);
     log(`done in ${((performance.now() - started) / 1000).toFixed(1)} s`);
