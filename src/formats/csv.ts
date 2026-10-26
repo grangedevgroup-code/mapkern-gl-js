@@ -44,8 +44,10 @@ export function csvToGeoJSON(text: string): FeatureCollection {
     if (row.length === 1 && row[0]!.trim() === "") continue;
     let geometry: Geometry | null = null;
     if (wktIndex >= 0 && row[wktIndex]?.trim()) {
+      const value = row[wktIndex]!.trim();
+      const hex = HEX_WKB.exec(value)?.[1];
       try {
-        geometry = parseWkt(row[wktIndex]!);
+        geometry = hex ? parseHexWkb(hex) : parseWkt(value);
       } catch {
         geometry = null;
       }
