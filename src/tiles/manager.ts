@@ -120,14 +120,14 @@ export class TileManager<D> {
 
   get hasPendingUploads(): boolean {
     for (const tile of this.tiles.values()) {
-      if ((tile.state === "prepared" && tile.wanted) || tile.next !== null) return true;
+      if ((tile.state === "prepared" && !speculative(tile)) || tile.next !== null) return true;
     }
     return false;
   }
 
   get isLoaded(): boolean {
     for (const tile of this.tiles.values()) {
-      if (!tile.wanted || tile.priority >= 10000) continue;
+      if (speculative(tile)) continue;
       if (tile.isLoading || (this.isOutdated(tile) && tile.failure === null)) return false;
     }
     return true;
@@ -213,6 +213,16 @@ export class TileManager<D> {
         this.want(p.z, p.x, p.y, base + order++, now);
       }
     }
+    let climb = 0;
+    for (const slot of inBounds) {
+      const tile = this.tiles.get(tileKey(slot.z, slot.x, slot.y));
+      if (tile?.state !== "empty" && tile?.state !== "failed") continue;
+      for (let z = slot.z - 1; z >= this.tiling.minZoom; z--) {
+        const p = parentTile(slot, slot.z - z);
+        const parent = this.want(p.z, p.x, p.y, -5000 + climb++, now);
+        if (parent.state !== "empty" && parent.state !== "failed") break;
+      }
+    }
     let prefetched = 0;
     let order = 0;
     for (const future of predicted) {
@@ -262,9 +272,10 @@ export class TileManager<D> {
     pending.sort((a, b) => (a.wanted ? a.priority : 1e12) - (b.wanted ? b.priority : 1e12));
     let uploaded = false;
     let more = false;
-    for (const tile of pending) {
+    for (let i = 0; i < pending.length; i++) {
+      const tile = pending[i]!;
       if (uploaded && performance.now() > deadline) {
-        more = true;
+        more = pending.slice(i).some((t) => t.next !== null || !speculative(t));
         break;
       }
       const next = tile.next;
@@ -291,6 +302,11 @@ export class TileManager<D> {
   reload(): void {
     for (const tile of [...this.tiles.values()]) this.drop(tile);
     this.pieces = [];
+  }
+
+  forget(z: number, x: number, y: number): void {
+    const tile = this.tiles.get(tileKey(z, x, y));
+    if (tile) this.drop(tile);
   }
 
   refresh(): void {
@@ -582,7 +598,7 @@ export class TileManager<D> {
     } finally {
       if (tile.controller === controller) tile.controller = null;
       this.release(tile, handle);
-      if (!this.destroyed) this.events.changed();
+      if (!this.destroyed && !speculative(tile)) this.events.changed();
     }
   }
 
@@ -694,4 +710,10 @@ function slotArea(transform: Transform, z: number, x: number, y: number, wrap: n
   if (a.w <= 0 || b.w <= 0 || c.w <= 0 || d.w <= 0) return 0;
   const s = a.x * b.y - b.x * a.y + (b.x * c.y - c.x * b.y) + (c.x * d.y - d.x * c.y) + (d.x * a.y - a.x * d.y);
   return Math.abs(s) / 2;
+}
+
+const SPECULATIVE = 9000;
+
+function speculative(tile: { wanted: boolean; priority: number }): boolean {
+  return !tile.wanted || tile.priority >= SPECULATIVE;
 }
