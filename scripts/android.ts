@@ -1,4 +1,4 @@
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative } from "node:path";
@@ -42,10 +42,15 @@ function latest(dir: string): string {
 }
 
 function tool(dir: string, name: string): string {
-  for (const file of windows ? [`${name}.exe`, `${name}.bat`] : [name]) {
-    if (existsSync(join(dir, file))) return join(dir, file);
-  }
+  const file = join(dir, windows ? `${name}.exe` : name);
+  if (existsSync(file)) return file;
   throw new Error(`${name} is missing from ${dir}`);
+}
+
+function jar(dir: string, name: string): string {
+  const file = join(dir, "lib", `${name}.jar`);
+  if (existsSync(file)) return file;
+  throw new Error(`${name}.jar is missing from ${dir}`);
 }
 
 function java(name: string): string {
@@ -58,10 +63,7 @@ function java(name: string): string {
 }
 
 function exec(file: string, list: string[], cwd = root): string {
-  const stdio: ("ignore" | "pipe" | "inherit")[] = ["ignore", "pipe", "inherit"];
-  if (!file.endsWith(".bat")) return execFileSync(file, list, { cwd, encoding: "utf8", stdio });
-  const quote = (arg: string) => `"${arg.replace(/"/g, '""')}"`;
-  return execSync([file, ...list].map(quote).join(" "), { cwd, encoding: "utf8", stdio });
+  return execFileSync(file, list, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
 }
 
 function files(dir: string): string[] {
@@ -148,7 +150,19 @@ exec(java("javac"), [
 ]);
 const dex = join(out, "dex");
 mkdirSync(dex, { recursive: true });
-exec(tool(buildTools, "d8"), ["--release", "--min-api", "26", "--lib", platform, "--output", dex, ...sources(classes)]);
+exec(java("java"), [
+  "-cp",
+  jar(buildTools, "d8"),
+  "com.android.tools.r8.D8",
+  "--release",
+  "--min-api",
+  "26",
+  "--lib",
+  platform,
+  "--output",
+  dex,
+  ...sources(classes),
+]);
 exec(java("jar"), ["uf", unsigned, "-C", dex, "classes.dex"]);
 
 const aligned = join(out, "aligned.apk");
@@ -177,7 +191,9 @@ if (!existsSync(keystore)) {
   ]);
 }
 const apk = join(out, "maplet-demo.apk");
-exec(tool(buildTools, "apksigner"), [
+exec(java("java"), [
+  "-jar",
+  jar(buildTools, "apksigner"),
   "sign",
   "--ks",
   keystore,
