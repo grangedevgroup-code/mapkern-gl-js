@@ -4,7 +4,7 @@ import { SearchIndex, SearchIndexSet } from "../../src/search/index.ts";
 import { tokenize, withinEdits } from "../../src/search/text.ts";
 import type { RegionData } from "../../tools/tiles/extract.ts";
 import type { Tags } from "../../tools/tiles/osm-pbf.ts";
-import { collectEntries, writeSearchIndex } from "../../tools/tiles/search.ts";
+import { collectEntries, stitch, writeSearchIndex } from "../../tools/tiles/search.ts";
 
 function town(): RegionData {
   const nodes: [number, number, number][] = [];
@@ -242,4 +242,20 @@ test("long posting lists, many term blocks and many entry blocks read back exact
   assert.equal((await big.search("word4321"))[0]?.address?.number, "4321");
   const nearest = await big.reverse([0.0501, 0.0502], { kinds: ["address"], limit: 1 });
   assert.equal(nearest[0]?.name, "5050 Long Road");
+});
+
+test("border pieces of any length are stitched into one closed ring", () => {
+  const n = 500_000;
+  const a = new Float64Array(n * 2);
+  const b = new Float64Array(n * 2);
+  for (let i = 0; i < n; i++) {
+    a[i * 2] = i / n;
+    a[i * 2 + 1] = 0;
+    b[i * 2] = 1 - i / n;
+    b[i * 2 + 1] = 1;
+  }
+  const rings = stitch([a, b]);
+  assert.equal(rings.length, 1);
+  assert.equal(rings[0]!.length, n * 4 + 2);
+  assert.equal(rings[0]![0], rings[0]![rings[0]!.length - 2]);
 });
