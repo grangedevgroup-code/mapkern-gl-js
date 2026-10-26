@@ -1,5 +1,5 @@
 import type { Transform } from "../camera/transform.ts";
-import { MapletError } from "../core/errors.ts";
+import { MapkernError } from "../core/errors.ts";
 import type { GL } from "../render/gl.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { SourceSpec } from "../style/types.ts";
@@ -20,7 +20,7 @@ export interface SourceContext {
   readonly fadeDuration: number;
   readonly prefetchLimit: number;
   readonly pixelRatio: () => number;
-  error(error: MapletError): void;
+  error(error: MapkernError): void;
   content(sourceId: string): void;
   changed(): void;
   wakeAt(time: number): void;
@@ -50,11 +50,15 @@ export function tileEvents(sourceId: string, ctx: SourceContext): ManagerEvents 
     failure: (failure, tile) => {
       const code = failure.kind === "auth" ? "auth" : failure.kind === "decode" ? "decode" : "tile-error";
       ctx.error(
-        new MapletError(code, `Tile ${tile.z}/${tile.x}/${tile.y} of source "${sourceId}" failed: ${failure.message}`, {
-          sourceId,
-          tile: { z: tile.z, x: tile.x, y: tile.y },
-          failure,
-        }),
+        new MapkernError(
+          code,
+          `Tile ${tile.z}/${tile.x}/${tile.y} of source "${sourceId}" failed: ${failure.message}`,
+          {
+            sourceId,
+            tile: { z: tile.z, x: tile.x, y: tile.y },
+            failure,
+          },
+        ),
       );
     },
     wakeAt: (time) => ctx.wakeAt(time),
