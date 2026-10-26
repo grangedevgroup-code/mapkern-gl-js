@@ -87,12 +87,13 @@ clusterProperties: {
 
 The operator can be any expression that combines two values, written with `["accumulated"]` for the total so far and `["get", name]` for the next value, such as `[["concat", ["accumulated"], ", ", ["get", "names"]], ["get", "name"]]`.
 
-Despite the name, a GeoJSON source reads other formats too: KML and KMZ, GPX, CSV, TopoJSON, Shapefiles (zipped together with their `.dbf`, `.prj` and `.cpg` files), FlatGeobuf and WKT. Maplet works out the format from the file itself, so `data: "trails.gpx"` or `data: "parcels.zip"` just works. If it guesses wrong, set `format` to one of `geojson`, `topojson`, `kml`, `kmz`, `gpx`, `csv`, `shapefile`, `flatgeobuf` or `wkt`.
+Despite the name, a GeoJSON source reads other formats too: KML and KMZ, GPX, CSV, TopoJSON, Shapefiles (zipped together with their `.dbf`, `.prj` and `.cpg` files), FlatGeobuf, WKT and Cursor on Target (CoT) events, including TAK data packages zipped with them. Maplet works out the format from the file itself, so `data: "trails.gpx"` or `data: "parcels.zip"` just works. If it guesses wrong, set `format` to one of `geojson`, `topojson`, `kml`, `kmz`, `gpx`, `csv`, `shapefile`, `flatgeobuf`, `wkt` or `cot`.
 
 A few notes on what comes through:
 
 - KML styles become `stroke`, `stroke-width`, `fill`, `fill-opacity` and `marker-color` properties, so you can use them in paint expressions like `["get", "stroke"]`.
-- CSV files need a header row and either latitude and longitude columns (`lat`/`latitude`/`y` and `lon`/`lng`/`longitude`/`x`) or a WKT column. Numbers come through as numbers, unless they have leading zeros.
+- CSV files need a header row and either latitude and longitude columns (`lat`/`latitude`/`y` and `lon`/`lng`/`longitude`/`x`), an MGRS grid column (`mgrs`, `grid` or `usng`) or a WKT column. Numbers come through as numbers, unless they have leading zeros.
+- CoT events become points with their `uid`, `type`, `callsign`, `remarks`, `team`, `course`, `speed`, `time` and `stale`, and drawn shapes become lines and polygons with their `stroke` and `fill` colors. Units get a `sidc` property with the matching MIL-STD-2525 code, ready for [military symbols](api.md#military-data).
 - Shapefiles and FlatGeobuf files in UTM, a Transverse Mercator or Lambert state plane zone, or Web Mercator are converted to longitude and latitude using the `.prj` file or the EPSG code. Other projections are reported as errors. Datum shifts aren't applied, which can move data in older datums such as NAD27 by up to about 100 m.
 
 ### Images, video and canvases
