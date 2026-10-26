@@ -1,11 +1,11 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/maplet-logo-white.svg">
-    <img src="assets/maplet-logo-black.svg" alt="Maplet" width="280">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/mapkern-logo-white.svg">
+    <img src="assets/mapkern-logo-black.svg" alt="Mapkern" width="331">
   </picture>
 </p>
 
-Maplet GL JS is a map library for the web. It draws vector tiles, raster tiles and GeoJSON with WebGL2, and it doesn't depend on any other package. You can try it on the [website](https://grangedevgroup-code.github.io/maplet-gl-js/).
+Mapkern GL JS is a map library for the web. It draws vector tiles, raster tiles and GeoJSON with WebGL2, and it doesn't depend on any other package. You can try it on the [website](https://grangedevgroup-code.github.io/mapkern-gl-js/).
 
 ![Seattle, tilted 50 degrees](assets/screenshot-seattle.webp)
 
@@ -14,20 +14,20 @@ Maplet GL JS is a map library for the web. It draws vector tiles, raster tiles a
 ## Install
 
 ```sh
-npm install github:grangedevgroup-code/maplet-gl-js
+npm install github:grangedevgroup-code/mapkern-gl-js
 ```
 
-The built files end up in `node_modules/maplet-gl/dist`. If you don't use a bundler, copy `dist/maplet.js` next to your page and import it from there.
+The built files end up in `node_modules/mapkern-gl/dist`. If you don't use a bundler, copy `dist/mapkern.js` next to your page and import it from there.
 
 ## A first map
 
 ```html
 <div id="map" style="position: absolute; inset: 0"></div>
 <script type="module">
-  import * as maplet from "maplet-gl";
+  import * as mapkern from "mapkern-gl";
 
-  const map = new maplet.Map({ container: "map" });
-  map.addControl(new maplet.NavigationControl());
+  const map = new mapkern.Map({ container: "map" });
+  map.addControl(new mapkern.NavigationControl());
 </script>
 ```
 
@@ -58,27 +58,27 @@ map.on("load", () => {
 Any style written for MapLibre or Mapbox works as it is. Give the map its URL, or the style object itself:
 
 ```js
-const map = new maplet.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/positron" });
+const map = new mapkern.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/positron" });
 ```
 
-OpenFreeMap also has `bright`, `dark` and `fiord`. If a style uses something Maplet can't draw yet, that part is left out and the rest still shows; the `styleload` event lists what was left out in `event.skipped`. Pass `style: null` for a blank map you fill yourself.
+OpenFreeMap also has `bright`, `dark` and `fiord`. If a style uses something Mapkern can't draw yet, that part is left out and the rest still shows; the `styleload` event lists what was left out in `event.skipped`. Pass `style: null` for a blank map you fill yourself.
 
 ## Your own tiles
 
-Maplet can make its own street map tiles from OpenStreetMap data, so you don't need a map provider. Download an extract for your region from [Geofabrik](https://download.geofabrik.de/), then cut out the area you want:
+Mapkern can make its own street map tiles from OpenStreetMap data, so you don't need a map provider. Download an extract for your region from [Geofabrik](https://download.geofabrik.de/), then cut out the area you want:
 
 ```sh
-npx maplet-tiles --input washington-latest.osm.pbf --bbox=-122.45,47.48,-122.22,47.74 --output seattle.pmtiles
+npx mapkern-tiles --input washington-latest.osm.pbf --bbox=-122.45,47.48,-122.22,47.74 --output seattle.pmtiles
 ```
 
 Put `seattle.pmtiles` on any web server that handles range requests, and point the built-in style at it:
 
 ```js
-import * as maplet from "maplet-gl";
+import * as mapkern from "mapkern-gl";
 
-const map = new maplet.Map({
+const map = new mapkern.Map({
   container: "map",
-  style: maplet.lightStyle({ url: "seattle.pmtiles" }),
+  style: mapkern.lightStyle({ url: "seattle.pmtiles" }),
   center: [-122.335, 47.608],
   zoom: 12,
 });
@@ -92,9 +92,9 @@ Vector and raster sources read PMTiles and MBTiles files, from a web server or f
 
 To try it on an Android phone or tablet, `npm run android -- --install` builds a small app from `android/` that shows the map full screen and installs it on the connected device. It needs the Android SDK and a JDK, and `--run` starts it too. The app also carries this site and its examples.
 
-While you pan and zoom, Maplet fills gaps with tiles it already has from other zoom levels, so the map doesn't flash empty, and it loads a ring of tiles just outside the view so a pan shows them at once. Imagery that runs out of detail, or answers with a "no data" picture, falls back to the nearest real tile above it. Tiles are decoded in Web Workers, and the whole library, worker included, is about 160 KB gzipped.
+While you pan and zoom, Mapkern fills gaps with tiles it already has from other zoom levels, so the map doesn't flash empty, and it loads a ring of tiles just outside the view so a pan shows them at once. Imagery that runs out of detail, or answers with a "no data" picture, falls back to the nearest real tile above it. Tiles are decoded in Web Workers, and the whole library, worker included, is about 160 KB gzipped.
 
-Maplet needs WebGL 2. It runs in Chrome, Edge and other Chromium browsers from version 96, which includes the Android WebView and the one on Amazon Fire tablets, in Safari from 16.4 on iPhone, iPad and Mac, and in Firefox from 115.
+Mapkern needs WebGL 2. It runs in Chrome, Edge and other Chromium browsers from version 96, which includes the Android WebView and the one on Amazon Fire tablets, in Safari from 16.4 on iPhone, iPad and Mac, and in Firefox from 115.
 
 The API may still change before 1.0.
 
@@ -104,7 +104,7 @@ The API may still change before 1.0.
 - [API](docs/api.md): map options, methods and events
 - [Tiles](docs/tiles.md): building tiles and what's in them
 
-## Working on Maplet
+## Working on Mapkern
 
 You'll need Node.js 22.18 or newer.
 
