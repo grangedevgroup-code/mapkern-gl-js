@@ -1,4 +1,4 @@
-export type MapletErrorCode =
+export type MapkernErrorCode =
   | "webgl-unavailable"
   | "shader-compile"
   | "invalid-option"
@@ -12,13 +12,13 @@ export type MapletErrorCode =
   | "context-lost"
   | "worker";
 
-export class MapletError extends Error {
-  readonly code: MapletErrorCode;
+export class MapkernError extends Error {
+  readonly code: MapkernErrorCode;
   readonly detail: Readonly<Record<string, unknown>>;
 
-  constructor(code: MapletErrorCode, message: string, detail: Record<string, unknown> = {}, cause?: unknown) {
+  constructor(code: MapkernErrorCode, message: string, detail: Record<string, unknown> = {}, cause?: unknown) {
     super(message, cause === undefined ? undefined : { cause });
-    this.name = "MapletError";
+    this.name = "MapkernError";
     this.code = code;
     this.detail = detail;
   }
