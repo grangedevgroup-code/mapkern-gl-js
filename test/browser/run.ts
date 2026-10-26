@@ -4328,6 +4328,59 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "military symbols draw on demand from their codes, and CoT files load as data",
+    async run({ page, shot }) {
+      const cot = [
+        '<event version="2.0" uid="u1" type="a-f-G-U-C-I" how="m-g" time="2026-10-26T10:00:00Z" start="2026-10-26T10:00:00Z" stale="2026-10-26T11:00:00Z">',
+        '<point lat="0" lon="-4" hae="0" ce="10" le="10"/><detail><contact callsign="FRIEND"/></detail></event>',
+        '<event version="2.0" uid="u2" type="a-h-G-U-C-A" how="m-g" time="2026-10-26T10:00:00Z" start="2026-10-26T10:00:00Z" stale="2026-10-26T11:00:00Z">',
+        '<point lat="0" lon="4" hae="0" ce="10" le="10"/><detail><contact callsign="HOSTILE"/></detail></event>',
+      ].join("");
+      await page.call(
+        `async (cot) => {
+          window.errors = [];
+          const url = URL.createObjectURL(new Blob([cot], { type: "application/xml" }));
+          window.map = new maplet.Map({
+            container: "map",
+            preserveDrawingBuffer: true,
+            fadeDuration: 0,
+            center: [0, 0],
+            zoom: 4,
+            style: {
+              version: 1,
+              sources: { units: { type: "geojson", data: url, format: "cot" } },
+              layers: [
+                { id: "bg", type: "background", paint: { color: "#ffffff" } },
+                { id: "units", type: "symbol", source: "units", layout: { icon: ["concat", "sidc:", ["get", "sidc"]], iconSize: 1.5, iconAllowOverlap: true } },
+              ],
+            },
+          });
+          window.map.on("error", (e) => window.errors.push({ code: e.error.code, message: e.error.message }));
+          maplet.militarySymbols(window.map);
+          await window.map.once("idle");
+        }`,
+        cot,
+      );
+      for (let i = 0; i < 10; i++) {
+        await page.evaluate("new Promise((r) => setTimeout(r, 100))");
+        await idle(page);
+      }
+      await shot("symbols");
+      const at = async (lng: number) => {
+        const p = await page.evaluate<{ x: number; y: number }>(`window.map.project([${lng}, 0])`);
+        return pixel(page, Math.round(p.x), Math.round(p.y) + 14);
+      };
+      const friend = await at(-4);
+      const hostile = await at(4);
+      if (!near(friend, [128, 224, 255, 255], 30))
+        fail(`the friendly unit should be drawn in light blue, got ${friend}`);
+      if (!near(hostile, [255, 128, 128, 255], 30))
+        fail(`the hostile unit should be drawn in light red, got ${hostile}`);
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
