@@ -116,6 +116,12 @@ const ROTATE_START = (20 * Math.PI) / 180;
 const ROTATE_START_ZOOMING = (40 * Math.PI) / 180;
 const ROTATE_ARC = 30;
 const QUICK_ZOOM_PIXELS = 120;
+const TILT_START = 5;
+const TILT_SIDE_BY_SIDE = 0.6;
+const TILT_GIVE_UP = 24;
+const TILT_TWIST = 0.25;
+const PINCH_MOVE = 6;
+const PINCH_TWIST = 0.1;
 
 export class InputHandlers {
   options: InputOptions;
