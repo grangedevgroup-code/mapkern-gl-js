@@ -146,3 +146,18 @@ test("CSV keeps every property and the geometry as WKT, or as coordinates for po
   assert.deepEqual(csvToGeoJSON(lonlat).features[0]!.geometry, { type: "Point", coordinates: [1.5, 2.5] });
   assert.ok(geoJSONToCsv(points, { geometry: "wkt" }).startsWith("wkt,name\r\nPOINT (1.5 2.5),"));
 });
+
+test("readFeatures takes files, buffers and text, and always returns a feature collection", async () => {
+  const { readFeatures } = await import("../../src/formats/read.ts");
+  const csv = "name,lat,lon\nA,47.6,-122.3\n";
+  const fromBlob = await readFeatures(new File([csv], "places.csv"));
+  assert.deepEqual(fromBlob.features[0]!.geometry, { type: "Point", coordinates: [-122.3, 47.6] });
+  const fromBuffer = await readFeatures(new TextEncoder().encode(geoJSONToGpx(fc)).buffer, { format: "gpx" });
+  assert.ok(fromBuffer.features.length > 5);
+  const single = await readFeatures(JSON.stringify({ type: "Feature", properties: { a: 1 }, geometry: shapes[0] }));
+  assert.equal(single.type, "FeatureCollection");
+  assert.equal(single.features.length, 1);
+  const bare = await readFeatures(JSON.stringify(shapes[1]));
+  assert.deepEqual(bare.features[0]!.geometry, shapes[1]);
+  await assert.rejects(readFeatures('"just text"', { format: "geojson" }), /did not contain map features/);
+});
