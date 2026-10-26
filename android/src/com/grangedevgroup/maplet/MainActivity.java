@@ -88,12 +88,14 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         web.onPause();
+        web.pauseTimers();
         super.onPause();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        web.resumeTimers();
         web.onResume();
     }
 
