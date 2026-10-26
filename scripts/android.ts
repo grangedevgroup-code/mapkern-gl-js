@@ -58,12 +58,10 @@ function java(name: string): string {
 }
 
 function exec(file: string, list: string[], cwd = root): string {
-  return execFileSync(file, list, {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "inherit"],
-    shell: file.endsWith(".bat"),
-  });
+  const options = { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] } as const;
+  if (!file.endsWith(".bat")) return execFileSync(file, list, options);
+  const quote = (arg: string) => `"${arg.replace(/"/g, '""')}"`;
+  return execFileSync(quote(file), list.map(quote), { ...options, shell: true });
 }
 
 function sources(dir: string): string[] {
