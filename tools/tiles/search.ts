@@ -53,6 +53,9 @@ const POI_RANK: Record<string, number> = {
   "shop=supermarket": 90,
   "amenity=townhall": 110,
   "historic=monument": 100,
+  "public_transport=platform": 30,
+  "highway=bus_stop": 30,
+  "public_transport=stop_position": 20,
 };
 
 const STREET_RANK: Record<string, number> = {
