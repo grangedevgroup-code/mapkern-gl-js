@@ -131,22 +131,49 @@ export const CSS = `
 }
 .mapkern-search {
   position: relative;
-  width: min(320px, calc(100vw - 4 * var(--mapkern-margin) - 32px));
   overflow: visible;
+}
+.mapkern-search > button {
+  border-radius: 8px;
+}
+.mapkern-search-panel {
+  position: absolute;
+  right: calc(100% + 8px);
+  bottom: 0;
+  display: none;
+  flex-direction: column-reverse;
+  gap: 6px;
+  width: min(320px, calc(100vw - 4 * var(--mapkern-margin) - 40px));
+}
+.mapkern-search.mapkern-search-start .mapkern-search-panel {
+  right: auto;
+  left: calc(100% + 8px);
+}
+.mapkern-search.mapkern-search-down .mapkern-search-panel {
+  top: 0;
+  bottom: auto;
+  flex-direction: column;
+}
+.mapkern-search.mapkern-expanded .mapkern-search-panel {
+  display: flex;
+}
+.mapkern-search-input,
+.mapkern-search-results {
+  border-radius: 8px;
+  background: var(--mapkern-control-bg, #ffffff);
+  box-shadow: 0 1px 2px rgba(16, 25, 29, 0.14), 0 2px 10px rgba(16, 25, 29, 0.08);
 }
 .mapkern-search-input {
   display: block;
   box-sizing: border-box;
   width: 100%;
-  height: 40px;
+  height: 32px;
   margin: 0;
   padding: 0 12px;
   border: 0;
-  border-radius: 8px;
-  background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 15px;
+  font-size: 14px;
   outline: none;
 }
 .mapkern-search-input:focus-visible {
@@ -154,18 +181,11 @@ export const CSS = `
 }
 .mapkern-search-results {
   display: none;
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
-  max-height: min(360px, 60vh);
+  max-height: min(360px, 50vh);
   margin: 0;
   padding: 4px;
   overflow-y: auto;
   list-style: none;
-  border-radius: 8px;
-  background: var(--mapkern-control-bg, #ffffff);
-  box-shadow: 0 1px 2px rgba(16, 25, 29, 0.14), 0 2px 10px rgba(16, 25, 29, 0.08);
 }
 .mapkern-search.mapkern-open .mapkern-search-results {
   display: block;
