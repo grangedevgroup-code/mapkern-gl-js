@@ -16,6 +16,8 @@ export const HEADER_SIZE = 8 + 4 + SECTIONS.length * 16;
 export const CONTEXT_WORD = "\u0001";
 export const CATEGORY_WORD = "\u0002";
 export const PREFIX_TOP = "\u0003";
+export const OTHER_NAME = "\u0004";
+export const CODE_WORD = "\u0005";
 
 export class SearchIndexError extends Error {
   constructor(message: string) {
