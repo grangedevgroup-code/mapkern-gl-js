@@ -123,6 +123,7 @@ export class GlyphServer {
   }
 
   glyph(stack: string, codepoint: number): ServerGlyph | null | undefined {
+    if (genericStack(stack)) return null;
     const start = Math.floor(codepoint / 256) * 256;
     const key = `${stack}|${start}`;
     const range = this.ranges.get(key);
