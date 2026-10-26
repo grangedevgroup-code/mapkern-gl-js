@@ -48,7 +48,7 @@ function crsOf(name: string | undefined, parent: Crs): Crs {
   if (!name) return parent;
   const code = Number(/(\d+)\s*$/.exec(name)?.[1]);
   if (!Number.isFinite(code)) return parent;
-  const modern = /^urn:|opengis\.net\/def\/crs/i.test(name);
+  const modern = /^(?:urn:|https?:\/\/www\.opengis\.net\/def\/crs\/)/i.test(name);
   if (GEOGRAPHIC.has(code)) return { swap: modern, unproject: null };
   if (code === 0) return PLAIN;
   return { swap: false, unproject: projectionFromEpsg(code) };
