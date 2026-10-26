@@ -34,11 +34,18 @@
       });
 
       panel(
-        fileButton("Open elevation file", ".pmtiles,.mbtiles", async (file) => {
-          fit = true;
-          terrain.setSource({ type: "dem", url: await mapkern.openTileFile(file) });
-          if (terrain.view === "flat") terrain.setView("tilted");
-        }),
+        fileButton(
+          "Open elevation files",
+          ".pmtiles,.mbtiles,.dt0,.dt1,.dt2,.dt3,.hgt,.tif,.tiff,.zip",
+          async (files) => {
+            fit = true;
+            const archive = files.length === 1 && /\.(pmtiles|mbtiles)$/i.test(files[0].name);
+            const url = archive ? await mapkern.openTileFile(files[0]) : await mapkern.openElevationFile(files);
+            terrain.setSource({ type: "dem", url });
+            if (terrain.view === "flat") terrain.setView("tilted");
+          },
+          { multiple: true },
+        ),
       );
       window.map = map;
     </script>
