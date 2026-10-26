@@ -1,5 +1,5 @@
 import { deepClone } from "../core/clone.ts";
-import { errorMessage, MapletError } from "../core/errors.ts";
+import { errorMessage, MapkernError } from "../core/errors.ts";
 import type { MapSource } from "../sources/source.ts";
 import type { LayerUpdate } from "./diff.ts";
 import { layerUpdate, sameValue } from "./diff.ts";
@@ -11,7 +11,7 @@ export type SourceFactory = (id: string, spec: SourceSpec) => MapSource;
 
 export interface StyleEvents {
   sourceLoaded(source: MapSource): void;
-  sourceFailed(source: MapSource, error: MapletError): void;
+  sourceFailed(source: MapSource, error: MapkernError): void;
   changed(): void;
 }
 
@@ -49,22 +49,22 @@ export class Style {
   }
 
   addSource(id: string, spec: SourceSpec): void {
-    if (this.sources.has(id)) throw new MapletError("invalid-option", `A source with id "${id}" already exists`);
+    if (this.sources.has(id)) throw new MapkernError("invalid-option", `A source with id "${id}" already exists`);
     const issues = validateSource(id, spec);
-    if (issues.length > 0) throw new MapletError("invalid-style", formatIssues(issues), { issues });
+    if (issues.length > 0) throw new MapkernError("invalid-style", formatIssues(issues), { issues });
     this.createSource(id, cloneSpec(spec));
     this.events.changed();
   }
 
   removeSource(id: string): void {
     const source = this.sources.get(id);
-    if (!source) throw new MapletError("invalid-option", `There is no source with id "${id}"`);
+    if (!source) throw new MapkernError("invalid-option", `There is no source with id "${id}"`);
     if (this.meta.terrain?.source === id) {
-      throw new MapletError("invalid-option", `Source "${id}" is used for terrain`, { terrain: true });
+      throw new MapkernError("invalid-option", `Source "${id}" is used for terrain`, { terrain: true });
     }
     const users = this.layers.filter((l) => l.source === id).map((l) => l.id);
     if (users.length > 0) {
-      throw new MapletError("invalid-option", `Source "${id}" is still used by layers: ${users.join(", ")}`, {
+      throw new MapkernError("invalid-option", `Source "${id}" is still used by layers: ${users.join(", ")}`, {
         layers: users,
       });
     }
@@ -75,14 +75,14 @@ export class Style {
 
   addLayer(spec: LayerSpec, beforeId?: string): StyleLayer {
     if (this.layerById.has(spec.id))
-      throw new MapletError("invalid-option", `A layer with id "${spec.id}" already exists`);
+      throw new MapkernError("invalid-option", `A layer with id "${spec.id}" already exists`);
     if (beforeId !== undefined && !this.layerById.has(beforeId)) {
-      throw new MapletError("invalid-option", `There is no layer with id "${beforeId}" to insert before`);
+      throw new MapkernError("invalid-option", `There is no layer with id "${beforeId}" to insert before`);
     }
     const specs: Record<string, SourceSpec> = {};
     for (const [id, source] of this.sources) specs[id] = source.spec;
     const issues = validateLayer(spec, `layer ${spec.id}`, specs);
-    if (issues.length > 0) throw new MapletError("invalid-style", formatIssues(issues), { issues });
+    if (issues.length > 0) throw new MapkernError("invalid-style", formatIssues(issues), { issues });
     const layer = new StyleLayer(spec);
     this.insertLayer(layer, beforeId);
     this.events.changed();
@@ -91,7 +91,7 @@ export class Style {
 
   removeLayer(id: string): void {
     const layer = this.layerById.get(id);
-    if (!layer) throw new MapletError("invalid-option", `There is no layer with id "${id}"`);
+    if (!layer) throw new MapkernError("invalid-option", `There is no layer with id "${id}"`);
     this.layers = this.layers.filter((l) => l !== layer);
     this.layerById.delete(id);
     this.events.changed();
@@ -99,9 +99,9 @@ export class Style {
 
   moveLayer(id: string, beforeId?: string): void {
     const layer = this.layerById.get(id);
-    if (!layer) throw new MapletError("invalid-option", `There is no layer with id "${id}"`);
+    if (!layer) throw new MapkernError("invalid-option", `There is no layer with id "${id}"`);
     if (beforeId !== undefined && !this.layerById.has(beforeId)) {
-      throw new MapletError("invalid-option", `There is no layer with id "${beforeId}" to move before`);
+      throw new MapkernError("invalid-option", `There is no layer with id "${beforeId}" to move before`);
     }
     if (beforeId === id) return;
     this.layers = this.layers.filter((l) => l !== layer);
@@ -176,9 +176,9 @@ export class Style {
       .catch((error: unknown) => {
         if (this.controller.signal.aborted || this.sources.get(id) !== source) return;
         const err =
-          error instanceof MapletError
+          error instanceof MapkernError
             ? error
-            : new MapletError(
+            : new MapkernError(
                 "source-error",
                 `Source "${id}" failed to load: ${errorMessage(error)}`,
                 { sourceId: id },
@@ -196,7 +196,7 @@ export class Style {
 export function assertValid(spec: unknown): asserts spec is StyleSpec {
   const issues = validateStyle(spec);
   if (issues.length > 0) {
-    throw new MapletError("invalid-style", `The style is not valid:\n${formatIssues(issues)}`, { issues });
+    throw new MapkernError("invalid-style", `The style is not valid:\n${formatIssues(issues)}`, { issues });
   }
 }
 
