@@ -86,6 +86,7 @@ const DRAPED: ReadonlySet<string> = new Set(["background", "raster", "hillshade"
 const SCREEN_SIZED: ReadonlySet<string> = new Set(["hillshade", "line", "circle", "heatmap"]);
 const RESTING_ZOOM_STEP = 0.05;
 const MOVING_ZOOM_STEP = 0.25;
+const MOVING_DRAPES = 6;
 
 function drapeFollowsZoom(layer: StyleLayer): boolean {
   if (layer.usesZoom || SCREEN_SIZED.has(layer.type)) return true;
