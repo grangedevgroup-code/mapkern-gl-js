@@ -2426,6 +2426,7 @@ export class MapletMap extends Emitter<MapEvents> {
         now,
         cameraVersion: this.cameraVersion,
         states: this.stateScope,
+        moving: this.isMoving(),
       });
       if (labelsBusy) animating = true;
       this.reportMissingImages();
