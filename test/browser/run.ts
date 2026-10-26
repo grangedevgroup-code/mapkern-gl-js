@@ -3678,6 +3678,557 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "touch gestures: pinching doesn't rotate by accident, and taps zoom",
+    async run({ page, shot }) {
+      const style = JSON.stringify({
+        version: 1,
+        sources: {},
+        layers: [{ id: "bg", type: "background", paint: { color: "#ffffff" } }],
+      });
+      await createMap(page, style, { zoom: 4, center: [0, 0] });
+      const touch = (type: string, points: [number, number][]) =>
+        page.send("Input.dispatchTouchEvent", {
+          type,
+          touchPoints: points.map(([x, y], id) => ({ x, y, id })),
+        });
+      const camera = () =>
+        page.evaluate<{ zoom: number; bearing: number }>(
+          "({ zoom: window.map.getZoom(), bearing: window.map.getBearing() })",
+        );
+      const pair = (cx: number, cy: number, radius: number, degrees: number): [number, number][] => {
+        const a = (degrees * Math.PI) / 180;
+        return [
+          [cx - Math.cos(a) * radius, cy - Math.sin(a) * radius],
+          [cx + Math.cos(a) * radius, cy + Math.sin(a) * radius],
+        ];
+      };
+      const gesture = async (steps: (t: number) => [number, number][]) => {
+        await touch("touchStart", steps(0));
+        for (let i = 1; i <= 20; i++) await touch("touchMove", steps(i / 20));
+        await touch("touchEnd", []);
+        await page.evaluate("new Promise((r) => setTimeout(r, 120))");
+      };
+      await gesture((t) => pair(400, 300, 80 + 120 * t, 8 * t));
+      const pinched = await camera();
+      if (!(pinched.zoom > 4.9)) fail(`spreading two fingers should zoom in, got zoom ${pinched.zoom}`);
+      if (Math.abs(pinched.bearing) > 0.01)
+        fail(`a pinch with a small twist should not rotate, got bearing ${pinched.bearing}`);
+      await gesture((t) => pair(400, 300, 150, 45 * t));
+      const twisted = await camera();
+      if (Math.abs(twisted.bearing) < 15 || Math.abs(twisted.bearing) > 30)
+        fail(`a deliberate twist should turn the map from where rotation began, got bearing ${twisted.bearing}`);
+      await page.evaluate("void window.map.jumpTo({ bearing: 0, zoom: 6 })");
+      await touch("touchStart", pair(400, 300, 60, 0));
+      await touch("touchEnd", []);
+      await idle(page);
+      const tapped = await camera();
+      if (Math.abs(tapped.zoom - 5) > 0.05) fail(`a two-finger tap should zoom out by one, got ${tapped.zoom}`);
+      await touch("touchStart", [[400, 300]]);
+      await touch("touchEnd", []);
+      await touch("touchStart", [[400, 300]]);
+      for (let i = 1; i <= 12; i++) await touch("touchMove", [[400, 300 + i * 10]]);
+      await touch("touchEnd", []);
+      await page.evaluate("new Promise((r) => setTimeout(r, 120))");
+      const quick = await camera();
+      if (Math.abs(quick.zoom - 6) > 0.1)
+        fail(`double-tap and drag down 120 pixels should zoom in by one, got ${quick.zoom}`);
+      await shot("after");
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
+    name: "imagery that repeats a 'no data' picture falls back to the tiles above it",
+    async run({ page, shot, base }) {
+      await createMap(page, rasterStyle(base, "/fixture/placeholder"), { zoom: 4.5, center: [10, 20] });
+      await page.evaluate("new Promise((r) => setTimeout(r, 600))");
+      await idle(page);
+      await shot("fallback");
+      const magenta = await page.evaluate<number>(`(() => {
+        const gl = window.map.getCanvas().getContext("webgl2");
+        const w = gl.drawingBufferWidth;
+        const h = gl.drawingBufferHeight;
+        const px = new Uint8Array(w * h * 4);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        let n = 0;
+        for (let i = 0; i < px.length; i += 4) if (px[i] > 230 && px[i + 1] < 30 && px[i + 2] > 230) n++;
+        return n;
+      })()`);
+      if (magenta > 0) fail(`${magenta} pixels of the placeholder picture were drawn instead of the tiles above it`);
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
+    name: "the basemap button swaps styles from its menu",
+    async run({ page, shot }) {
+      const plain = (color: string) => ({
+        version: 1,
+        sources: {},
+        layers: [{ id: "bg", type: "background", paint: { color } }],
+      });
+      await createMap(page, JSON.stringify(plain("#ff0000")), { zoom: 2 });
+      await page.evaluate(`(() => {
+        window.picker = new maplet.BasemapControl({
+          basemaps: [
+            { name: "Red", style: ${JSON.stringify(plain("#ff0000"))} },
+            { name: "Blue", style: ${JSON.stringify(plain("#0000ff"))} },
+          ],
+        });
+        window.changes = [];
+        window.picker.on("change", (e) => window.changes.push(e.index));
+        window.map.addControl(window.picker);
+      })()`);
+      const state = () =>
+        page.evaluate<{ open: boolean; checked: string[] }>(`(() => {
+          const el = document.querySelector(".maplet-basemaps");
+          return {
+            open: el.classList.contains("maplet-open"),
+            checked: [...el.querySelectorAll("[role=menuitemradio]")].map((b) => b.getAttribute("aria-checked")),
+          };
+        })()`);
+      if (JSON.stringify((await state()).checked) !== '["true","false"]')
+        fail(`the first basemap should start checked, got ${JSON.stringify(await state())}`);
+      await page.evaluate(`document.querySelector(".maplet-basemaps-button").click()`);
+      if (!(await state()).open) fail("pressing the button should open the menu");
+      await shot("menu");
+      await page.evaluate(`document.querySelectorAll(".maplet-basemaps [role=menuitemradio]")[1].click()`);
+      await idle(page);
+      const after = await state();
+      if (after.open || JSON.stringify(after.checked) !== '["false","true"]')
+        fail(`picking Blue should close the menu and check it, got ${JSON.stringify(after)}`);
+      const color = await pixel(page, 200, 200);
+      if (!near(color, [0, 0, 255, 255], 6)) fail(`the map should show the Blue style, got ${color}`);
+      const changes = await page.evaluate<number[]>("window.changes");
+      if (JSON.stringify(changes) !== "[1]")
+        fail(`one change event for Blue was expected, got ${JSON.stringify(changes)}`);
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
+    name: "controls fill each corner from its edge inward, and the logo sits faintly bottom left",
+    async run({ page, base, shot }) {
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          fx: {
+            type: "raster",
+            tiles: [`${base}/fixture/raster/{z}/{x}/{y}.png`],
+            tileSize: 256,
+            attribution: "Test data",
+          },
+        },
+        layers: [{ id: "r", type: "raster", source: "fx" }],
+      });
+      await createMap(page, style);
+      await page.evaluate(`(() => {
+        const box = (name, height) => ({
+          onAdd() {
+            const el = document.createElement("div");
+            el.className = "maplet-control test-" + name;
+            el.style.cssText = "width:32px;height:" + height + "px";
+            return el;
+          },
+          onRemove() {},
+        });
+        for (const [name, pos] of [["a", "bottom-right"], ["b", "bottom-right"], ["c", "bottom-right"], ["x", "top-right"], ["y", "top-right"], ["l", "bottom-left"]]) {
+          window.map.addControl(box(name, 30), pos);
+        }
+      })()`);
+      await shot("corners");
+      const r = await page.evaluate<
+        Record<string, { top: number; bottom: number; left: number; right: number }>
+      >(`(() => {
+        const out = {};
+        const container = window.map.getContainer().getBoundingClientRect();
+        out.container = { top: container.top, bottom: container.bottom, left: container.left, right: container.right };
+        for (const n of ["a", "b", "c", "x", "y", "l"]) {
+          const b = document.querySelector(".test-" + n).getBoundingClientRect();
+          out[n] = { top: b.top, bottom: b.bottom, left: b.left, right: b.right };
+        }
+        for (const [n, sel] of [["attr", ".maplet-attribution"], ["logo", ".maplet-logo"]]) {
+          const b = document.querySelector(sel).getBoundingClientRect();
+          out[n] = { top: b.top, bottom: b.bottom, left: b.left, right: b.right };
+        }
+        return out;
+      })()`);
+      const c = r.container!;
+      if (Math.abs(r.attr!.bottom - c.bottom) > 1 || Math.abs(r.attr!.right - c.right) > 1) {
+        fail(`the attribution should sit flush in the bottom-right corner, got ${JSON.stringify(r.attr)}`);
+      }
+      if (!(r.a!.bottom <= r.attr!.top && r.b!.bottom <= r.a!.top && r.c!.bottom <= r.b!.top)) {
+        fail(`bottom-right controls should stack upward in the order added: ${JSON.stringify(r)}`);
+      }
+      if (!(r.x!.bottom <= r.y!.top))
+        fail(`top-right controls should stack downward in the order added: ${JSON.stringify(r)}`);
+      if (!(r.l!.bottom <= r.logo!.top))
+        fail(`a control added bottom left should sit above the logo: ${JSON.stringify(r)}`);
+      if (Math.abs(r.logo!.left - c.left - 10) > 1 || Math.abs(c.bottom - r.logo!.bottom - 10) > 1) {
+        fail(`the logo should sit in the bottom-left corner margin: ${JSON.stringify(r.logo)}`);
+      }
+      const opacity = await page.evaluate<string>(`getComputedStyle(document.querySelector(".maplet-logo")).opacity`);
+      if (opacity !== "0.6") fail(`the logo should be faint, got opacity ${opacity}`);
+      await page.evaluate("window.map.remove()");
+      await createMap(page, style, { logoControl: false });
+      const logos = await page.evaluate<number>(`document.querySelectorAll(".maplet-logo").length`);
+      if (logos !== 0) fail(`logoControl: false should leave the logo out, found ${logos}`);
+    },
+  },
+  {
+    name: "one scale bar shows metric and imperial together",
+    async run({ page, base, shot }) {
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { zoom: 5, center: [0, 30] });
+      await page.evaluate(`window.scale = new maplet.ScaleControl(); void window.map.addControl(window.scale)`);
+      await shot("both");
+      const read = () =>
+        page.evaluate<{ bars: number; lines: number; label: string; width: number }>(`(() => {
+          const bar = document.querySelector(".maplet-scale");
+          const line = bar.querySelector(".maplet-scale-line") ?? bar.querySelector(".maplet-scale-label");
+          return {
+            bars: document.querySelectorAll(".maplet-scale").length,
+            lines: bar.querySelectorAll(".maplet-scale-line").length,
+            label: bar.querySelector(".maplet-scale-label").textContent,
+            width: line.getBoundingClientRect().width,
+          };
+        })()`);
+      const both = await read();
+      if (both.bars !== 1 || both.lines !== 1) fail(`expected one scale line, got ${JSON.stringify(both)}`);
+      const match = /^(\d+(?:\.\d+)?) (m|km) · (\d+(?:\.\d+)?) (ft|mi)$/.exec(both.label);
+      if (!match) fail(`expected one label with both units, got ${JSON.stringify(both)}`);
+      if (!(both.width >= 40 && both.width <= 100.5)) fail(`the line should fit in 100 px: ${both.width}`);
+      const meters = Number(match![1]) * (match![2] === "km" ? 1000 : 1);
+      const imperialMeters = Number(match![3]) * (match![4] === "mi" ? 1609.344 : 0.3048);
+      if (Math.abs(imperialMeters - meters) / meters > 0.005)
+        fail(`both units should name the same length: ${both.label}`);
+      const expectedWidth = await page.evaluate<number>(`(() => {
+        const t = window.map.transform;
+        const a = window.map.unproject([0, t.height / 2]);
+        const b = window.map.unproject([100, t.height / 2]);
+        const r = 6371008.8;
+        const rad = Math.PI / 180;
+        const dLat = (b[1] - a[1]) * rad;
+        const dLng = (b[0] - a[0]) * rad;
+        const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin(dLng / 2) ** 2;
+        return 100 * ${meters} / (2 * r * Math.asin(Math.sqrt(h)));
+      })()`);
+      if (Math.abs(expectedWidth - both.width) > 1.5)
+        fail(`the line is ${both.width}px for ${both.label}, expected ${expectedWidth.toFixed(1)}px`);
+      await page.evaluate(`window.scale.setUnit("imperial")`);
+      const single = await read();
+      if (single.lines !== 0 || !/^\d+(\.\d+)? (ft|mi)$/.test(single.label))
+        fail(`setUnit("imperial") should show one unit: ${JSON.stringify(single)}`);
+      await page.evaluate(`void window.map.setZoom(23)`);
+      await page.evaluate(`window.scale.setUnit("both")`);
+      const close = await read();
+      if (!/^\d+(\.\d{1,2})? m · \d+(\.\d{1,2})? ft$/.test(close.label))
+        fail(`close-up labels should stay short, got ${close.label}`);
+    },
+  },
+  {
+    name: "the terrain button cycles a flat map, terrain from above and tilted terrain",
+    async run({ page, base, shot }) {
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { center: HILL, zoom: 6 });
+      await page.evaluate(`(() => {
+        window.views = [];
+        window.terrain = new maplet.TerrainControl({
+          source: { type: "dem", tiles: ["${base}/fixture/dem/{z}/{x}/{y}.png"], tileSize: 256, maxZoom: 12 },
+        });
+        window.terrain.on("viewchange", (e) => window.views.push(e.view));
+        window.map.addControl(window.terrain);
+      })()`);
+      const state = () =>
+        page.evaluate<{
+          label: string;
+          name: string;
+          tilted: boolean;
+          terrain: unknown;
+          pitch: number;
+          view: string;
+        }>(`(() => {
+          const b = document.querySelector(".maplet-terrain-button");
+          return {
+            label: b.textContent,
+            name: b.getAttribute("aria-label"),
+            tilted: b.classList.contains("maplet-tilted"),
+            terrain: window.map.getTerrain(),
+            pitch: window.map.getPitch(),
+            view: window.terrain.view,
+          };
+        })()`);
+      const press = async () => {
+        await page.evaluate(`document.querySelector(".maplet-terrain-button").click()`);
+        await page.evaluate(
+          `new Promise((r) => window.map.isMoving() ? window.map.once("moveend", () => r(0)) : r(0))`,
+        );
+        await idle(page);
+      };
+      let s0 = await state();
+      if (s0.label !== "2D" || s0.name !== "2D map" || s0.terrain !== null)
+        fail(`should start flat: ${JSON.stringify(s0)}`);
+      await press();
+      s0 = await state();
+      if (s0.label !== "3D" || s0.tilted || s0.view !== "terrain" || s0.pitch !== 0 || !s0.terrain)
+        fail(`second view is terrain from above: ${JSON.stringify(s0)}`);
+      await shot("terrain");
+      await press();
+      s0 = await state();
+      if (s0.label !== "3D" || !s0.tilted || s0.view !== "tilted" || Math.abs(s0.pitch - 60) > 0.5)
+        fail(`third view is tilted terrain: ${JSON.stringify(s0)}`);
+      await shot("tilted");
+      await press();
+      s0 = await state();
+      if (s0.label !== "2D" || s0.terrain !== null || s0.pitch !== 0)
+        fail(`a fourth press goes back to flat: ${JSON.stringify(s0)}`);
+      await press();
+      await page.evaluate(
+        `new Promise((r) => { window.map.once("styleload", () => r(0)); window.map.setStyle(${rasterStyle(base, "/fixture/raster")}); })`,
+      );
+      await idle(page);
+      s0 = await state();
+      if (s0.view !== "terrain" || (s0.terrain as { source?: string } | null)?.source !== "maplet-terrain") {
+        fail(`terrain should come back after the style changes: ${JSON.stringify(s0)}`);
+      }
+      const views = await page.evaluate<string[]>("window.views");
+      if (JSON.stringify(views) !== '["terrain","tilted","flat","terrain"]')
+        fail(`viewchange events: ${JSON.stringify(views)}`);
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
+    name: "terrain relief shades slopes even when looking straight down",
+    async run({ page, base, shot }) {
+      const style = (relief: number) =>
+        JSON.stringify({
+          version: 1,
+          sources: { dem: { type: "dem", tiles: [`${base}/fixture/dem/{z}/{x}/{y}.png`], tileSize: 256, maxZoom: 12 } },
+          layers: [{ id: "bg", type: "background", paint: { color: "#808080" } }],
+          terrain: { source: "dem", exaggeration: 4, relief },
+        });
+      await createMap(page, style(0), { center: HILL, zoom: 6 });
+      const plainLit = await brightness(page, 340, 240);
+      const plainDark = await brightness(page, 460, 360);
+      if (Math.abs(plainLit - plainDark) > 3)
+        fail(`without relief the ground should look flat, got ${plainLit} and ${plainDark}`);
+      await page.evaluate(`void window.map.setTerrain({ source: "dem", exaggeration: 4, relief: 1 })`);
+      await idle(page);
+      await shot("relief");
+      const lit = await brightness(page, 340, 240);
+      const dark = await brightness(page, 460, 360);
+      if (!(lit > plainLit + 6 && dark < plainDark - 6))
+        fail(
+          `relief should light the north-west slope and shade the south-east one: ${lit} / ${dark} vs ${plainLit} / ${plainDark}`,
+        );
+      await page.evaluate("void window.map.setBearing(180)");
+      await idle(page);
+      const turnedLit = await brightness(page, 340, 240);
+      const turnedDark = await brightness(page, 460, 360);
+      if (!(turnedLit > turnedDark + 10))
+        fail(`the light should stay at the top left of the screen when the map turns: ${turnedLit} / ${turnedDark}`);
+    },
+  },
+  {
+    name: "imagery past its last real zoom climbs back to the nearest real tile",
+    async run({ page, base, shot }) {
+      await createMap(page, rasterStyle(base, "/fixture/placeholder"), { zoom: 9, center: [10, 20] });
+      for (let i = 0; i < 20; i++) {
+        await page.evaluate("new Promise((r) => setTimeout(r, 150))");
+        await idle(page);
+      }
+      await shot("climbed");
+      const result = await page.evaluate<{ magenta: number; white: number; total: number }>(`(() => {
+        const gl = window.map.getCanvas().getContext("webgl2");
+        const w = gl.drawingBufferWidth;
+        const h = gl.drawingBufferHeight;
+        const px = new Uint8Array(w * h * 4);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        let magenta = 0;
+        let white = 0;
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i] > 230 && px[i + 1] < 30 && px[i + 2] > 230) magenta++;
+          if (px[i] > 250 && px[i + 1] > 250 && px[i + 2] > 250) white++;
+        }
+        return { magenta, white, total: w * h };
+      })()`);
+      if (result.magenta > 0) fail(`${result.magenta} pixels of the placeholder picture were drawn`);
+      if (result.white > result.total * 0.01) fail(`${result.white} of ${result.total} pixels were left blank`);
+      const center = await pixel(page, 400, 300);
+      if (!isZoomColor(center, 2)) fail(`the view should show the zoom 2 tile, got ${center}`);
+    },
+  },
+  {
+    name: "close to a high slope the ground right below the camera is still drawn",
+    async run({ page, base, shot }) {
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          dem: { type: "dem", tiles: [`${base}/fixture/dem/{z}/{x}/{y}.png`], tileSize: 256, maxZoom: 12 },
+          fx: { type: "raster", tiles: [`${base}/fixture/raster/{z}/{x}/{y}.png`], tileSize: 256 },
+        },
+        layers: [{ id: "r", type: "raster", source: "fx", paint: { fadeDuration: 0 } }],
+        terrain: { source: "dem", exaggeration: 3 },
+      });
+      await createMap(page, style, { center: [3, 1.37], zoom: 15, pitch: 60, bearing: 180 });
+      for (let i = 0; i < 6; i++) {
+        await page.evaluate("new Promise((r) => setTimeout(r, 150))");
+        await idle(page);
+      }
+      await shot("slope");
+      const camera = await page.evaluate<{ clearance: number | null }>(`(() => {
+        const t = window.map.transform;
+        const c = t.cameraPosition;
+        const ground = window.map.terrain.elevationAt(c[0] / t.worldSize, c[1] / t.worldSize);
+        return { clearance: ground === null ? null : c[2] / t.pixelsPerMeter - ground };
+      })()`);
+      if (camera.clearance === null || camera.clearance < 40)
+        fail(`the camera should stay above the ground: ${JSON.stringify(camera)}`);
+      const empty: string[] = [];
+      for (const [x, y] of [
+        [400, 590],
+        [40, 590],
+        [760, 590],
+        [400, 500],
+      ] as const) {
+        const color = await pixel(page, x, y);
+        if ((color[3] ?? 0) < 250) empty.push(`${x},${y}: ${color}`);
+      }
+      if (empty.length > 0) fail(`the ground near the camera was not drawn at ${empty.join("; ")}`);
+    },
+  },
+  {
+    name: "tiles just outside the view load ahead of a pan without drawing extra frames",
+    async run({ page, base }) {
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { zoom: 3.5, center: [0, 0] });
+      await page.evaluate("new Promise((r) => setTimeout(r, 600))");
+      const outside = await page.evaluate<{ state: string | null; frames: number }>(`(() => {
+        const m = window.map;
+        const t = m.transform;
+        const w = m.unproject([t.width + 90, t.height / 2]);
+        const z = Math.round(m.getZoom() + 1);
+        const n = 2 ** z;
+        const x = Math.floor(((w[0] + 180) / 360) * n);
+        const y = Math.floor(((1 - Math.log(Math.tan(Math.PI / 4 + (w[1] * Math.PI) / 360)) / Math.PI) / 2) * n);
+        const tile = m.getSource("fx").manager.getTile(z, x, y);
+        return { state: tile ? tile.state : null, frames: m.getDiagnostics().frames };
+      })()`);
+      if (outside.state !== "ready" && outside.state !== "prepared") {
+        fail(`the tile just past the right edge should be loaded ahead, got ${outside.state}`);
+      }
+      await page.evaluate("new Promise((r) => setTimeout(r, 400))");
+      const frames = await page.evaluate<number>("window.map.getDiagnostics().frames");
+      if (frames !== outside.frames) fail(`loading ahead drew ${frames - outside.frames} frames while idle`);
+      await page.evaluate("void window.map.panBy([200, 0], { animate: false })");
+      await page.evaluate("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
+      const right = await pixel(page, 760, 300);
+      if (!isZoomColor(right, 5) && !near(right, [...BORDER, 255], 8))
+        fail(`after the pan the new edge should show zoom 5 tiles at once, got ${right}`);
+    },
+  },
+  {
+    name: "pinching in close to a slope stops at the ground and never zooms out",
+    async run({ page, base, shot }) {
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          dem: { type: "dem", tiles: [`${base}/fixture/dem/{z}/{x}/{y}.png`], tileSize: 256, maxZoom: 12 },
+          fx: { type: "raster", tiles: [`${base}/fixture/raster/{z}/{x}/{y}.png`], tileSize: 256 },
+        },
+        layers: [{ id: "r", type: "raster", source: "fx", paint: { fadeDuration: 0 } }],
+        terrain: { source: "dem", exaggeration: 3 },
+      });
+      await page.evaluate(`document.getElementById("map").style.cssText += ";width:400px;height:300px"`);
+      await createMap(page, style, { center: [3, 1.37], zoom: 14, pitch: 60, bearing: 180 });
+      const touch = (type: string, points: [number, number][]) =>
+        page.send("Input.dispatchTouchEvent", { type, touchPoints: points.map(([x, y], id) => ({ x, y, id })) });
+      const state = () =>
+        page.evaluate<{ zoom: number; clearance: number | null }>(`(() => {
+          const t = window.map.transform;
+          const c = t.cameraPosition;
+          const g = window.map.terrain.elevationAt(c[0] / t.worldSize, c[1] / t.worldSize);
+          return { zoom: window.map.getZoom(), clearance: g === null ? null : c[2] / t.pixelsPerMeter - g };
+        })()`);
+      let last = await state();
+      const seen = [last];
+      for (let i = 0; i < 4; i++) {
+        await touch("touchStart", [
+          [170, 150],
+          [230, 150],
+        ]);
+        for (let k = 1; k <= 6; k++) {
+          const d = 30 + (90 * k) / 6;
+          await touch("touchMove", [
+            [200 - d, 150],
+            [200 + d, 150],
+          ]);
+        }
+        await touch("touchEnd", []);
+        await page.evaluate("new Promise((r) => setTimeout(r, 200))");
+        await idle(page);
+        const now = await state();
+        seen.push(now);
+        if (now.zoom < last.zoom - 0.05) fail(`a pinch in zoomed out: ${JSON.stringify(seen)}`);
+        if (now.clearance === null || now.clearance < 40)
+          fail(`the camera went too close to the ground: ${JSON.stringify(seen)}`);
+        last = now;
+      }
+      await shot("closest");
+      if (!(last.zoom > seen[0]!.zoom + 1))
+        fail(`pinching should still zoom in until the ground is near: ${JSON.stringify(seen)}`);
+    },
+  },
+  {
+    name: "holding a pinch past the ground keeps the camera steady instead of hopping",
+    async run({ page, base }) {
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          dem: { type: "dem", tiles: [`${base}/fixture/ridges/{z}/{x}/{y}.png`], tileSize: 256, maxZoom: 12 },
+          fx: { type: "raster", tiles: [`${base}/fixture/raster/{z}/{x}/{y}.png`], tileSize: 256 },
+        },
+        layers: [{ id: "r", type: "raster", source: "fx", paint: { fadeDuration: 0 } }],
+        terrain: { source: "dem", exaggeration: 1 },
+      });
+      await page.evaluate(`document.getElementById("map").style.cssText += ";width:400px;height:300px"`);
+      await createMap(page, style, { center: [3, 1.37], zoom: 16, pitch: 60, bearing: 90 });
+      await page.evaluate(`(() => {
+        window.rendered = [];
+        window.map.on("render", () => {
+          const t = window.map.transform;
+          window.rendered.push([window.map.getZoom(), t.cameraPosition[2] / t.pixelsPerMeter]);
+        });
+      })()`);
+      const touch = (type: string, points: [number, number][]) =>
+        page.send("Input.dispatchTouchEvent", { type, touchPoints: points.map(([x, y], id) => ({ x, y, id })) });
+      await touch("touchStart", [
+        [190, 150],
+        [210, 150],
+      ]);
+      for (let k = 1; k <= 24; k++) {
+        const d = 10 + 7 * k;
+        await touch("touchMove", [
+          [200 - d, 150],
+          [200 + d, 150],
+        ]);
+      }
+      await touch("touchEnd", []);
+      await idle(page);
+      const rendered = await page.evaluate<[number, number][]>("window.rendered");
+      if (rendered.length < 8) fail(`expected frames during the pinch, got ${rendered.length}`);
+      let hops = 0;
+      for (let i = 2; i < rendered.length; i++) {
+        const a = rendered[i - 2]![1];
+        const b = rendered[i - 1]![1];
+        const c = rendered[i]![1];
+        if ((b - a) * (c - b) < 0 && Math.abs(c - b) > 3 && Math.abs(b - a) > 3) hops++;
+      }
+      if (hops > 0)
+        fail(
+          `the camera hopped up and down ${hops} times: ${JSON.stringify(rendered.map(([z, m]) => [+z.toFixed(3), +m.toFixed(1)]))}`,
+        );
+    },
+  },
+  {
     name: "hillshade lights the slopes that face the light",
     async run({ page, base, shot }) {
       await createMap(page, demStyle(base), { center: HILL, zoom: 6 });
