@@ -1,0 +1,93 @@
+{
+  "nmea": {
+    "text": "$GPRMC,235958.00,A,4736.7234,N,12220.9581,W,0.5,90.0,251026,,,A*70\r\n$GPGGA,235958.00,4736.7234,N,12220.9581,W,1,08,0.9,56.2,M,-17.0,M,,*67\r\n$GPRMC,235959.00,A,4736.7240,N,12220.9500,W,0.5,90.0,251026,,,A*7B\r\n$GPGGA,235959.00,4736.7240,N,12220.9500,W,1,08,0.9,56.4,M,-17.0,M,,*6A\r\n$GPRMC,000000.00,A,4736.9999,N,12220.0000,W,0.5,90.0,261026,,,A*00\r\n$GPRMC,000000.00,V,4736.8000,N,12220.8000,W,0.5,90.0,261026,,,N*6C\r\n$GNRMC,000001.00,A,4736.7300,N,12220.9400,W,0.6,91.0,261026,,,A*60\r\n$GNGGA,000001.00,4736.7300,N,12220.9400,W,1,10,0.8,57.0,M,-17.0,M,,*7D\r\n$GPGGA,000002.00,4736.7350,N,12220.9300,W,0,00,99.9,,M,,M,,*7A\r\n$GNRMC,000003.00,A,4736.7400,N,12220.9200,W,0.6,91.0,261026,,,A*63\r\n$GPGLL,4736.7450,N,12220.9100,W,000004.00,A,A*74\r\n",
+    "expected": [
+      {
+        "lon": -122.34930166666666,
+        "lat": 47.61205666666667,
+        "alt": 56.2
+      },
+      {
+        "lon": -122.34916666666666,
+        "lat": 47.612066666666664,
+        "alt": 56.4
+      },
+      {
+        "lon": -122.349,
+        "lat": 47.61216666666667,
+        "alt": 57.0
+      },
+      {
+        "lon": -122.34866666666667,
+        "lat": 47.61233333333333
+      },
+      {
+        "lon": -122.3485,
+        "lat": 47.61241666666667
+      }
+    ]
+  },
+  "igc": {
+    "text": "AXCSAAA123\r\nHFDTE251026\r\nHFPLTPILOTINCHARGE:Ada Lovelace\r\nHFGTYGLIDERTYPE:ASW 27\r\nHFGIDGLIDERID:N227AL\r\nHFCIDCOMPETITIONID:AL\r\nB2359584736723N12220958WA0010000150\r\nB2359594736730N12220950WA0010200152\r\nB0000004736740N12220940WA0010500155\r\nB0000014736750N12220930WV0010800000\r\nLXCSnote\r\n",
+    "expected": [
+      {
+        "lon": -122.3493,
+        "lat": 47.612049999999996,
+        "alt": 150,
+        "time": "23:59:58"
+      },
+      {
+        "lon": -122.34916666666666,
+        "lat": 47.61216666666667,
+        "alt": 152,
+        "time": "23:59:59"
+      },
+      {
+        "lon": -122.349,
+        "lat": 47.61233333333333,
+        "alt": 155,
+        "time": "00:00:00"
+      },
+      {
+        "lon": -122.34883333333333,
+        "lat": 47.6125,
+        "alt": 108,
+        "time": "00:00:01"
+      }
+    ],
+    "header": {
+      "utc_date": "2026-10-25",
+      "pilot": "Ada Lovelace",
+      "glider_model": "ASW 27",
+      "glider_registration": "N227AL",
+      "competition_id": "AL"
+    }
+  },
+  "tcx": {
+    "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<TrainingCenterDatabase xmlns=\"http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2\">\n  <Activities>\n    <Activity Sport=\"Running\">\n      <Id>2026-10-26T15:00:00Z</Id>\n      <Lap StartTime=\"2026-10-26T15:00:00Z\">\n        <TotalTimeSeconds>60</TotalTimeSeconds><DistanceMeters>200</DistanceMeters><Calories>15</Calories>\n        <Track>\n          <Trackpoint><Time>2026-10-26T15:00:00Z</Time><Position><LatitudeDegrees>47.6100</LatitudeDegrees><LongitudeDegrees>-122.3400</LongitudeDegrees></Position><AltitudeMeters>20.5</AltitudeMeters><HeartRateBpm><Value>120</Value></HeartRateBpm></Trackpoint>\n          <Trackpoint><Time>2026-10-26T15:00:10Z</Time><HeartRateBpm><Value>125</Value></HeartRateBpm></Trackpoint>\n          <Trackpoint><Time>2026-10-26T15:00:20Z</Time><Position><LatitudeDegrees>47.6110</LatitudeDegrees><LongitudeDegrees>-122.3390</LongitudeDegrees></Position><AltitudeMeters>21.0</AltitudeMeters><HeartRateBpm><Value>131</Value></HeartRateBpm></Trackpoint>\n        </Track>\n      </Lap>\n      <Lap StartTime=\"2026-10-26T15:01:00Z\">\n        <TotalTimeSeconds>40</TotalTimeSeconds><DistanceMeters>150.5</DistanceMeters><Calories>10</Calories>\n        <Track>\n          <Trackpoint><Time>2026-10-26T15:01:00Z</Time><Position><LatitudeDegrees>47.6120</LatitudeDegrees><LongitudeDegrees>-122.3380</LongitudeDegrees></Position><AltitudeMeters>22.0</AltitudeMeters><HeartRateBpm><Value>140</Value></HeartRateBpm></Trackpoint>\n          <Trackpoint><Time>2026-10-26T15:01:20Z</Time><Position><LatitudeDegrees>47.6130</LatitudeDegrees><LongitudeDegrees>-122.3370</LongitudeDegrees></Position><AltitudeMeters>22.5</AltitudeMeters><HeartRateBpm><Value>150</Value></HeartRateBpm></Trackpoint>\n        </Track>\n      </Lap>\n    </Activity>\n  </Activities>\n  <Courses>\n    <Course><Name>Loop</Name>\n      <Track>\n        <Trackpoint><Position><LatitudeDegrees>47.62</LatitudeDegrees><LongitudeDegrees>-122.33</LongitudeDegrees></Position></Trackpoint>\n        <Trackpoint><Position><LatitudeDegrees>47.63</LatitudeDegrees><LongitudeDegrees>-122.32</LongitudeDegrees></Position></Trackpoint>\n      </Track>\n      <CoursePoint><Name>Water</Name><Time>2026-10-26T15:05:00Z</Time><Position><LatitudeDegrees>47.625</LatitudeDegrees><LongitudeDegrees>-122.325</LongitudeDegrees></Position><PointType>Water</PointType></CoursePoint>\n    </Course>\n  </Courses>\n</TrainingCenterDatabase>\n",
+    "expected": [
+      {
+        "lon": -122.34,
+        "lat": 47.61,
+        "alt": 20.5
+      },
+      {
+        "lon": -122.339,
+        "lat": 47.611,
+        "alt": 21.0
+      },
+      {
+        "lon": -122.338,
+        "lat": 47.612,
+        "alt": 22.0
+      },
+      {
+        "lon": -122.337,
+        "lat": 47.613,
+        "alt": 22.5
+      }
+    ],
+    "hr": [135.25, 150],
+    "distance": 350.5
+  }
+}
