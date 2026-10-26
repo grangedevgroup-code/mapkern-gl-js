@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { gzipSync } from "node:zlib";
-import { decodeSearchData, encodeSearchData } from "../../src/search/format.ts";
-import { SearchIndex } from "../../src/search/index.ts";
+import { SearchIndex, SearchIndexSet } from "../../src/search/index.ts";
 import { tokenize, withinEdits } from "../../src/search/text.ts";
 import type { RegionData } from "../../tools/tiles/extract.ts";
 import type { Tags } from "../../tools/tiles/osm-pbf.ts";
-import { indexRegion } from "../../tools/tiles/search.ts";
+import { collectEntries, writeSearchIndex } from "../../tools/tiles/search.ts";
 
 function town(): RegionData {
   const nodes: [number, number, number][] = [];
@@ -115,7 +113,9 @@ function town(): RegionData {
   };
 }
 
-const index = new SearchIndex(indexRegion(town()).data);
+const BOX: [number, number, number, number] = [-0.5, -0.5, 1.5, 1.5];
+const file = writeSearchIndex(BOX, collectEntries(town()));
+const index = await SearchIndex.load(file);
 
 test("text is folded to plain lowercase tokens with street words shortened", () => {
   assert.deepEqual(tokenize("Saint-Étienne's North Street"), ["saint", "etiennes", "n", "st"]);
@@ -129,74 +129,72 @@ test("typo distance counts a swapped pair as one edit and gives up past the limi
   assert.equal(withinEdits("market", "basket", 1), -1);
 });
 
-test("an index survives writing and reading back", () => {
-  const { data } = indexRegion(town());
-  const back = decodeSearchData(encodeSearchData(data));
-  assert.deepEqual(back.strings, data.strings);
-  assert.deepEqual(Array.from(back.postings), Array.from(data.postings));
-  assert.deepEqual(Array.from(back.coords), Array.from(data.coords));
-  assert.deepEqual(back.bbox, data.bbox);
-  assert.throws(() => decodeSearchData(new Uint8Array(40)), /not a Mapkern search index/);
+test("an index file opens from bytes or a Blob and rejects other files", async () => {
+  assert.equal(index.size, collectEntries(town()).length);
+  assert.deepEqual(index.bbox, BOX);
+  const fromBlob = await SearchIndex.load(new Blob([file as BlobPart]));
+  assert.equal((await fromBlob.search("corner"))[0]?.name, "Corner Market");
+  await assert.rejects(SearchIndex.load(new Uint8Array(200)), /not a Mapkern search index/);
 });
 
-test("pieces of one street become one result with its town and region", () => {
-  const [first, ...rest] = index.search("main st", { near: [0.01, 0.01] });
+test("pieces of one street become one result with its town and region", async () => {
+  const [first, ...rest] = await index.search("main st", { near: [0.01, 0.01] });
   assert.equal(first?.kind, "street");
   assert.equal(first?.name, "Main Street");
   assert.equal(first?.context, "Testville, Teststate");
   assert.equal(rest.filter((r) => r.kind === "street" && r.context.startsWith("Testville")).length, 0);
 });
 
-test("a house number finds the address", () => {
-  const [first] = index.search("100 main");
+test("a house number finds the address", async () => {
+  const [first] = await index.search("100 main");
   assert.equal(first?.kind, "address");
   assert.equal(first?.name, "100 Main Street");
   assert.deepEqual(first?.address, { number: "100", street: "Main Street" });
   assert.equal(first?.context, "Testville, Teststate 98501");
 });
 
-test("a building with an address is found at its middle", () => {
-  const [first] = index.search("5 oak avenue");
+test("a building with an address is found at its middle", async () => {
+  const [first] = await index.search("5 oak avenue");
   assert.equal(first?.name, "5 Oak Avenue");
   assert.ok(Math.abs(first!.center[0] - 0.0103) < 1e-6 && Math.abs(first!.center[1] - 0.0201) < 1e-6);
 });
 
-test("typos, partial words and other languages still match", () => {
-  assert.equal(index.search("testvile")[0]?.name, "Testville");
-  assert.equal(index.search("bean th")[0]?.name, "Bean There");
-  assert.equal(index.search("cafe la")[0]?.name, "Bean There");
+test("typos, partial words and other languages still match", async () => {
+  assert.equal((await index.search("testvile"))[0]?.name, "Testville");
+  assert.equal((await index.search("bean th"))[0]?.name, "Bean There");
+  assert.equal((await index.search("cafe la"))[0]?.name, "Bean There");
 });
 
-test("a category word finds places of that kind, also with a town", () => {
-  assert.equal(index.search("coffee")[0]?.name, "Bean There");
-  assert.equal(index.search("cafe testville")[0]?.name, "Bean There");
-  assert.equal(index.search("grocery")[0]?.name, "Corner Market");
+test("a category word finds places of that kind, also with a town", async () => {
+  assert.equal((await index.search("coffee"))[0]?.name, "Bean There");
+  assert.equal((await index.search("cafe testville"))[0]?.name, "Bean There");
+  assert.equal((await index.search("grocery"))[0]?.name, "Corner Market");
 });
 
-test("the nearer of two equal names comes first", () => {
-  const far = index.search("main street", { near: [1.015, 1.01], kinds: ["street"] });
+test("the nearer of two equal names comes first", async () => {
+  const far = await index.search("main street", { near: [1.015, 1.01], kinds: ["street"] });
   assert.equal(far[0]?.context, "Farburg, Teststate");
-  const close = index.search("main street", { near: [0.01, 0.01], kinds: ["street"] });
+  const close = await index.search("main street", { near: [0.01, 0.01], kinds: ["street"] });
   assert.equal(close[0]?.context, "Testville, Teststate");
   assert.equal(close.length, 2);
 });
 
-test("a single letter suggests towns, the nearest first", () => {
+test("a single letter suggests towns, the nearest first", async () => {
   assert.deepEqual(
-    index.search("t", { near: [0.01, 0.01] }).map((r) => r.name),
+    (await index.search("t", { near: [0.01, 0.01] })).map((r) => r.name),
     ["Testville", "Teststate"],
   );
-  assert.deepEqual(index.search("t", { kinds: ["street"] }), []);
+  assert.deepEqual(await index.search("t", { kinds: ["street"] }), []);
 });
 
-test("kinds and bbox narrow the results", () => {
-  assert.ok(index.search("main", { kinds: ["address"] }).every((r) => r.kind === "address"));
-  assert.ok(index.search("main", { bbox: [0.5, 0.5, 1.5, 1.5] }).every((r) => r.center[0] > 0.5));
-  assert.deepEqual(index.search("zzzz"), []);
+test("kinds and bbox narrow the results", async () => {
+  assert.ok((await index.search("main", { kinds: ["address"] })).every((r) => r.kind === "address"));
+  assert.ok((await index.search("main", { bbox: [0.5, 0.5, 1.5, 1.5] })).every((r) => r.center[0] > 0.5));
+  assert.deepEqual(await index.search("zzzz"), []);
 });
 
-test("reverse geocoding gives the nearest address, place of business, street and town", () => {
-  const near = index.reverse([0.0116, 0.01]);
+test("reverse geocoding gives the nearest address, place of business, street and town", async () => {
+  const near = await index.reverse([0.0116, 0.01]);
   assert.deepEqual(
     near.map((r) => [r.kind, r.name]),
     [
@@ -207,13 +205,41 @@ test("reverse geocoding gives the nearest address, place of business, street and
     ],
   );
   assert.ok(near[0]!.distance! < 60);
-  assert.equal(index.reverse([0.0116, 0.01], { kinds: ["street"] })[0]?.name, "Main Street");
-  assert.deepEqual(index.reverse([0.5, 0.5], { kinds: ["address"] }), []);
+  assert.equal((await index.reverse([0.0116, 0.01], { kinds: ["street"] }))[0]?.name, "Main Street");
+  assert.deepEqual(await index.reverse([0.5, 0.5], { kinds: ["address"] }), []);
 });
 
-test("a gzipped index loads", async () => {
-  const bytes = gzipSync(encodeSearchData(indexRegion(town()).data));
-  const loaded = await SearchIndex.load(new Uint8Array(bytes));
-  assert.equal(loaded.size, index.size);
-  assert.equal(loaded.search("corner")[0]?.name, "Corner Market");
+test("a set of indexes searches all of them and keeps one copy of each place", async () => {
+  const set = new SearchIndexSet([index, await SearchIndex.load(file)]);
+  const names = (await set.search("corner")).map((r) => r.osm);
+  assert.equal(names.length, 1);
+  assert.equal((await set.reverse([0.0116, 0.01], { kinds: ["address"] })).length, 1);
+});
+
+test("long posting lists, many term blocks and many entry blocks read back exactly", async () => {
+  const entries = [];
+  for (let i = 0; i < 9000; i++) {
+    entries.push({
+      osm: i * 4,
+      kind: 1,
+      rank: i % 200,
+      category: null,
+      name: `${i} Long Road`,
+      number: String(i),
+      street: "Long Road",
+      context: `Town ${i % 7}`,
+      lon: (i % 100) * 0.001,
+      lat: Math.floor(i / 100) * 0.001,
+      shape: null,
+      tokens: new Set([String(i), "long", "rd", `word${i}`]),
+    });
+  }
+  const big = await SearchIndex.load(writeSearchIndex([0, 0, 0.1, 0.1], entries));
+  assert.equal(big.size, 9000);
+  const hit = await big.search("8765 long rd");
+  assert.equal(hit[0]?.name, "8765 Long Road");
+  assert.equal(hit[0]?.context, "Town 1");
+  assert.equal((await big.search("word4321"))[0]?.address?.number, "4321");
+  const nearest = await big.reverse([0.0501, 0.0502], { kinds: ["address"], limit: 1 });
+  assert.equal(nearest[0]?.name, "5050 Long Road");
 });
