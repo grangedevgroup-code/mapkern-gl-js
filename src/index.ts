@@ -104,3 +104,17 @@ export type { SourceGeoJSONFeature } from "./worker/geojson.ts";
 declare const MAPLET_VERSION: string | undefined;
 
 export const version: string = typeof MAPLET_VERSION === "string" ? MAPLET_VERSION : "0.0.0-dev";
+export type { CotWriteOptions } from "./formats/cot.ts";
+export { cotToGeoJSON, cotTypeToSidc, geoJSONToCot, sidcToCotType } from "./formats/cot.ts";
+export type { MgrsPoint, Utm } from "./geo/mgrs.ts";
+export { fromMgrs, fromUtm, toMgrs, toUtm, utmZone } from "./geo/mgrs.ts";
+export type {
+  Affiliation,
+  Dimension,
+  DrawnSymbol,
+  Echelon,
+  MilitarySymbolsOptions,
+  SymbolCode,
+  SymbolOptions,
+} from "./military/symbol.ts";
+export { drawSymbol, militarySymbols, parseSidc } from "./military/symbol.ts";
