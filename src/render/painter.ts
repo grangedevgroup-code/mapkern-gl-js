@@ -347,8 +347,11 @@ export class Painter {
       const signature = this.drapeSignature(shared, sources, pointSources, overlays, view, size);
       const current = this.drapes.lookup(slot.key);
       const drawn = current !== undefined && !Number.isNaN(current.signature);
-      if (drawn && current.size === size && current.signature === signature && Math.abs(current.zoom - zoom) < 0.05)
+      const drift = drawn ? Math.abs(current.zoom - zoom) : 0;
+      if (drawn && current.size === size && current.signature === signature && drift < tolerance) {
+        if (drift >= RESTING_ZOOM_STEP && tolerance !== Number.POSITIVE_INFINITY) this.drapesBehind = true;
         continue;
+      }
       if (performance.now() > deadline && (drawn || this.drapeFallback(slot))) {
         this.drapesBehind = true;
         continue;
