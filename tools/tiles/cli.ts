@@ -1,6 +1,6 @@
-import { mkdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { gzipSync } from "node:zlib";
 import { convertMbtiles } from "./convert.ts";
@@ -9,7 +9,7 @@ import { extractRegion } from "./extract.ts";
 import { buildFeatures, regionRect } from "./features.ts";
 import { Compression, PMTilesWriter, TileType } from "./pmtiles-writer.ts";
 import type { Entry } from "./search.ts";
-import { collectEntries, writeSearchIndex } from "./search.ts";
+import { collectEntries, ENTRY_VERSION, loadEntries, saveEntries, writeSearchIndex } from "./search.ts";
 import { buildTiles } from "./tiler.ts";
 
 const FIELDS: Record<string, Record<string, string>> = {
@@ -67,6 +67,7 @@ Usage:
 
 Options:
   --input     OpenStreetMap PBF file, for example a Geofabrik extract; search takes several
+  --cache     search only: folder that keeps what each input gave, so a later run skips reading it
   --world     search only: towns, states, countries, airports and notable places from
               the whole file, instead of everything inside --bbox
   --bbox      Area to build, in degrees: west,south,east,north.
@@ -123,6 +124,7 @@ async function main(): Promise<void> {
         input: { type: "string", multiple: true },
         bbox: { type: "string" },
         world: { type: "boolean", default: false },
+        cache: { type: "string" },
         output: { type: "string" },
         threads: { type: "string" },
         help: { type: "boolean", default: false },
@@ -139,15 +141,32 @@ async function main(): Promise<void> {
     const started = performance.now();
     const seen = new Set<number>();
     const entries: Entry[] = [];
+    const profile = values.world ? "places" : "search";
+    if (values.cache) mkdirSync(resolve(values.cache), { recursive: true });
     for (const file of values.input) {
       const input = resolve(file);
-      log(`reading ${input} (${(statSync(input).size / 1e9).toFixed(2)} GB) for ${bbox.join(", ")}`);
-      const region = await extractRegion(input, bbox, {
-        threads: values.threads ? Number(values.threads) : availableParallelism(),
-        log,
-        profile: values.world ? "places" : "search",
-      });
-      for (const entry of collectEntries(region, log)) {
+      const stat = statSync(input);
+      const saved = values.cache
+        ? join(
+            resolve(values.cache),
+            `${basename(input)}.${profile}.${bbox.join("_")}.${stat.size}.${Math.round(stat.mtimeMs)}.v${ENTRY_VERSION}.jsonl.gz`,
+          )
+        : null;
+      let found: Entry[];
+      if (saved && existsSync(saved)) {
+        log(`reusing ${saved}`);
+        found = await loadEntries(saved);
+      } else {
+        log(`reading ${input} (${(stat.size / 1e9).toFixed(2)} GB) for ${bbox.join(", ")}`);
+        const region = await extractRegion(input, bbox, {
+          threads: values.threads ? Number(values.threads) : availableParallelism(),
+          log,
+          profile,
+        });
+        found = collectEntries(region, log);
+        if (saved) await saveEntries(saved, found);
+      }
+      for (const entry of found) {
         if (seen.has(entry.osm)) continue;
         seen.add(entry.osm);
         entries.push(entry);
