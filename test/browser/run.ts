@@ -112,7 +112,7 @@ async function createMap(page: Page, style: string, options: Record<string, unkn
   await page.call(
     `async (style, options) => {
       window.errors = [];
-      window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style, ...options });
+      window.map = new mapkern.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style, ...options });
       window.map.on("error", (e) => window.errors.push({ code: e.error.code, message: e.error.message }));
       await window.map.once("idle");
     }`,
@@ -408,7 +408,7 @@ const specs: Spec[] = [
       const style = geojsonStyle(`${base}/fixture/geojson/none.json`);
       await page.evaluate(`(async () => {
         window.errors = [];
-        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, center: [0, 0], zoom: 3, style: ${style} });
+        window.map = new mapkern.Map({ container: "map", preserveDrawingBuffer: true, center: [0, 0], zoom: 3, style: ${style} });
         window.map.on("error", (e) => window.errors.push({ code: e.error.code, message: e.error.message }));
         await new Promise((r) => setTimeout(r, 500));
       })()`);
@@ -435,7 +435,7 @@ const specs: Spec[] = [
       if (!isZoomColor(remote, 4)) fail(`expected z4 colour from the MBTiles file over HTTP, got ${remote}`);
       const url = await page.evaluate<string>(`(async () => {
         const bytes = await (await fetch("${base}/test/browser/output/fixture.mbtiles")).arrayBuffer();
-        return maplet.openTileFile(new File([bytes], "picked.mbtiles"));
+        return mapkern.openTileFile(new File([bytes], "picked.mbtiles"));
       })()`);
       if (!url.startsWith("mbtiles://")) fail(`openTileFile returned ${url}`);
       await page.evaluate(`void window.map.setStyle(${style(url)})`);
@@ -738,7 +738,7 @@ const specs: Spec[] = [
       );
       if (missingLayer !== "invalid-option") fail(`expected invalid-option without sourceLayer, got ${missingLayer}`);
       const issues = await page.evaluate<unknown[]>(
-        `maplet.validateStyle({ version: 1, sources: {}, layers: [{ id: "x", type: "background", paint: { color: "#fff" } }, { id: "y", type: "circle", source: "s", filter: ["feature-state", "a"] }] })`,
+        `mapkern.validateStyle({ version: 1, sources: {}, layers: [{ id: "x", type: "background", paint: { color: "#fff" } }, { id: "y", type: "circle", source: "s", filter: ["feature-state", "a"] }] })`,
       );
       if (!JSON.stringify(issues).includes("only works in paint properties"))
         fail(`expected feature-state in a filter to be rejected, got ${JSON.stringify(issues)}`);
@@ -874,11 +874,11 @@ const specs: Spec[] = [
         window.popupLog = [];
         const html = '<b>Hello</b> <img src="x" onerror="window.hacked = 1"><script>window.hacked = 2</script>' +
           '<a href="javascript:window.hacked = 3">bad</a> <a href="https://example.com/" target="_blank">good</a>';
-        const popup = new maplet.Popup().setHTML(html);
+        const popup = new mapkern.Popup().setHTML(html);
         popup.on("open", () => window.popupLog.push("open"));
         popup.on("close", () => window.popupLog.push("close"));
         window.popup = popup;
-        window.marker = new maplet.Marker().setLngLat([10, 0]).setPopup(popup).addTo(window.map);
+        window.marker = new mapkern.Marker().setLngLat([10, 0]).setPopup(popup).addTo(window.map);
       })()`);
       await idle(page);
       const tipAt = () =>
@@ -904,7 +904,7 @@ const specs: Spec[] = [
         await page.mouse("mouseReleased", x, y, { buttons: 0 });
       };
       await clickAt(tip[0], tip[1] - 26);
-      await page.waitFor("document.querySelector('.maplet-popup') !== null", 3000);
+      await page.waitFor("document.querySelector('.mapkern-popup') !== null", 3000);
       await idle(page);
       await shot("marker-popup");
       const popup = await page.evaluate<{
@@ -919,12 +919,12 @@ const specs: Spec[] = [
         expanded: string | null;
         focused: boolean;
       }>(`(() => {
-        const el = document.querySelector(".maplet-popup");
-        const content = el.querySelector(".maplet-popup-content");
+        const el = document.querySelector(".mapkern-popup");
+        const content = el.querySelector(".mapkern-popup-content");
         const pin = window.marker.getElement().getBoundingClientRect();
         const links = content.querySelectorAll("a");
         return {
-          anchor: el.classList.contains("maplet-popup-anchor-bottom"),
+          anchor: el.classList.contains("mapkern-popup-anchor-bottom"),
           above: el.getBoundingClientRect().bottom <= pin.top + 2,
           bold: content.querySelectorAll("b").length,
           scripts: content.querySelectorAll("script").length,
@@ -947,17 +947,17 @@ const specs: Spec[] = [
       if (hacked !== null) fail(`popup markup ran code: ${hacked}`);
 
       await clickAt(tip[0], tip[1] - 26);
-      await page.waitFor("document.querySelector('.maplet-popup') === null", 3000);
+      await page.waitFor("document.querySelector('.mapkern-popup') === null", 3000);
       await clickAt(tip[0], tip[1] - 26);
-      await page.waitFor("document.querySelector('.maplet-popup') !== null", 3000);
+      await page.waitFor("document.querySelector('.mapkern-popup') !== null", 3000);
       await clickAt(150, 500);
-      await page.waitFor("document.querySelector('.maplet-popup') === null", 3000);
+      await page.waitFor("document.querySelector('.mapkern-popup') === null", 3000);
       await clickAt(tip[0], tip[1] - 26);
-      await page.waitFor("document.querySelector('.maplet-popup') !== null", 3000);
+      await page.waitFor("document.querySelector('.mapkern-popup') !== null", 3000);
       await page.evaluate(
         `document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`,
       );
-      await page.waitFor("document.querySelector('.maplet-popup') === null", 3000);
+      await page.waitFor("document.querySelector('.mapkern-popup') === null", 3000);
       const log = await page.evaluate<string[]>("window.popupLog");
       if (JSON.stringify(log) !== JSON.stringify(["open", "close", "open", "close", "open", "close"]))
         fail(`unexpected popup events ${JSON.stringify(log)}`);
@@ -966,7 +966,7 @@ const specs: Spec[] = [
 
       await page.evaluate(`(() => {
         window.dragLog = [];
-        window.dragged = new maplet.Marker({ draggable: true, color: "#d33" }).setLngLat([-10, 0]).addTo(window.map);
+        window.dragged = new mapkern.Marker({ draggable: true, color: "#d33" }).setLngLat([-10, 0]).addTo(window.map);
         for (const type of ["dragstart", "drag", "dragend"]) window.dragged.on(type, () => window.dragLog.push(type));
       })()`);
       await idle(page);
@@ -989,7 +989,7 @@ const specs: Spec[] = [
       if (drags[0] !== "dragstart" || drags[drags.length - 1] !== "dragend" || !drags.includes("drag"))
         fail(`unexpected drag events ${JSON.stringify(drags)}`);
       await page.evaluate("window.marker.remove(); window.dragged.remove()");
-      const left = await page.evaluate<number>("document.querySelectorAll('.maplet-marker').length");
+      const left = await page.evaluate<number>("document.querySelectorAll('.mapkern-marker').length");
       if (left !== 0) fail(`remove() left ${left} marker elements`);
     },
   },
@@ -1008,7 +1008,7 @@ const specs: Spec[] = [
         await page.mouse("mouseMoved", 100 + i * 25, 100 + i * 12.5, { buttons: 1, modifiers: 8 });
         await new Promise((r) => setTimeout(r, 15));
       }
-      const drawn = await page.evaluate<number>("document.querySelectorAll('.maplet-boxzoom').length");
+      const drawn = await page.evaluate<number>("document.querySelectorAll('.mapkern-boxzoom').length");
       await page.mouse("mouseReleased", 300, 200, { buttons: 0, modifiers: 8 });
       await idle(page);
       const zoom = await page.evaluate<number>("window.map.getZoom()");
@@ -1020,7 +1020,7 @@ const specs: Spec[] = [
       const boxLog = await page.evaluate<string[]>("window.boxLog");
       if (JSON.stringify(boxLog) !== JSON.stringify(["boxzoomstart", "boxzoomend"]))
         fail(`unexpected box zoom events ${JSON.stringify(boxLog)}`);
-      const left = await page.evaluate<number>("document.querySelectorAll('.maplet-boxzoom').length");
+      const left = await page.evaluate<number>("document.querySelectorAll('.mapkern-boxzoom').length");
       if (left !== 0) fail("the box outline stayed after the zoom");
 
       await page.evaluate(`void window.map.jumpTo({ center: [0, 0], zoom: 6 }).setMaxBounds([[-10, -10], [10, 10]])`);
@@ -1139,7 +1139,7 @@ const specs: Spec[] = [
           return { width: 16, height: 16, data };
         };
         window.missing = [];
-        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: ${style} });
+        window.map = new mapkern.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: ${style} });
         window.map.addImage("square", solid(255, 0, 0));
         window.map.addImage("sdf", solid(255, 255, 255), { sdf: true });
         window.map.on("styleimagemissing", (e) => {
@@ -1233,7 +1233,7 @@ const specs: Spec[] = [
         for (let y = 0; y < 12; y++) {
           for (let x = 0; x < 24; x++) data.set(x < 12 ? [255, 0, 0, 255] : [0, 0, 255, 255], (y * 24 + x) * 4);
         }
-        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [5, 16], zoom: 3, style: ${style} });
+        window.map = new mapkern.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [5, 16], zoom: 3, style: ${style} });
         window.map.addImage("arrow", { width: 24, height: 12, data });
         await window.map.once("idle");
       })()`);
@@ -1963,7 +1963,7 @@ const specs: Spec[] = [
       if (JSON.stringify(found) !== JSON.stringify([0, 1]))
         fail(`querySourceFeatures with within gave ${JSON.stringify(found)}`);
       const issues = await page.evaluate<unknown[]>(
-        `maplet.validateStyle({ version: 1, sources: { g: { type: "geojson", data: { type: "FeatureCollection", features: [] } } }, layers: [{ id: "c", type: "circle", source: "g", paint: { radius: ["case", ["within", ${JSON.stringify(area)}], 4, 2] } }] })`,
+        `mapkern.validateStyle({ version: 1, sources: { g: { type: "geojson", data: { type: "FeatureCollection", features: [] } } }, layers: [{ id: "c", type: "circle", source: "g", paint: { radius: ["case", ["within", ${JSON.stringify(area)}], 4, 2] } }] })`,
       );
       if (!JSON.stringify(issues).includes("only works in layer filters"))
         fail(`within outside a filter should be reported, got ${JSON.stringify(issues)}`);
@@ -2011,22 +2011,22 @@ const specs: Spec[] = [
       await idle(page);
 
       await page.evaluate(`(() => {
-        window.fullscreen = new maplet.FullscreenControl();
-        window.geolocate = new maplet.GeolocateControl({ trackUserLocation: true });
+        window.fullscreen = new mapkern.FullscreenControl();
+        window.geolocate = new mapkern.GeolocateControl({ trackUserLocation: true });
         window.geoLog = [];
         for (const type of ["geolocate", "trackuserlocationstart", "trackuserlocationend"]) window.geolocate.on(type, () => window.geoLog.push(type));
         window.map.addControl(window.fullscreen).addControl(window.geolocate);
       })()`);
-      await page.evaluate("document.querySelector('.maplet-fullscreen-button').click()");
+      await page.evaluate("document.querySelector('.mapkern-fullscreen-button').click()");
       await page.waitFor("window.fullscreen.isFullscreen()", 3000);
       const label = await page.evaluate<string | null>(
-        "document.querySelector('.maplet-fullscreen-button').getAttribute('aria-label')",
+        "document.querySelector('.mapkern-fullscreen-button').getAttribute('aria-label')",
       );
       if (label !== "Exit fullscreen") fail(`the fullscreen button should offer to exit, got ${label}`);
-      await page.evaluate("document.querySelector('.maplet-fullscreen-button').click()");
+      await page.evaluate("document.querySelector('.mapkern-fullscreen-button').click()");
       await page.waitFor("!window.fullscreen.isFullscreen()", 3000);
 
-      await page.evaluate("document.querySelector('.maplet-geolocate-button').click()");
+      await page.evaluate("document.querySelector('.mapkern-geolocate-button').click()");
       await page.waitFor("window.geolocate.getState() === 'active'", 3000);
       await idle(page);
       await shot("geolocate");
@@ -2037,11 +2037,11 @@ const specs: Spec[] = [
         ring: number;
         state: string;
       }>(`(() => {
-        const ring = document.querySelector(".maplet-user-accuracy");
+        const ring = document.querySelector(".mapkern-user-accuracy");
         return {
           center: window.map.getCenter(),
           zoom: window.map.getZoom(),
-          dot: !!document.querySelector(".maplet-user-location"),
+          dot: !!document.querySelector(".mapkern-user-location"),
           ring: ring ? ring.getBoundingClientRect().width : 0,
           state: window.geolocate.getState(),
         };
@@ -2055,12 +2055,12 @@ const specs: Spec[] = [
       for (let i = 1; i <= 5; i++) await page.mouse("mouseMoved", 400 + i * 10, 300, { buttons: 1 });
       await page.mouse("mouseReleased", 450, 300, { buttons: 0 });
       await page.waitFor("window.geolocate.getState() === 'background'", 3000);
-      await page.evaluate("document.querySelector('.maplet-geolocate-button').click()");
+      await page.evaluate("document.querySelector('.mapkern-geolocate-button').click()");
       await page.waitFor("window.geolocate.getState() === 'active'", 3000);
-      await page.evaluate("document.querySelector('.maplet-geolocate-button').click()");
+      await page.evaluate("document.querySelector('.mapkern-geolocate-button').click()");
       await page.waitFor("window.geolocate.getState() === 'off'", 3000);
       const end = await page.evaluate<{ log: string[]; cleared: unknown; dot: boolean }>(
-        "({ log: window.geoLog, cleared: window.cleared, dot: !!document.querySelector('.maplet-user-location') })",
+        "({ log: window.geoLog, cleared: window.cleared, dot: !!document.querySelector('.mapkern-user-location') })",
       );
       if (
         end.cleared !== 7 ||
@@ -2102,8 +2102,8 @@ const specs: Spec[] = [
 
       await createMap(page, rasterStyle(base, "/fixture/raster"), { cooperativeGestures: true, zoom: 3 });
       await page.mouse("mouseWheel", 400, 300, { deltaX: 0, deltaY: -100 });
-      await page.waitFor("document.querySelector('.maplet-cooperative.maplet-visible') !== null", 3000);
-      const notice = await page.evaluate<string>("document.querySelector('.maplet-cooperative').textContent");
+      await page.waitFor("document.querySelector('.mapkern-cooperative.mapkern-visible') !== null", 3000);
+      const notice = await page.evaluate<string>("document.querySelector('.mapkern-cooperative').textContent");
       const still = await page.evaluate<number>("window.map.getZoom()");
       if (Math.abs(still - 3) > 1e-9 || !notice.includes("scroll to zoom"))
         fail(`a plain wheel should not zoom a cooperative map, got zoom ${still} and "${notice}"`);
@@ -2120,7 +2120,7 @@ const specs: Spec[] = [
       await page.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
       await idle(page);
       const after = await page.evaluate<number[]>("window.map.getCenter()");
-      const touchNotice = await page.evaluate<string>("document.querySelector('.maplet-cooperative').textContent");
+      const touchNotice = await page.evaluate<string>("document.querySelector('.mapkern-cooperative').textContent");
       if (Math.hypot(after[0]! - before[0]!, after[1]! - before[1]!) > 1e-9 || !touchNotice.includes("two fingers"))
         fail(`one finger should not pan a cooperative map, moved to ${after} with "${touchNotice}"`);
       await page.send("Emulation.setTouchEmulationEnabled", { enabled: false });
@@ -2183,7 +2183,7 @@ const specs: Spec[] = [
       await idle(page);
       await shot("debug");
       const colors = await page.evaluate<{ red: number; blue: number; green: number }>(`(() => {
-        const c = document.querySelector(".maplet-debug");
+        const c = document.querySelector(".mapkern-debug");
         const data = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
         let red = 0, blue = 0, green = 0;
         for (let i = 0; i < data.length; i += 4) {
@@ -2200,7 +2200,7 @@ const specs: Spec[] = [
         "window.map.showTileBoundaries = false; window.map.showCollisionBoxes = false; window.map.showPadding = false",
       );
       await idle(page);
-      const gone = await page.evaluate<number>("document.querySelectorAll('.maplet-debug').length");
+      const gone = await page.evaluate<number>("document.querySelectorAll('.mapkern-debug').length");
       if (gone !== 0) fail("turning the debug views off should remove their canvas");
     },
   },
@@ -2278,7 +2278,7 @@ const specs: Spec[] = [
         window.paintCanvas = c;
       })()`);
       await page.evaluate(`(async () => {
-        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: {
+        window.map = new mapkern.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: {
           version: 1,
           sources: { live: { type: "canvas", canvas: window.paintCanvas, coordinates: ${JSON.stringify(trapezoid)}, animate: false } },
           layers: [${JSON.stringify(background)}, { id: "live", type: "raster", source: "live" }],
@@ -2400,7 +2400,7 @@ const specs: Spec[] = [
         c.height = 64;
         c.getContext("2d").drawImage(img, 0, 0, 64, 64);
         const errors = [];
-        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: {
+        window.map = new mapkern.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: {
           version: 1,
           sources: { foreign: { type: "canvas", canvas: c, coordinates: ${JSON.stringify(square)} } },
           layers: [${JSON.stringify(background)}, { id: "foreign", type: "raster", source: "foreign" }],
@@ -2423,7 +2423,7 @@ const specs: Spec[] = [
         [1, -3],
       ];
       await page.evaluate(`(async () => {
-        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [2, -2], zoom: 6, pitch: 60, style: {
+        window.map = new mapkern.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [2, -2], zoom: 6, pitch: 60, style: {
           version: 1,
           sources: {
             dem: { type: "dem", tiles: ["${base}/fixture/dem/{z}/{x}/{y}.png"], tileSize: 256, maxZoom: 12 },
@@ -2761,7 +2761,7 @@ const specs: Spec[] = [
         ],
       };
       const result = await page.evaluate<{ skipped: string[]; version: number; ids: string[] }>(`(async () => {
-        window.map = new maplet.Map({ container: "map", style: null, preserveDrawingBuffer: true, fadeDuration: 0, center: [10, 10], zoom: 3 });
+        window.map = new mapkern.Map({ container: "map", style: null, preserveDrawingBuffer: true, fadeDuration: 0, center: [10, 10], zoom: 3 });
         const loaded = new Promise((resolve) => window.map.once("styleload", resolve));
         window.map.setStyle(${JSON.stringify(v8)});
         const event = await loaded;
@@ -2774,7 +2774,7 @@ const specs: Spec[] = [
       if (!near(green, GREEN, 6)) fail(`a v8 style should draw with its own colors, got ${green}`);
       if (result.version !== 1 || result.ids.join() !== "bg,areas,marsh")
         fail(
-          `the style should come through as a Maplet style without the parts it can't draw, got ${JSON.stringify(result)}`,
+          `the style should come through as a Mapkern style without the parts it can't draw, got ${JSON.stringify(result)}`,
         );
       if (!result.skipped.some((s) => s.includes("sky")) || !result.skipped.some((s) => s.includes("pattern")))
         fail(`styleload should list what was left out, got ${JSON.stringify(result.skipped)}`);
@@ -2793,7 +2793,7 @@ const specs: Spec[] = [
       }>(`(async () => {
         const requested = [];
         const data = "data:application/json," + encodeURIComponent(${JSON.stringify(JSON.stringify(fallback))});
-        window.map = new maplet.Map({
+        window.map = new mapkern.Map({
           container: "map",
           preserveDrawingBuffer: true,
           transformRequest: (url, kind) => {
@@ -2823,7 +2823,7 @@ const specs: Spec[] = [
 
       const blank = await page.evaluate<{ style: unknown; asked: number }>(`(async () => {
         let asked = 0;
-        window.map = new maplet.Map({ container: "map", style: null, transformRequest: () => { asked++; return undefined; } });
+        window.map = new mapkern.Map({ container: "map", style: null, transformRequest: () => { asked++; return undefined; } });
         await new Promise((resolve) => setTimeout(resolve, 200));
         return { style: window.map.getStyle(), asked };
       })()`);
@@ -3027,7 +3027,7 @@ const specs: Spec[] = [
         }
         window.stripes = { width: 8, height: 8, data };
         window.missing = [];
-        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: ${JSON.stringify(style)} });
+        window.map = new mapkern.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: ${JSON.stringify(style)} });
         window.map.on("styleimagemissing", (e) => window.missing.push(e.id));
         window.map.addImage("stripes", window.stripes);
         await new Promise((resolve) => window.map.once("idle", resolve));
@@ -3274,7 +3274,7 @@ const specs: Spec[] = [
             data.set(edge ? [0, 0, 255, 255] : [0, 255, 0, 255], (y * 12 + x) * 4);
           }
         }
-        window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: ${JSON.stringify(style)} });
+        window.map = new mapkern.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: ${JSON.stringify(style)} });
         window.map.addImage("shield", { width: 12, height: 12, data }, { stretchX: [[3, 9]], stretchY: [[3, 9]], content: [3, 3, 9, 9] });
         await new Promise((resolve) => window.map.once("idle", resolve));
       })()`);
@@ -3476,8 +3476,8 @@ const specs: Spec[] = [
         fail(`zooming out should stop where the world fills the height, got zoom ${zoom}`);
       if ((await blank()) > 0) fail("zoomed all the way out, the map should still fill the screen");
       const buttons = await page.evaluate<boolean[]>(`(() => {
-        window.map.addControl(new maplet.NavigationControl());
-        return [...document.querySelectorAll(".maplet-navigation button")].slice(0, 2).map((b) => b.disabled);
+        window.map.addControl(new mapkern.NavigationControl());
+        return [...document.querySelectorAll(".mapkern-navigation button")].slice(0, 2).map((b) => b.disabled);
       })()`);
       if (buttons[0] !== false || buttons[1] !== true)
         fail(`at the world limit only zoom out should be disabled, got ${JSON.stringify(buttons)}`);
@@ -3904,7 +3904,7 @@ const specs: Spec[] = [
       });
       await createMap(page, JSON.stringify(plain("#ff0000")), { zoom: 2 });
       await page.evaluate(`(() => {
-        window.picker = new maplet.BasemapControl({
+        window.picker = new mapkern.BasemapControl({
           basemaps: [
             { name: "Red", style: ${JSON.stringify(plain("#ff0000"))} },
             { name: "Blue", style: ${JSON.stringify(plain("#0000ff"))} },
@@ -3916,18 +3916,18 @@ const specs: Spec[] = [
       })()`);
       const state = () =>
         page.evaluate<{ open: boolean; checked: string[] }>(`(() => {
-          const el = document.querySelector(".maplet-basemaps");
+          const el = document.querySelector(".mapkern-basemaps");
           return {
-            open: el.classList.contains("maplet-open"),
+            open: el.classList.contains("mapkern-open"),
             checked: [...el.querySelectorAll("[role=menuitemradio]")].map((b) => b.getAttribute("aria-checked")),
           };
         })()`);
       if (JSON.stringify((await state()).checked) !== '["true","false"]')
         fail(`the first basemap should start checked, got ${JSON.stringify(await state())}`);
-      await page.evaluate(`document.querySelector(".maplet-basemaps-button").click()`);
+      await page.evaluate(`document.querySelector(".mapkern-basemaps-button").click()`);
       if (!(await state()).open) fail("pressing the button should open the menu");
       await shot("menu");
-      await page.evaluate(`document.querySelectorAll(".maplet-basemaps [role=menuitemradio]")[1].click()`);
+      await page.evaluate(`document.querySelectorAll(".mapkern-basemaps [role=menuitemradio]")[1].click()`);
       await idle(page);
       const after = await state();
       if (after.open || JSON.stringify(after.checked) !== '["false","true"]')
@@ -3961,7 +3961,7 @@ const specs: Spec[] = [
         const box = (name, height) => ({
           onAdd() {
             const el = document.createElement("div");
-            el.className = "maplet-control test-" + name;
+            el.className = "mapkern-control test-" + name;
             el.style.cssText = "width:32px;height:" + height + "px";
             return el;
           },
@@ -3982,7 +3982,7 @@ const specs: Spec[] = [
           const b = document.querySelector(".test-" + n).getBoundingClientRect();
           out[n] = { top: b.top, bottom: b.bottom, left: b.left, right: b.right };
         }
-        for (const [n, sel] of [["attr", ".maplet-attribution"], ["logo", ".maplet-logo"]]) {
+        for (const [n, sel] of [["attr", ".mapkern-attribution"], ["logo", ".mapkern-logo"]]) {
           const b = document.querySelector(sel).getBoundingClientRect();
           out[n] = { top: b.top, bottom: b.bottom, left: b.left, right: b.right };
         }
@@ -4002,11 +4002,11 @@ const specs: Spec[] = [
       if (Math.abs(r.logo!.left - c.left - 10) > 1 || Math.abs(c.bottom - r.logo!.bottom - 10) > 1) {
         fail(`the logo should sit in the bottom-left corner margin: ${JSON.stringify(r.logo)}`);
       }
-      const opacity = await page.evaluate<string>(`getComputedStyle(document.querySelector(".maplet-logo")).opacity`);
+      const opacity = await page.evaluate<string>(`getComputedStyle(document.querySelector(".mapkern-logo")).opacity`);
       if (opacity !== "0.6") fail(`the logo should be faint, got opacity ${opacity}`);
       await page.evaluate("window.map.remove()");
       await createMap(page, style, { logoControl: false });
-      const logos = await page.evaluate<number>(`document.querySelectorAll(".maplet-logo").length`);
+      const logos = await page.evaluate<number>(`document.querySelectorAll(".mapkern-logo").length`);
       if (logos !== 0) fail(`logoControl: false should leave the logo out, found ${logos}`);
     },
   },
@@ -4014,16 +4014,16 @@ const specs: Spec[] = [
     name: "one scale bar shows metric and imperial together",
     async run({ page, base, shot }) {
       await createMap(page, rasterStyle(base, "/fixture/raster"), { zoom: 5, center: [0, 30] });
-      await page.evaluate(`window.scale = new maplet.ScaleControl(); void window.map.addControl(window.scale)`);
+      await page.evaluate(`window.scale = new mapkern.ScaleControl(); void window.map.addControl(window.scale)`);
       await shot("both");
       const read = () =>
         page.evaluate<{ bars: number; lines: number; label: string; width: number }>(`(() => {
-          const bar = document.querySelector(".maplet-scale");
-          const line = bar.querySelector(".maplet-scale-line") ?? bar.querySelector(".maplet-scale-label");
+          const bar = document.querySelector(".mapkern-scale");
+          const line = bar.querySelector(".mapkern-scale-line") ?? bar.querySelector(".mapkern-scale-label");
           return {
-            bars: document.querySelectorAll(".maplet-scale").length,
-            lines: bar.querySelectorAll(".maplet-scale-line").length,
-            label: bar.querySelector(".maplet-scale-label").textContent,
+            bars: document.querySelectorAll(".mapkern-scale").length,
+            lines: bar.querySelectorAll(".mapkern-scale-line").length,
+            label: bar.querySelector(".mapkern-scale-label").textContent,
             width: line.getBoundingClientRect().width,
           };
         })()`);
@@ -4066,7 +4066,7 @@ const specs: Spec[] = [
       await createMap(page, rasterStyle(base, "/fixture/raster"), { center: HILL, zoom: 6 });
       await page.evaluate(`(() => {
         window.views = [];
-        window.terrain = new maplet.TerrainControl({
+        window.terrain = new mapkern.TerrainControl({
           source: { type: "dem", tiles: ["${base}/fixture/dem/{z}/{x}/{y}.png"], tileSize: 256, maxZoom: 12 },
         });
         window.terrain.on("viewchange", (e) => window.views.push(e.view));
@@ -4081,18 +4081,18 @@ const specs: Spec[] = [
           pitch: number;
           view: string;
         }>(`(() => {
-          const b = document.querySelector(".maplet-terrain-button");
+          const b = document.querySelector(".mapkern-terrain-button");
           return {
             label: b.textContent,
             name: b.getAttribute("aria-label"),
-            tilted: b.classList.contains("maplet-tilted"),
+            tilted: b.classList.contains("mapkern-tilted"),
             terrain: window.map.getTerrain(),
             pitch: window.map.getPitch(),
             view: window.terrain.view,
           };
         })()`);
       const press = async () => {
-        await page.evaluate(`document.querySelector(".maplet-terrain-button").click()`);
+        await page.evaluate(`document.querySelector(".mapkern-terrain-button").click()`);
         await page.evaluate(
           `new Promise((r) => window.map.isMoving() ? window.map.once("moveend", () => r(0)) : r(0))`,
         );
@@ -4122,7 +4122,7 @@ const specs: Spec[] = [
       );
       await idle(page);
       s0 = await state();
-      if (s0.view !== "terrain" || (s0.terrain as { source?: string } | null)?.source !== "maplet-terrain") {
+      if (s0.view !== "terrain" || (s0.terrain as { source?: string } | null)?.source !== "mapkern-terrain") {
         fail(`terrain should come back after the style changes: ${JSON.stringify(s0)}`);
       }
       const views = await page.evaluate<string[]>("window.views");
@@ -4138,7 +4138,7 @@ const specs: Spec[] = [
       await createMap(page, rasterStyle(base, "/fixture/raster"), { center: HILL, zoom: 6 });
       await page.call(
         `(base) => {
-          window.terrain = new maplet.TerrainControl({
+          window.terrain = new mapkern.TerrainControl({
             source: { type: "dem", tiles: [base + "/fixture/dem/{z}/{x}/{y}.png"], tileSize: 256, maxZoom: 12 },
           });
           window.map.addControl(window.terrain);
@@ -4152,7 +4152,7 @@ const specs: Spec[] = [
         page.evaluate<{ view: string; tiles: string[] | undefined; terrain: string | undefined; pitch: number }>(
           `({
             view: window.terrain.view,
-            tiles: window.map.getStyle().sources["maplet-terrain"]?.tiles,
+            tiles: window.map.getStyle().sources["mapkern-terrain"]?.tiles,
             terrain: window.map.getTerrain()?.source,
             pitch: window.map.getPitch(),
           })`,
@@ -4168,7 +4168,7 @@ const specs: Spec[] = [
       );
       await idle(page);
       const after = await state();
-      if (after.view !== "tilted" || after.terrain !== "maplet-terrain" || Math.abs(after.pitch - before.pitch) > 0.01)
+      if (after.view !== "tilted" || after.terrain !== "mapkern-terrain" || Math.abs(after.pitch - before.pitch) > 0.01)
         fail(`switching the source should keep the tilted view: ${JSON.stringify(after)}`);
       if (!after.tiles?.[0]?.includes("/fixture/ridges/"))
         fail(`the new source should be used: ${JSON.stringify(after)}`);
@@ -4243,17 +4243,17 @@ const specs: Spec[] = [
           const r = el.getBoundingClientRect();
           return [r.left, r.top, r.right, r.bottom];
         };
-        const corner = document.querySelector(".maplet-bottom-right");
-        const controls = [...corner.children].filter((c) => !c.classList.contains("maplet-scale"));
-        const order = controls.map((c) => [...c.classList].find((k) => k !== "maplet-control" && k.startsWith("maplet-")));
+        const corner = document.querySelector(".mapkern-bottom-right");
+        const controls = [...corner.children].filter((c) => !c.classList.contains("mapkern-scale"));
+        const order = controls.map((c) => [...c.classList].find((k) => k !== "mapkern-control" && k.startsWith("mapkern-")));
         const lefts = controls.map((c) => c.getBoundingClientRect().left);
         const rights = controls.map((c) => c.getBoundingClientRect().right);
-        const attribution = document.querySelector(".maplet-attribution");
+        const attribution = document.querySelector(".mapkern-attribution");
         return {
           order,
           stack: [Math.min(...lefts), Math.max(...rights)],
-          scale: box(document.querySelector(".maplet-scale")),
-          logo: box(document.querySelector(".maplet-logo")),
+          scale: box(document.querySelector(".mapkern-scale")),
+          logo: box(document.querySelector(".mapkern-logo")),
           attribution: box(attribution),
           corner: attribution?.parentElement?.className ?? null,
           maxPitch: window.map.getMaxPitch(),
@@ -4261,7 +4261,7 @@ const specs: Spec[] = [
         };
       })()`);
       await shot("viewer");
-      if (JSON.stringify(layout.order) !== '["maplet-navigation","maplet-terrain","maplet-basemaps"]')
+      if (JSON.stringify(layout.order) !== '["mapkern-navigation","mapkern-terrain","mapkern-basemaps"]')
         fail(
           `bottom-right should hold zoom and compass, then 2D/3D, then the basemap button: ${JSON.stringify(layout)}`,
         );
@@ -4269,7 +4269,7 @@ const specs: Spec[] = [
       const scaleRight = layout.scale?.[2] ?? Number.POSITIVE_INFINITY;
       if (scaleRight > stackLeft || stackLeft - scaleRight > 24)
         fail(`the scale should sit just left of the buttons: ${JSON.stringify(layout)}`);
-      if (!layout.logo || !layout.attribution || !layout.corner?.includes("maplet-bottom-left"))
+      if (!layout.logo || !layout.attribution || !layout.corner?.includes("mapkern-bottom-left"))
         fail(`the attribution should sit in the bottom-left corner: ${JSON.stringify(layout)}`);
       const [, , attributionRight = 0, attributionBottom = 0] = layout.attribution ?? [];
       const logoTop = layout.logo?.[1] ?? 0;
@@ -4284,8 +4284,8 @@ const specs: Spec[] = [
       const after = await page.evaluate<{ pins: boolean; runs: number; stored: string | null; text: string }>(`({
         pins: Boolean(window.map.getLayer("pins")),
         runs: window.runs,
-        stored: localStorage.getItem("maplet-viewer:" + location.pathname + ":basemap"),
-        text: document.querySelector(".maplet-attribution").textContent,
+        stored: localStorage.getItem("mapkern-viewer:" + location.pathname + ":basemap"),
+        text: document.querySelector(".mapkern-attribution").textContent,
       })`);
       if (!after.pins || after.runs < 2)
         fail(`page layers should come back after a basemap change: ${JSON.stringify(after)}`);
@@ -4530,7 +4530,7 @@ const specs: Spec[] = [
   {
     name: "tiles saved on disk skip the network while fresh and come back when the server is down",
     async run({ page, base, shot }) {
-      const remote = base.replace("127.0.0.1", "tiles.maplet.test");
+      const remote = base.replace("127.0.0.1", "tiles.mapkern.test");
       const style = (age: number) =>
         JSON.stringify({
           version: 1,
@@ -4543,7 +4543,7 @@ const specs: Spec[] = [
           .filter(([k]) => k.startsWith(`kept:${age}/`))
           .reduce((n, [, v]) => n + v, 0);
       };
-      await page.evaluate("maplet.clearDiskCache()");
+      await page.evaluate("mapkern.clearDiskCache()");
       await createMap(page, style(3600), { zoom: 3, center: [0, 0] });
       await page.evaluate("new Promise((r) => setTimeout(r, 1000))");
       const first = await requests(3600);
@@ -4556,7 +4556,7 @@ const specs: Spec[] = [
       await createMap(page, style(0), { zoom: 3, center: [0, 0] });
       await page.evaluate("new Promise((r) => setTimeout(r, 1000))");
       await page.send("Network.enable");
-      await page.send("Network.setBlockedURLs", { urls: ["*tiles.maplet.test*"] });
+      await page.send("Network.setBlockedURLs", { urls: ["*tiles.mapkern.test*"] });
       try {
         await page.evaluate("window.map.remove()");
         await createMap(page, style(0), { zoom: 3, center: [0, 0] });
@@ -4634,7 +4634,7 @@ const specs: Spec[] = [
         `async (cot) => {
           window.errors = [];
           const url = URL.createObjectURL(new Blob([cot], { type: "application/xml" }));
-          window.map = new maplet.Map({
+          window.map = new mapkern.Map({
             container: "map",
             preserveDrawingBuffer: true,
             fadeDuration: 0,
@@ -4650,7 +4650,7 @@ const specs: Spec[] = [
             },
           });
           window.map.on("error", (e) => window.errors.push({ code: e.error.code, message: e.error.message }));
-          maplet.militarySymbols(window.map);
+          mapkern.militarySymbols(window.map);
           await window.map.once("idle");
         }`,
         cot,
@@ -4844,12 +4844,12 @@ const specs: Spec[] = [
     async run({ page }) {
       const result = await page.evaluate<{ styleload: number; errors: string[] }>(`(async () => {
         const out = { styleload: 0, errors: [] };
-        const a = new maplet.Map({ container: "map", style: { version: 1, sources: {}, layers: [] } });
+        const a = new mapkern.Map({ container: "map", style: { version: 1, sources: {}, layers: [] } });
         a.on("styleload", () => out.styleload++);
         const box = document.createElement("div");
         box.style.cssText = "position: absolute; inset: 0";
         document.body.appendChild(box);
-        const b = new maplet.Map({ container: box, style: { version: 1, sources: {}, layers: [{ id: "x", type: "nope" }] } });
+        const b = new mapkern.Map({ container: box, style: { version: 1, sources: {}, layers: [{ id: "x", type: "nope" }] } });
         b.on("error", (e) => out.errors.push(e.error.code));
         await new Promise((r) => setTimeout(r, 50));
         a.remove();
@@ -4872,7 +4872,7 @@ const specs: Spec[] = [
         return { canvas: el.querySelectorAll("canvas").length, classes: el.className };
       })()`);
       if (result.canvas !== 0) fail("canvas still attached after remove()");
-      if (result.classes.includes("maplet")) fail(`container still has map classes: ${result.classes}`);
+      if (result.classes.includes("mapkern")) fail(`container still has map classes: ${result.classes}`);
     },
   },
   {
@@ -4880,7 +4880,7 @@ const specs: Spec[] = [
     async run({ page }) {
       const errors = await page.evaluate<{ code: string; message: string }[]>(`(async () => {
         const errors = [];
-        const map = new maplet.Map({ container: "map", style: null });
+        const map = new mapkern.Map({ container: "map", style: null });
         map.on("error", (e) => errors.push({ code: e.error.code, message: e.error.message }));
         map.setStyle({ version: 1, sources: { a: { type: "raster" } }, layers: [{ id: "x", type: "line", source: "missing", paint: { colour: "red" } }] });
         await new Promise((r) => setTimeout(r, 50));
@@ -4903,7 +4903,7 @@ async function main(): Promise<void> {
   mkdirSync(output, { recursive: true });
   writeMbtilesFixture(join(output, "fixture.mbtiles"));
   const { server, url } = await startServer({ root, routes: [fixtureRoute], quiet: true });
-  const browser = await Browser.launch({ software, args: ["--host-resolver-rules=MAP tiles.maplet.test 127.0.0.1"] });
+  const browser = await Browser.launch({ software, args: ["--host-resolver-rules=MAP tiles.mapkern.test 127.0.0.1"] });
   let failed = 0;
   try {
     for (const spec of specs) {
