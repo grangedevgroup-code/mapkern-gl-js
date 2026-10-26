@@ -284,21 +284,37 @@ export class LabelRenderer {
       }
     }
     const structure = parts.join(",");
-    const structureChanged = structure !== this.placedStructure;
-    const cameraChanged = cameraVersion !== this.placedCamera;
+    const moving = cameraVersion !== this.seenCamera;
+    this.seenCamera = cameraVersion;
     if (
-      structureChanged ||
-      this.pendingGlyphs ||
-      this.reflow ||
-      (cameraChanged && now - this.lastPlacement >= PLACE_INTERVAL)
+      !this.job &&
+      (structure !== this.placedStructure ||
+        this.pendingGlyphs ||
+        this.reflow ||
+        (cameraVersion !== this.placedCamera && now - this.lastPlacement >= PLACE_INTERVAL))
     ) {
       this.reflow = false;
-      this.place(transform, inputs, now, terrain);
-      this.placedStructure = structure;
-      this.placedCamera = cameraVersion;
+      this.job = { steps: this.placement(transform.clone(), inputs, now, terrain), structure, camera: cameraVersion };
       this.lastPlacement = now;
     }
-    let animating = cameraVersion !== this.placedCamera || this.pendingGlyphs;
+    const job = this.job;
+    if (job) {
+      const stop = moving ? performance.now() + PLACE_BUDGET : Number.POSITIVE_INFINITY;
+      let done = false;
+      for (;;) {
+        if (job.steps.next().done) {
+          done = true;
+          break;
+        }
+        if (performance.now() >= stop) break;
+      }
+      if (done) {
+        this.job = null;
+        this.placedStructure = job.structure;
+        this.placedCamera = job.camera;
+      }
+    }
+    let animating = cameraVersion !== this.placedCamera || this.pendingGlyphs || this.job !== null;
     const dt = Math.min(100, Math.max(0, now - (this.lastFrame ?? now)));
     this.lastFrame = now;
     for (const [key, label] of this.labels) {
