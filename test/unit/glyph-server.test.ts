@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { decodeGlyphs, fromServer, GlyphServer, glyphUrl } from "../../src/text/glyph-server.ts";
+import { decodeGlyphs, fromServer, GlyphServer, genericStack, glyphUrl } from "../../src/text/glyph-server.ts";
 import { BLOCK_FONT, glyphRange } from "../browser/glyph-pbf.ts";
 
 test("glyph ranges decode with the top measured up from the baseline", () => {
@@ -60,4 +60,23 @@ test("each range loads once and missing or failed ranges fall back", async () =>
     "https://example.com/Block%20Regular/256-511.pbf",
   ]);
   assert.equal(arrived, 2);
+});
+
+test("generic families like sans-serif go to the device's fonts without asking the server", async () => {
+  assert.equal(genericStack("sans-serif"), true);
+  assert.equal(genericStack("system-ui, serif"), true);
+  assert.equal(genericStack("Noto Sans Regular,sans-serif"), false);
+  const asked: string[] = [];
+  const server = new GlyphServer(
+    "https://fonts.example/{fontstack}/{range}.pbf",
+    async (url) => {
+      asked.push(url);
+      return null;
+    },
+    () => {},
+  );
+  assert.equal(server.glyph("sans-serif", 65), null);
+  assert.equal(server.glyph("Noto Sans Regular", 65), undefined);
+  assert.deepEqual(asked, ["https://fonts.example/Noto%20Sans%20Regular/0-255.pbf"]);
+  server.destroy();
 });
