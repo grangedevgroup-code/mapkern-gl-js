@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="maplet-viewer">
+<html lang="en" class="mapkern-viewer">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -10,13 +10,13 @@
   <body>
     <div id="map"></div>
     <script type="module">
-      import { BASEMAPS, beforeLabels, createViewer, maplet } from "../viewer.js";
+      import { BASEMAPS, beforeLabels, createViewer, mapkern } from "../viewer.js";
 
       const params = new URLSearchParams(location.search);
       const tiles = params.get("tiles") ?? "../../data/seattle.pmtiles";
 
       const { map } = createViewer({
-        basemaps: [{ name: "Seattle", style: maplet.lightStyle({ url: tiles, buildings: "flat" }) }, ...BASEMAPS],
+        basemaps: [{ name: "Seattle", style: mapkern.lightStyle({ url: tiles, buildings: "flat" }) }, ...BASEMAPS],
         center: [-122.3375, 47.6105],
         zoom: 14.6,
         overlay(map) {
