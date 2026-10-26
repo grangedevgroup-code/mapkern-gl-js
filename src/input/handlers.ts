@@ -555,21 +555,24 @@ export class InputHandlers {
     if (mode.sub === "undecided") {
       const d0 = now.y0 - s.y0;
       const d1 = now.y1 - s.y1;
+      const across = Math.abs(now.x0 - s.x0) + Math.abs(now.x1 - s.x1);
       const scaleChange = Math.abs(Math.log(now.dist / s.dist));
-      const flat = Math.abs(Math.sin(s.angle)) < 0.5;
-      if (
+      const twist = Math.abs(angleDelta(now.angle, s.angle));
+      const moved = Math.hypot(now.midX - s.midX, now.midY - s.midY);
+      const tiltable =
         this.options.touchPitch &&
-        flat &&
-        Math.sign(d0) === Math.sign(d1) &&
-        Math.abs(d0) > 8 &&
-        Math.abs(d1) > 8 &&
-        scaleChange < 0.08
-      ) {
+        transform.maxPitch > transform.minPitch &&
+        Math.abs(Math.sin(s.angle)) < TILT_SIDE_BY_SIDE &&
+        d0 * d1 >= 0 &&
+        Math.abs(d0) + Math.abs(d1) >= 2 * across &&
+        scaleChange < 0.08 &&
+        twist < TILT_TWIST;
+      if (tiltable && Math.abs(d0) >= TILT_START && Math.abs(d1) >= TILT_START) {
         mode.sub = "pitch";
       } else if (
         scaleChange > 0.04 ||
-        Math.hypot(now.midX - s.midX, now.midY - s.midY) > 6 ||
-        Math.abs(angleDelta(now.angle, s.angle)) > 0.1
+        moved > (tiltable ? TILT_GIVE_UP : PINCH_MOVE) ||
+        (!tiltable && twist > PINCH_TWIST)
       ) {
         mode.sub = "pinch";
       } else {
