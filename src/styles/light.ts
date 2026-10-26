@@ -1,3 +1,4 @@
+import { deepClone } from "../core/clone.ts";
 import { MapletError } from "../core/errors.ts";
 import type { DemSourceSpec, Expression, LayerSpec, StyleSpec, TerrainSpec } from "../style/types.ts";
 
@@ -627,9 +628,7 @@ export function lightStyle(options: LightStyleOptions = {}): StyleSpec {
   let terrain: TerrainSpec | undefined;
   if (options.elevation !== undefined) {
     sources.dem =
-      typeof options.elevation === "string"
-        ? { type: "dem", url: options.elevation }
-        : structuredClone(options.elevation);
+      typeof options.elevation === "string" ? { type: "dem", url: options.elevation } : deepClone(options.elevation);
     layers.splice(
       layers.findIndex((l) => l.id === "water"),
       0,
