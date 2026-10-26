@@ -1,9 +1,22 @@
-import type { SearchData, SearchKind } from "./format.ts";
-import { decodeSearchData, NO_CATEGORY, NONE, SEARCH_KINDS, SearchIndexError } from "./format.ts";
+import type { RangeSource } from "../sources/pmtiles.ts";
+import { BlobRangeSource, HttpRangeSource } from "../sources/pmtiles.ts";
+import type { TermInfo } from "./file.ts";
+import { MemoryRangeSource, SearchFile } from "./file.ts";
+import type { EntryRecord, SearchKind } from "./format.ts";
+import {
+  CATEGORY_WORD,
+  CONTEXT_WORD,
+  ENTRY_BLOCK,
+  PREFIX_TOP,
+  SEARCH_KINDS,
+  SUMMARY_CHUNK,
+  unquantize,
+} from "./format.ts";
 import { expandPrefix, isNumber, tokenize, withinEdits } from "./text.ts";
 
 export interface SearchResult {
   id: number;
+  osm: string | null;
   kind: SearchKind;
   name: string;
   label: string;
@@ -37,28 +50,10 @@ export interface Geocoder {
 
 export type SearchIndexSource = string | URL | Blob | ArrayBuffer | Uint8Array;
 
-const SYNONYMS: Record<string, string[]> = {
-  cafe: ["coffee"],
-  fuel: ["gas", "petrol", "gas station"],
-  fast_food: ["burger", "takeout"],
-  supermarket: ["grocery", "groceries"],
-  pharmacy: ["drugstore", "chemist"],
-  atm: ["cash"],
-  bar: ["pub"],
-  pub: ["bar"],
-  toilets: ["restroom", "bathroom", "wc"],
-  hospital: ["er", "emergency"],
-  charging_station: ["ev", "charger", "charging"],
-  parking: ["car park"],
-  hotel: ["lodging"],
-  motel: ["lodging"],
-  library: ["books"],
-  doctors: ["doctor", "clinic"],
-  clinic: ["doctor"],
-  dentist: ["dental"],
-  bank: ["atm"],
-  post_office: ["post", "mail"],
-};
+export interface SearchIndexOptions {
+  cacheBytes?: number;
+  headers?: Record<string, string>;
+}
 
 const KIND_ZOOM: Record<SearchKind, number> = { place: 12, address: 18, street: 16, poi: 17 };
 const PLACE_ZOOM: Record<string, number> = {
@@ -67,6 +62,8 @@ const PLACE_ZOOM: Record<string, number> = {
   region: 7,
   province: 7,
   county: 9,
+  district: 10,
+  municipality: 11,
   city: 11,
   town: 13,
   village: 14,
@@ -77,9 +74,9 @@ const PLACE_ZOOM: Record<string, number> = {
   hamlet: 15,
   locality: 15,
   island: 12,
+  archipelago: 8,
   islet: 15,
 };
-
 const REVERSE_RADIUS: Record<SearchKind, number> = { address: 100, poi: 80, street: 300, place: 20000 };
 const REVERSE_ORDER: SearchKind[] = ["address", "poi", "street", "place"];
 const PLACE_REACH: Record<string, number> = {
@@ -93,20 +90,26 @@ const PLACE_REACH: Record<string, number> = {
   locality: 1500,
   neighbourhood: 1000,
 };
-const MAX_PREFIX_TERMS = 4000;
-const SHORT_PREFIX_TERMS = 300;
-const CELL = 0.01;
+const POSTING_LIMIT = 200_000;
+const CANDIDATE_LIMIT = 30_000;
+const PREFIX_BLOCKS = 4;
+const TYPO_BLOCKS = 16;
+const OSM_TYPES = ["node", "way", "relation"];
 
-interface TokenMatch {
-  terms: { term: number; quality: number }[];
-  postings: number;
-  contexts: Map<number, number>;
-  categories: Map<number, number>;
+interface Match {
+  ids: Uint32Array;
+  quality: number;
+  direct: boolean;
 }
 
-interface Scored {
-  entry: number;
+interface Candidate {
+  id: number;
   text: number;
+  missing: number;
+}
+
+interface Ranked {
+  id: number;
   score: number;
   distance: number | undefined;
 }
@@ -114,483 +117,348 @@ interface Scored {
 export class SearchIndex implements Geocoder {
   readonly bbox: [number, number, number, number];
   readonly size: number;
-  private readonly data: SearchData;
-  private readonly termText: string[];
-  private readonly contextVocab: Vocabulary;
-  private readonly categoryVocab: Vocabulary;
-  private readonly byContext: Groups;
-  private readonly byCategory: Groups;
-  private grid: Map<number, number[]> | null = null;
-  private readonly places: number[] = [];
+  private readonly file: SearchFile;
 
-  constructor(data: SearchData) {
-    this.data = data;
-    this.bbox = data.bbox;
-    this.size = data.kind.length;
-    this.termText = Array.from(data.terms, (id) => data.strings[id]!);
-    const contexts = new Map<number, string>();
-    for (const c of data.context) if (c !== NONE && !contexts.has(c)) contexts.set(c, data.strings[c]!);
-    this.contextVocab = new Vocabulary(contexts);
-    const categories = new Map<number, string>();
-    data.categories.forEach((c, i) => {
-      const value = c.slice(c.indexOf("=") + 1);
-      categories.set(i, [categoryLabel(c), ...(SYNONYMS[value] ?? [])].join(" "));
-    });
-    this.categoryVocab = new Vocabulary(categories);
-    this.byContext = new Groups(data.context, NONE);
-    this.byCategory = new Groups(data.category, NO_CATEGORY);
-    const place = SEARCH_KINDS.indexOf("place");
-    for (let e = 0; e < this.size; e++) if (data.kind[e] === place) this.places.push(e);
+  private constructor(file: SearchFile) {
+    this.file = file;
+    this.bbox = file.meta.bbox;
+    this.size = file.meta.entries;
   }
 
-  static fromBytes(bytes: ArrayBuffer | Uint8Array): SearchIndex {
-    return new SearchIndex(decodeSearchData(bytes));
+  static async load(source: SearchIndexSource, options: SearchIndexOptions = {}): Promise<SearchIndex> {
+    return new SearchIndex(await SearchFile.open(rangeSource(source, options), options.cacheBytes));
   }
 
-  static async load(source: SearchIndexSource, options: { signal?: AbortSignal } = {}): Promise<SearchIndex> {
-    let bytes: Uint8Array;
-    if (source instanceof Uint8Array) bytes = source;
-    else if (source instanceof ArrayBuffer) bytes = new Uint8Array(source);
-    else if (typeof Blob !== "undefined" && source instanceof Blob) bytes = new Uint8Array(await source.arrayBuffer());
-    else {
-      const response = await fetch(String(source), { signal: options.signal ?? null });
-      if (!response.ok) throw new SearchIndexError(`could not load the search index (HTTP ${response.status})`);
-      bytes = new Uint8Array(await response.arrayBuffer());
-    }
-    if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
-      const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"));
-      bytes = new Uint8Array(await new Response(stream).arrayBuffer());
-    }
-    return SearchIndex.fromBytes(bytes);
-  }
-
-  search(query: string, options: SearchOptions = {}): SearchResult[] {
+  async search(query: string, options: SearchOptions = {}): Promise<SearchResult[]> {
     const tokens = tokenize(query);
     if (tokens.length === 0) return [];
     const limit = Math.max(1, options.limit ?? 8);
     const prefixLast = (options.autocomplete ?? true) && !/\s$/.test(query);
-    const single = tokens.length === 1 && tokens[0]!.length === 1;
-    const matches = single ? [] : tokens.map((t, i) => this.match(t, prefixLast && i === tokens.length - 1));
+    const matches = await Promise.all(tokens.map((t, i) => this.match(t, prefixLast && i === tokens.length - 1)));
     const kinds = options.kinds ? new Set(options.kinds.map((k) => SEARCH_KINDS.indexOf(k))) : null;
-    const d = this.data;
-    const scored: Scored[] = [];
-    if (tokens.length === 1 && tokens[0]!.length === 1) {
-      if (!kinds || kinds.has(SEARCH_KINDS.indexOf("place"))) this.initial(tokens[0]!, options, scored);
-    } else {
-      for (const allowMissing of tokens.length >= 3 ? [0, 1] : [0]) {
-        this.collect(matches, allowMissing, kinds, options, scored);
-        if (scored.length > 0) break;
+    let candidates: Candidate[] = [];
+    for (const allowMissing of tokens.length >= 3 ? [0, 1] : [0]) {
+      candidates = this.combine(matches, allowMissing, options.near);
+      if (candidates.length > 0) break;
+    }
+    if (candidates.length === 0) return [];
+    const summaries = await this.file.summaries(candidates.map((c) => c.id));
+    const ranked: Ranked[] = [];
+    for (const c of candidates) {
+      const s = summary(summaries, c.id);
+      if (kinds && !kinds.has(s.kind)) continue;
+      if (options.bbox) {
+        const [w, south, e, n] = options.bbox;
+        if (s.lon < w - 0.01 || s.lon > e + 0.01 || s.lat < south - 0.01 || s.lat > n + 0.01) continue;
+      }
+      const distance = options.near ? metres(options.near[0], options.near[1], s.lon, s.lat) : undefined;
+      const near = distance === undefined ? 0.5 : 1 / (1 + distance / (5000 * spread(s.rank)));
+      const text = c.text / tokens.length;
+      ranked.push({ id: c.id, score: text * 0.6 + (s.rank / 255) * 0.2 + near * 0.2 - c.missing * 0.1, distance });
+    }
+    ranked.sort((a, b) => b.score - a.score);
+    const top = ranked.slice(0, Math.max(limit * 6, 30));
+    const records = await Promise.all(top.map((r) => this.file.entry(r.id)));
+    const scored: { r: Ranked; e: EntryRecord }[] = [];
+    top.forEach((r, i) => {
+      const e = records[i]!;
+      if (options.bbox) {
+        const [w, s, east, n] = options.bbox;
+        if (e.lon < w || e.lon > east || e.lat < s || e.lat > n) return;
+      }
+      const names = tokenize(e.name);
+      const cover = names.length ? Math.min(1, tokens.length / names.length) : 1;
+      const distance = options.near ? metres(options.near[0], options.near[1], e.lon, e.lat) : undefined;
+      scored.push({ r: { id: r.id, score: r.score + cover * 0.15, distance }, e });
+    });
+    scored.sort((a, b) => b.r.score - a.r.score);
+    const out: SearchResult[] = [];
+    for (const { r, e } of scored) {
+      const result = await this.result(r.id, e, r.score, r.distance);
+      if (
+        out.some(
+          (o) => o.kind === result.kind && o.name === result.name && o.context === result.context && close(o, result),
+        )
+      )
+        continue;
+      out.push(result);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
+  async reverse(position: [number, number], options: ReverseOptions = {}): Promise<SearchResult[]> {
+    const kinds = options.kinds ?? REVERSE_ORDER;
+    const single = kinds.length === 1;
+    const limit = options.limit ?? (single ? 5 : kinds.length);
+    const [lon, lat] = position;
+    const found = new Map<SearchKind, { id: number; e: EntryRecord; distance: number; order: number }[]>();
+    const keep = (kind: SearchKind, id: number, e: EntryRecord, distance: number, order: number) => {
+      const list = found.get(kind);
+      if (list) list.push({ id, e, distance, order });
+      else found.set(kind, [{ id, e, distance, order }]);
+    };
+    const local: readonly SearchKind[] = kinds.filter((k) => k !== "place");
+    if (local.length) {
+      const radius = Math.max(...local.map((k) => options.radius ?? REVERSE_RADIUS[k]));
+      const blocks = this.blocksNear(lon, lat, radius);
+      const loaded = await Promise.all(blocks.map((b) => this.file.entryBlock(b)));
+      blocks.forEach((b, n) => {
+        loaded[n]!.forEach((e, i) => {
+          const kind = SEARCH_KINDS[e.kind]!;
+          if (!local.includes(kind)) return;
+          const distance = distanceTo(e, lon, lat);
+          if (distance <= (options.radius ?? REVERSE_RADIUS[kind]))
+            keep(kind, b * ENTRY_BLOCK + i, e, distance, distance);
+        });
+      });
+    }
+    if (kinds.includes("place")) {
+      const radius = options.radius ?? REVERSE_RADIUS.place;
+      const ranges = this.rangesNear(lon, lat, radius);
+      const ids = new Set<number>();
+      for (const type of Object.keys(PLACE_REACH)) {
+        const info = await this.file.term(CATEGORY_WORD + type);
+        if (info) for (const id of await this.postingsIn(info, ranges)) ids.add(id);
+      }
+      const list = [...ids];
+      const summaries = await this.file.summaries(list);
+      const near = list.filter((id) => {
+        const s = summary(summaries, id);
+        return SEARCH_KINDS[s.kind] === "place" && metres(lon, lat, s.lon, s.lat) <= radius + 2000;
+      });
+      const records = await Promise.all(near.map((id) => this.file.entry(id)));
+      near.forEach((id, i) => {
+        const e = records[i]!;
+        const distance = metres(lon, lat, e.lon, e.lat);
+        const type = this.category(e);
+        const reach = type ? PLACE_REACH[type] : undefined;
+        if (distance <= radius && reach !== undefined) keep("place", id, e, distance, distance / reach);
+      });
+    }
+    const out: SearchResult[] = [];
+    for (const kind of REVERSE_ORDER) {
+      const list = found.get(kind);
+      if (!list) continue;
+      list.sort((a, b) => a.order - b.order || b.e.rank - a.e.rank);
+      for (const { id, e, distance } of list.slice(0, single ? limit : 1))
+        out.push(await this.result(id, e, 1, distance));
+    }
+    return out.slice(0, limit);
+  }
+
+  private async match(token: string, prefix: boolean): Promise<Match[]> {
+    const file = this.file;
+    const out: Match[] = [];
+    const seen = new Set<string>();
+    const add = async (info: TermInfo | null, quality: number, direct: boolean) => {
+      if (!info || seen.has(info.term)) return;
+      seen.add(info.term);
+      out.push({ ids: await file.postings(info, POSTING_LIMIT), quality, direct });
+    };
+    await add(await file.term(token), 1, true);
+    if (prefix) {
+      if (token.length <= 3) await add(await file.term(PREFIX_TOP + token), 0.9, true);
+      else {
+        const { infos } = await file.range(token, PREFIX_BLOCKS);
+        for (const info of infos) await add(info, 0.85 + 0.1 * (token.length / info.term.length), true);
+      }
+      for (const short of expandPrefix(token)) await add(await file.term(short), 0.9, true);
+    }
+    if (!out.some((m) => m.direct) && token.length >= 4 && !isNumber(token)) {
+      const limit = token.length >= 8 ? 2 : 1;
+      const { infos } = await file.range(token.slice(0, 2), TYPO_BLOCKS);
+      for (const info of infos) {
+        const t = info.term;
+        const edits = withinEdits(token, t, limit, prefix ? Math.min(t.length, token.length) : t.length);
+        if (edits > 0) await add(info, edits === 1 ? 0.75 : 0.6, true);
       }
     }
-    scored.sort((a, b) => b.score - a.score);
-    const top = scored.slice(0, Math.max(limit * 6, 30));
-    for (const s of top) {
-      const names = tokenize(this.text(d.name[s.entry]!));
-      const cover = names.length ? Math.min(1, tokens.length / names.length) : 1;
-      s.score += cover * 0.15;
+    await add(await file.term(CATEGORY_WORD + token), 0.8, true);
+    await add(await file.term(CONTEXT_WORD + token), 0.7, false);
+    if (prefix && token.length >= 3) {
+      for (const info of (await file.range(CONTEXT_WORD + token, 1)).infos) await add(info, 0.6, false);
+      for (const info of (await file.range(CATEGORY_WORD + token, 1)).infos) await add(info, 0.7, true);
     }
-    top.sort((a, b) => b.score - a.score);
+    return out;
+  }
+
+  private combine(matches: Match[][], allowMissing: number, near: [number, number] | undefined): Candidate[] {
+    const sizes = matches.map((list) => list.reduce((s, m) => s + m.ids.length, 0));
+    const order = sizes
+      .map((_, i) => i)
+      .filter((i) => sizes[i]! > 0)
+      .sort((a, b) => sizes[a]! - sizes[b]!);
+    if (order.length === 0 || order.length < matches.length - allowMissing) return [];
+    const pool = new Set<number>();
+    for (const i of order.slice(0, allowMissing + 1)) for (const m of matches[i]!) for (const id of m.ids) pool.add(id);
+    let ids = [...pool];
+    if (ids.length > CANDIDATE_LIMIT) ids = this.narrow(ids, near);
+    const out: Candidate[] = [];
+    for (const id of ids) {
+      let text = 0;
+      let missing = 0;
+      let named = false;
+      for (const list of matches) {
+        let best = 0;
+        let direct = false;
+        for (const m of list) {
+          if (m.quality <= best && (direct || !m.direct)) continue;
+          if (!sortedHas(m.ids, id)) continue;
+          if (m.quality > best) best = m.quality;
+          if (m.direct) direct = true;
+        }
+        if (best === 0 && ++missing > allowMissing) break;
+        if (direct) named = true;
+        text += best;
+      }
+      if (missing > allowMissing || !named) continue;
+      out.push({ id, text, missing });
+    }
+    return out;
+  }
+
+  private narrow(ids: number[], near: [number, number] | undefined): number[] {
+    if (!near) return ids.slice(0, CANDIDATE_LIMIT);
+    for (const radius of [5000, 25000, 100000, 400000]) {
+      const ranges = this.rangesNear(near[0], near[1], radius);
+      const kept = ids.filter((id) => inRanges(ranges, id));
+      if (kept.length >= 200 || radius === 400000) return kept.slice(0, CANDIDATE_LIMIT);
+    }
+    return ids.slice(0, CANDIDATE_LIMIT);
+  }
+
+  private blocksNear(lon: number, lat: number, radius: number): number[] {
+    const dy = radius / 111195;
+    const dx = dy / Math.max(0.05, Math.cos((lat * Math.PI) / 180));
+    const box = this.file.entryBox;
+    const out: number[] = [];
+    for (let b = 0; b < this.file.blocks; b++) {
+      if (
+        box[b * 4]! > lon + dx ||
+        box[b * 4 + 2]! < lon - dx ||
+        box[b * 4 + 1]! > lat + dy ||
+        box[b * 4 + 3]! < lat - dy
+      )
+        continue;
+      out.push(b);
+    }
+    return out;
+  }
+
+  private rangesNear(lon: number, lat: number, radius: number): [number, number][] {
+    const out: [number, number][] = [];
+    for (const b of this.blocksNear(lon, lat, radius)) {
+      const last = out[out.length - 1];
+      if (last && last[1] === b * ENTRY_BLOCK) last[1] = (b + 1) * ENTRY_BLOCK;
+      else out.push([b * ENTRY_BLOCK, (b + 1) * ENTRY_BLOCK]);
+    }
+    return out;
+  }
+
+  private async postingsIn(info: TermInfo, ranges: [number, number][]): Promise<number[]> {
+    const ids = info.inline ?? (await this.file.postings(info));
+    return Array.from(ids).filter((id) => inRanges(ranges, id));
+  }
+
+  private category(e: EntryRecord): string | null {
+    const raw = e.category > 0 ? this.file.meta.categories[e.category - 1] : undefined;
+    return raw ? raw.slice(raw.indexOf("=") + 1) : null;
+  }
+
+  private async result(id: number, e: EntryRecord, score: number, distance: number | undefined): Promise<SearchResult> {
+    const kind = SEARCH_KINDS[e.kind]!;
+    const context = await this.file.context(e.context);
+    const category = this.category(e);
+    const zoom = kind === "place" && category ? (PLACE_ZOOM[category] ?? KIND_ZOOM.place) : KIND_ZOOM[kind];
+    const r: SearchResult = {
+      id,
+      osm: e.osm > 0 ? `${OSM_TYPES[e.osm % 4] ?? "node"}/${Math.floor(e.osm / 4)}` : null,
+      kind,
+      name: e.name,
+      label: context ? `${e.name}, ${context}` : e.name,
+      context,
+      category,
+      center: [e.lon, e.lat],
+      zoom,
+      score: Math.round(score * 1000) / 1000,
+    };
+    if (e.number) r.address = { number: e.number, street: e.street };
+    if (distance !== undefined) r.distance = Math.round(distance);
+    return r;
+  }
+}
+
+export class SearchIndexSet implements Geocoder {
+  readonly indexes: SearchIndex[];
+
+  constructor(indexes: SearchIndex[]) {
+    this.indexes = indexes;
+  }
+
+  static async load(sources: readonly SearchIndexSource[], options: SearchIndexOptions = {}): Promise<SearchIndexSet> {
+    const results = await Promise.allSettled(sources.map((s) => SearchIndex.load(s, options)));
+    const loaded = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+    if (loaded.length === 0) {
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+      throw failed ? failed.reason : new Error("There is no search index to load");
+    }
+    return new SearchIndexSet(loaded);
+  }
+
+  async search(query: string, options: SearchOptions = {}): Promise<SearchResult[]> {
+    const limit = options.limit ?? 8;
+    const all = (await Promise.all(this.indexes.map((index) => index.search(query, options)))).flat();
+    all.sort((a, b) => b.score - a.score);
     const out: SearchResult[] = [];
-    const seen: SearchResult[] = [];
-    for (const s of top) {
-      const r = this.result(s.entry, s.score, s.distance);
-      if (seen.some((o) => o.kind === r.kind && o.name === r.name && o.context === r.context && close(o, r))) continue;
-      seen.push(r);
+    for (const r of all) {
+      if (r.osm && out.some((o) => o.osm === r.osm)) continue;
       out.push(r);
       if (out.length >= limit) break;
     }
     return out;
   }
 
-  private initial(letter: string, options: SearchOptions, scored: Scored[]): void {
-    const d = this.data;
-    for (const e of this.places) {
-      const words = tokenize(this.text(d.name[e]!));
-      const text = words[0] === letter ? 1 : words.some((w) => w.startsWith(letter)) ? 0.9 : 0;
-      if (text === 0) continue;
-      const lon = d.lon[e]! / 1e7;
-      const lat = d.lat[e]! / 1e7;
-      if (options.bbox) {
-        const [w, s, east, n] = options.bbox;
-        if (lon < w || lon > east || lat < s || lat > n) continue;
-      }
-      const distance = options.near ? metres(options.near[0], options.near[1], lon, lat) : undefined;
-      const near = distance === undefined ? 0.5 : 1 / (1 + distance / (5000 * this.spread(e)));
-      scored.push({ entry: e, text, score: text * 0.3 + (d.rank[e]! / 255) * 0.5 + near * 0.2, distance });
-    }
-  }
-
-  private collect(
-    matches: TokenMatch[],
-    allowMissing: number,
-    kinds: Set<number> | null,
-    options: SearchOptions,
-    scored: Scored[],
-  ): void {
-    const d = this.data;
-    const withContext = matches.length > 1;
-    const directSize = (m: TokenMatch) => {
-      let count = m.postings;
-      for (const c of m.categories.keys()) count += this.byCategory.count(c);
-      return count;
-    };
-    const sizes = matches.map((m) => {
-      let count = directSize(m);
-      if (withContext) for (const c of m.contexts.keys()) count += this.byContext.count(c);
-      return count;
-    });
-    const order = sizes
-      .map((_, i) => i)
-      .filter((i) => sizes[i]! > 0)
-      .sort((a, b) => sizes[a]! - sizes[b]!);
-    if (order.length === 0 || order.length < matches.length - allowMissing) return;
-    const anchors = order.slice(0, allowMissing + 1);
-    const anchored = anchors.reduce((sum, i) => sum + sizes[i]!, 0);
-    const directOnly = matches.reduce((sum, m) => sum + directSize(m), 0) < anchored;
-    const candidates = new Set<number>();
-    for (const m of directOnly ? matches : anchors.map((i) => matches[i]!)) {
-      for (const { term } of m.terms)
-        for (let p = d.termStart[term]!; p < d.termStart[term + 1]!; p++) candidates.add(d.postings[p]!);
-      for (const c of m.categories.keys()) this.byCategory.each(c, (e) => candidates.add(e));
-      if (withContext && !directOnly)
-        for (const c of m.contexts.keys()) this.byContext.each(c, (e) => candidates.add(e));
-    }
-    const done = new Set(scored.map((x) => x.entry));
-    for (const e of candidates) {
-      if (done.has(e)) continue;
-      if (kinds && !kinds.has(d.kind[e]!)) continue;
-      const lon = d.lon[e]! / 1e7;
-      const lat = d.lat[e]! / 1e7;
-      if (options.bbox) {
-        const [w, s, east, n] = options.bbox;
-        if (lon < w || lon > east || lat < s || lat > n) continue;
-      }
-      let total = 0;
-      let missing = 0;
-      let named = false;
-      for (const m of matches) {
-        const q = this.quality(m, e);
-        if (q.value === 0 && ++missing > allowMissing) break;
-        if (q.direct) named = true;
-        total += q.value;
-      }
-      if (missing > allowMissing || !named) continue;
-      const text = total / matches.length;
-      const distance = options.near ? metres(options.near[0], options.near[1], lon, lat) : undefined;
-      const near = distance === undefined ? 0.5 : 1 / (1 + distance / (5000 * this.spread(e)));
-      scored.push({
-        entry: e,
-        text,
-        score: text * 0.6 + (d.rank[e]! / 255) * 0.2 + near * 0.2 - missing * 0.1,
-        distance,
-      });
-    }
-  }
-
-  reverse(position: [number, number], options: ReverseOptions = {}): SearchResult[] {
-    const grid = this.spatial();
+  async reverse(position: [number, number], options: ReverseOptions = {}): Promise<SearchResult[]> {
+    const all = (await Promise.all(this.indexes.map((index) => index.reverse(position, options)))).flat();
     const kinds = options.kinds ?? REVERSE_ORDER;
     const single = kinds.length === 1;
     const limit = options.limit ?? (single ? 5 : kinds.length);
-    const [lon, lat] = position;
-    const d = this.data;
-    const best = new Map<SearchKind, { entry: number; distance: number; order: number }[]>();
-    const keep = (kind: SearchKind, entry: number, distance: number, order: number) => {
-      const found = best.get(kind);
-      if (found) found.push({ entry, distance, order });
-      else best.set(kind, [{ entry, distance, order }]);
-    };
-    const local: readonly SearchKind[] = kinds.filter((k) => k !== "place");
-    if (local.length) {
-      const maxRadius = Math.max(...local.map((k) => options.radius ?? REVERSE_RADIUS[k]));
-      const across = Math.max(0.2, Math.cos((lat * Math.PI) / 180));
-      const reachX = Math.min(40, Math.ceil(maxRadius / 111195 / across / CELL));
-      const reachY = Math.min(40, Math.ceil(maxRadius / 111195 / CELL));
-      const cx = Math.floor(lon / CELL);
-      const cy = Math.floor(lat / CELL);
-      const checked = new Set<number>();
-      for (let y = cy - reachY; y <= cy + reachY; y++) {
-        for (let x = cx - reachX; x <= cx + reachX; x++) {
-          const list = grid.get(cellKey(x, y));
-          if (!list) continue;
-          for (const e of list) {
-            if (checked.has(e)) continue;
-            checked.add(e);
-            const kind = SEARCH_KINDS[d.kind[e]!]!;
-            if (!local.includes(kind)) continue;
-            const distance = this.distanceTo(e, lon, lat);
-            if (distance <= (options.radius ?? REVERSE_RADIUS[kind])) keep(kind, e, distance, distance);
-          }
-        }
-      }
-    }
-    if (kinds.includes("place")) {
-      const radius = options.radius ?? REVERSE_RADIUS.place;
-      for (const e of this.places) {
-        const distance = metres(lon, lat, d.lon[e]! / 1e7, d.lat[e]! / 1e7);
-        if (distance > radius) continue;
-        const raw = d.category[e]! < d.categories.length ? d.categories[d.category[e]!]! : "";
-        const reach = PLACE_REACH[raw.slice(raw.indexOf("=") + 1)];
-        if (reach !== undefined) keep("place", e, distance, distance / reach);
-      }
-    }
     const out: SearchResult[] = [];
     for (const kind of REVERSE_ORDER) {
-      const list = best.get(kind);
-      if (!list) continue;
-      list.sort((a, b) => a.order - b.order || d.rank[b.entry]! - d.rank[a.entry]!);
-      for (const { entry, distance } of list.slice(0, single ? limit : 1)) out.push(this.result(entry, 1, distance));
+      const list = all.filter((r) => r.kind === kind).sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0));
+      const unique = list.filter((r, i) => !r.osm || list.findIndex((o) => o.osm === r.osm) === i);
+      out.push(...unique.slice(0, single ? limit : 1));
     }
     return out.slice(0, limit);
   }
-
-  private match(token: string, prefix: boolean): TokenMatch {
-    const terms: { term: number; quality: number }[] = [];
-    const seen = new Set<number>();
-    const add = (term: number, quality: number) => {
-      if (seen.has(term)) return;
-      seen.add(term);
-      terms.push({ term, quality });
-    };
-    const exact = this.find(token);
-    if (exact >= 0) add(exact, 1);
-    if (prefix) {
-      const [from, to] = this.prefixRange(token);
-      for (let t = from; t < Math.min(to, from + (token.length < 2 ? SHORT_PREFIX_TERMS : MAX_PREFIX_TERMS)); t++)
-        add(t, 0.85 + 0.1 * (token.length / this.termText[t]!.length));
-      for (const short of expandPrefix(token)) {
-        const t = this.find(short);
-        if (t >= 0) add(t, 0.9);
-      }
-    }
-    if (terms.length === 0 && token.length >= 4 && !isNumber(token)) {
-      const limit = token.length >= 8 ? 2 : 1;
-      for (let t = 0; t < this.termText.length; t++) {
-        const text = this.termText[t]!;
-        const edits = withinEdits(token, text, limit, prefix ? Math.min(text.length, token.length) : text.length);
-        if (edits > 0) add(t, edits === 1 ? 0.75 : 0.6);
-      }
-    }
-    let postings = 0;
-    for (const { term } of terms) postings += this.data.termStart[term + 1]! - this.data.termStart[term]!;
-    return {
-      terms,
-      postings,
-      contexts: this.contextVocab.match(token, prefix),
-      categories: this.categoryVocab.match(token, prefix),
-    };
-  }
-
-  private quality(m: TokenMatch, e: number): { value: number; direct: boolean } {
-    const d = this.data;
-    let best = 0;
-    for (const { term, quality } of m.terms) {
-      if (quality <= best) continue;
-      if (sortedHas(d.postings, d.termStart[term]!, d.termStart[term + 1]!, e)) best = quality;
-    }
-    const k = m.categories.get(d.category[e]!);
-    if (k !== undefined) best = Math.max(best, k * 0.8);
-    const direct = best > 0;
-    const c = m.contexts.get(d.context[e]!);
-    if (c !== undefined) best = Math.max(best, c * 0.7);
-    return { value: best, direct };
-  }
-
-  private find(token: string): number {
-    let lo = 0;
-    let hi = this.termText.length - 1;
-    while (lo <= hi) {
-      const mid = (lo + hi) >>> 1;
-      const v = this.termText[mid]!;
-      if (v === token) return mid;
-      if (v < token) lo = mid + 1;
-      else hi = mid - 1;
-    }
-    return -1;
-  }
-
-  private prefixRange(prefix: string): [number, number] {
-    const lower = (value: string) => {
-      let lo = 0;
-      let hi = this.termText.length;
-      while (lo < hi) {
-        const mid = (lo + hi) >>> 1;
-        if (this.termText[mid]! < value) lo = mid + 1;
-        else hi = mid;
-      }
-      return lo;
-    };
-    const from = lower(prefix);
-    let to = from;
-    while (to < this.termText.length && this.termText[to]!.startsWith(prefix) && to - from <= MAX_PREFIX_TERMS) to++;
-    return [from, to];
-  }
-
-  private spread(e: number): number {
-    const d = this.data;
-    if (SEARCH_KINDS[d.kind[e]!] !== "place") return 1 + Math.max(0, d.rank[e]! - 100) / 25;
-    const raw = d.category[e]! < d.categories.length ? d.categories[d.category[e]!]! : "";
-    const zoom = PLACE_ZOOM[raw.slice(raw.indexOf("=") + 1)] ?? KIND_ZOOM.place;
-    return 2 ** Math.max(0, 12 - zoom);
-  }
-
-  private text(id: number): string {
-    return id === NONE ? "" : this.data.strings[id]!;
-  }
-
-  private result(e: number, score: number, distance: number | undefined): SearchResult {
-    const d = this.data;
-    const kind = SEARCH_KINDS[d.kind[e]!]!;
-    const name = this.text(d.name[e]!);
-    const context = this.text(d.context[e]!);
-    const raw = d.category[e]! < d.categories.length ? d.categories[d.category[e]!]! : null;
-    const category = raw ? raw.slice(raw.indexOf("=") + 1) : null;
-    const zoom = kind === "place" && category ? (PLACE_ZOOM[category] ?? KIND_ZOOM.place) : KIND_ZOOM[kind];
-    const r: SearchResult = {
-      id: e,
-      kind,
-      name,
-      label: context ? `${name}, ${context}` : name,
-      context,
-      category,
-      center: [d.lon[e]! / 1e7, d.lat[e]! / 1e7],
-      zoom,
-      score: Math.round(score * 1000) / 1000,
-    };
-    if (d.number[e] !== NONE) r.address = { number: this.text(d.number[e]!), street: this.text(d.street[e]!) };
-    if (distance !== undefined) r.distance = Math.round(distance);
-    return r;
-  }
-
-  private spatial(): Map<number, number[]> {
-    if (this.grid) return this.grid;
-    const d = this.data;
-    const grid = new Map<number, number[]>();
-    const put = (key: number, e: number) => {
-      const list = grid.get(key);
-      if (list) {
-        if (list[list.length - 1] !== e) list.push(e);
-      } else grid.set(key, [e]);
-    };
-    const place = SEARCH_KINDS.indexOf("place");
-    for (let e = 0; e < this.size; e++) {
-      if (d.kind[e] === place) continue;
-      const from = d.shapes[e]!;
-      const to = d.shapes[e + 1]!;
-      if (from === to) {
-        put(cellKey(Math.floor(d.lon[e]! / 1e7 / CELL), Math.floor(d.lat[e]! / 1e7 / CELL)), e);
-        continue;
-      }
-      for (let p = from; p < to; p++) {
-        for (let v = d.parts[p]!; v < d.parts[p + 1]!; v++) {
-          put(cellKey(Math.floor(d.coords[v * 2]! / 1e7 / CELL), Math.floor(d.coords[v * 2 + 1]! / 1e7 / CELL)), e);
-        }
-      }
-    }
-    this.grid = grid;
-    return grid;
-  }
-
-  private distanceTo(e: number, lon: number, lat: number): number {
-    const d = this.data;
-    const from = d.shapes[e]!;
-    const to = d.shapes[e + 1]!;
-    if (from === to) return metres(lon, lat, d.lon[e]! / 1e7, d.lat[e]! / 1e7);
-    const k = Math.cos((lat * Math.PI) / 180);
-    let best = Number.POSITIVE_INFINITY;
-    for (let p = from; p < to; p++) {
-      const start = d.parts[p]!;
-      const end = d.parts[p + 1]!;
-      for (let v = start; v < end; v++) {
-        const ax = (d.coords[v * 2]! / 1e7 - lon) * k;
-        const ay = d.coords[v * 2 + 1]! / 1e7 - lat;
-        if (v + 1 >= end) {
-          best = Math.min(best, ax * ax + ay * ay);
-          continue;
-        }
-        const bx = (d.coords[v * 2 + 2]! / 1e7 - lon) * k;
-        const by = d.coords[v * 2 + 3]! / 1e7 - lat;
-        const dx = bx - ax;
-        const dy = by - ay;
-        const len = dx * dx + dy * dy;
-        const t = len > 0 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len)) : 0;
-        const x = ax + dx * t;
-        const y = ay + dy * t;
-        best = Math.min(best, x * x + y * y);
-      }
-    }
-    return Math.sqrt(best) * 111195;
-  }
 }
 
-class Vocabulary {
-  private readonly words = new Map<string, number[]>();
-
-  constructor(texts: Map<number, string>) {
-    for (const [id, text] of texts) {
-      for (const word of new Set(tokenize(text))) {
-        const list = this.words.get(word);
-        if (list) list.push(id);
-        else this.words.set(word, [id]);
-      }
-    }
-  }
-
-  match(token: string, prefix: boolean): Map<number, number> {
-    const out = new Map<number, number>();
-    const add = (ids: number[], quality: number) => {
-      for (const id of ids) if ((out.get(id) ?? 0) < quality) out.set(id, quality);
-    };
-    const exact = this.words.get(token);
-    if (exact) add(exact, 1);
-    const fuzzy = token.length >= 4 && !isNumber(token);
-    for (const [word, ids] of this.words) {
-      if (word === token) continue;
-      if (prefix && word.startsWith(token)) add(ids, 0.85);
-      else if (fuzzy && !exact) {
-        const edits = withinEdits(token, word, token.length >= 8 ? 2 : 1);
-        if (edits > 0) add(ids, edits === 1 ? 0.75 : 0.6);
-      }
-    }
-    return out;
-  }
+function rangeSource(source: SearchIndexSource, options: SearchIndexOptions): RangeSource {
+  if (source instanceof Uint8Array) return new MemoryRangeSource(source);
+  if (source instanceof ArrayBuffer) return new MemoryRangeSource(new Uint8Array(source));
+  if (typeof Blob !== "undefined" && source instanceof Blob) return new BlobRangeSource(source, "blob");
+  const base = typeof location === "undefined" ? undefined : location.href;
+  return new HttpRangeSource(new URL(String(source), base).href, options.headers ?? {});
 }
 
-class Groups {
-  private readonly start: Uint32Array;
-  private readonly entries: Uint32Array;
-
-  constructor(keys: Uint32Array | Uint16Array, none: number) {
-    let max = 0;
-    for (const k of keys) if (k !== none && k > max) max = k;
-    this.start = new Uint32Array(max + 2);
-    for (const k of keys) if (k !== none) this.start[k + 1]!++;
-    for (let i = 1; i < this.start.length; i++) this.start[i]! += this.start[i - 1]!;
-    const fill = this.start.slice(0, max + 1);
-    this.entries = new Uint32Array(this.start[max + 1]!);
-    for (let e = 0; e < keys.length; e++) {
-      const k = keys[e]!;
-      if (k !== none) this.entries[fill[k]!++] = e;
-    }
-  }
-
-  count(key: number): number {
-    return key + 1 < this.start.length ? this.start[key + 1]! - this.start[key]! : 0;
-  }
-
-  each(key: number, visit: (entry: number) => void): void {
-    if (key + 1 >= this.start.length) return;
-    for (let i = this.start[key]!; i < this.start[key + 1]!; i++) visit(this.entries[i]!);
-  }
+function summary(
+  chunks: Map<number, Uint8Array>,
+  id: number,
+): { kind: number; rank: number; lon: number; lat: number } {
+  const chunk = chunks.get(Math.floor(id / SUMMARY_CHUNK))!;
+  const o = (id % SUMMARY_CHUNK) * 6;
+  const [lon, lat] = unquantize(chunk[o + 2]! | (chunk[o + 3]! << 8), chunk[o + 4]! | (chunk[o + 5]! << 8));
+  return { kind: chunk[o]!, rank: chunk[o + 1]!, lon, lat };
 }
 
-function categoryLabel(category: string): string {
-  return category.slice(category.indexOf("=") + 1).replace(/_/g, " ");
+function spread(rank: number): number {
+  return 2 ** Math.max(0, (rank - 100) / 30);
 }
 
-function sortedHas(a: Uint32Array, from: number, to: number, value: number): boolean {
-  let lo = from;
-  let hi = to - 1;
+function sortedHas(a: Uint32Array, value: number): boolean {
+  let lo = 0;
+  let hi = a.length - 1;
   while (lo <= hi) {
     const mid = (lo + hi) >>> 1;
     const v = a[mid]!;
@@ -601,8 +469,43 @@ function sortedHas(a: Uint32Array, from: number, to: number, value: number): boo
   return false;
 }
 
-function cellKey(x: number, y: number): number {
-  return (x + 36000) * 20000 + (y + 9000);
+function inRanges(ranges: [number, number][], id: number): boolean {
+  let lo = 0;
+  let hi = ranges.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    const [a, b] = ranges[mid]!;
+    if (id < a) hi = mid - 1;
+    else if (id >= b) lo = mid + 1;
+    else return true;
+  }
+  return false;
+}
+
+function distanceTo(e: EntryRecord, lon: number, lat: number): number {
+  if (!e.shape) return metres(lon, lat, e.lon, e.lat);
+  const k = Math.cos((lat * Math.PI) / 180);
+  let best = Number.POSITIVE_INFINITY;
+  for (const part of e.shape) {
+    for (let v = 0; v < part.length; v += 2) {
+      const ax = (part[v]! - lon) * k;
+      const ay = part[v + 1]! - lat;
+      if (v + 2 >= part.length) {
+        best = Math.min(best, ax * ax + ay * ay);
+        continue;
+      }
+      const bx = (part[v + 2]! - lon) * k;
+      const by = part[v + 3]! - lat;
+      const dx = bx - ax;
+      const dy = by - ay;
+      const len = dx * dx + dy * dy;
+      const t = len > 0 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len)) : 0;
+      const x = ax + dx * t;
+      const y = ay + dy * t;
+      best = Math.min(best, x * x + y * y);
+    }
+  }
+  return Math.sqrt(best) * 111195;
 }
 
 function metres(lon1: number, lat1: number, lon2: number, lat2: number): number {
