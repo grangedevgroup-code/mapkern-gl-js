@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="maplet-viewer">
+<html lang="en" class="mapkern-viewer">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -10,14 +10,14 @@
   <body>
     <div id="map"></div>
     <script type="module">
-      import { BASEMAPS, createViewer, element, maplet } from "../viewer.js";
+      import { BASEMAPS, createViewer, element, mapkern } from "../viewer.js";
 
       const params = new URLSearchParams(location.search);
       const tiles = params.get("tiles") ?? "../../data/seattle.pmtiles";
       const buildings = ["building-3d", "building-3d-tall"];
 
       const { map, panel } = createViewer({
-        basemaps: [{ name: "Seattle", style: maplet.lightStyle({ url: tiles }) }, ...BASEMAPS],
+        basemaps: [{ name: "Seattle", style: mapkern.lightStyle({ url: tiles }) }, ...BASEMAPS],
         center: [-122.3405, 47.6085],
         zoom: 15.5,
         pitch: 45,
@@ -76,12 +76,12 @@
         if (feature.properties.class) {
           content.append(element("div", { textContent: feature.properties.subclass ?? feature.properties.class }));
         }
-        new maplet.Popup().setLngLat(event.lngLat).setDOMContent(content).addTo(map);
+        new mapkern.Popup().setLngLat(event.lngLat).setDOMContent(content).addTo(map);
       });
 
       const where = (lngLat) => `${lngLat[1].toFixed(5)}, ${lngLat[0].toFixed(5)}`;
-      const pinPopup = new maplet.Popup({ offset: 4 }).setText("Drag me");
-      const pin = new maplet.Marker({ color: "#d9473f", draggable: true })
+      const pinPopup = new mapkern.Popup({ offset: 4 }).setText("Drag me");
+      const pin = new mapkern.Marker({ color: "#d9473f", draggable: true })
         .setLngLat([-122.3421, 47.6097])
         .setPopup(pinPopup)
         .addTo(map);
