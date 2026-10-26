@@ -369,17 +369,23 @@ map.addControl(new HomeButton(), "top-left");
 
 ## Search
 
-Mapkern finds places, addresses, streets and businesses in a search index you build yourself from OpenStreetMap data (see [Tiles](tiles.md#search-index)), so there is no search service to pay for and it works offline. Load the file, then ask it questions:
+Mapkern finds places, addresses, streets and businesses in a search index you build yourself from OpenStreetMap data (see [Tiles](tiles.md#search-index)), so there is no search service to pay for and it works offline. Open the file, then ask it questions:
 
 ```js
 const index = await mapkern.SearchIndex.load("olympia.search");
 
-index.search("1065 washington st se", { near: map.getCenter() });
-index.search("coffee lacey");
-index.reverse([-122.9007, 47.0379]);
+await index.search("1065 washington st se", { near: map.getCenter() });
+await index.search("coffee lacey");
+await index.reverse([-122.9007, 47.0379]);
 ```
 
-`search(text, options)` returns the best matches first. Each result has a `name`, a `context` such as "Olympia, Washington 98501, United States", the two joined as `label`, a `kind` (`place`, `address`, `street` or `poi`), a `category` such as `cafe` or `city`, a `center`, and a `zoom` that suits it. Addresses also carry `address.number` and `address.street`. It copes with partial words while someone is still typing, small typos ("olimpia"), common short forms ("st", "ave", "nw"), names in other languages, and category words, so "coffee" finds cafés and "gas" finds fuel stations. The options are `near` (a `[lng, lat]` that nearer places win from), `bbox`, `kinds`, `limit` (8) and `autocomplete: false` to match only whole words.
+Opening a file reads only its small directory; each search then reads the few pieces it needs, so a large file costs little memory and works from a web server (it needs range requests, as PMTiles does), a `File` the person picks, or bytes you already have. A worldwide file of towns and countries and a detailed file for your own area can be searched together, best matches first and each place once:
+
+```js
+const search = await mapkern.SearchIndexSet.load(["world.search", "olympia.search"]);
+```
+
+`search(text, options)` returns a promise of the best matches first. Each result has a `name`, a `context` such as "Olympia, Washington 98501, United States", the two joined as `label`, a `kind` (`place`, `address`, `street` or `poi`), a `category` such as `cafe` or `city`, a `center`, and a `zoom` that suits it. Addresses also carry `address.number` and `address.street`, and `osm` names the OpenStreetMap object, such as `node/282297046`. It copes with partial words while someone is still typing, small typos ("olimpia"), common short forms ("st", "ave", "nw"), names in other languages, and category words, so "coffee" finds cafés and "gas" finds fuel stations. The options are `near` (a `[lng, lat]` that nearer places win from), `bbox`, `kinds`, `limit` (8) and `autocomplete: false` to match only whole words.
 
 `reverse([lng, lat])` tells you what is at a spot: the nearest address, business, street and town, in that order, each with its `distance` in meters. Pass `kinds` to ask for one kind only, and `radius` to change how far it looks.
 
