@@ -237,7 +237,8 @@ export function nmeaToGeoJSON(text: string): FeatureCollection {
       const lat = nmeaAngle(f[0]!, f[1]!, 2);
       const lon = nmeaAngle(f[2]!, f[3]!, 3);
       if (lat === null || lon === null || !f[4]) continue;
-      upsert(f[4], lon, lat);
+      const fix = upsert(f[4], lon, lat);
+      if (date && !fix.date) fix.date = date;
     }
   }
   const points: Position[] = [];
