@@ -451,11 +451,11 @@ map.addLayer({
   id: "units",
   type: "symbol",
   source: "units",
-  layout: { icon: ["concat", "sidc:", ["get", "sidc"]], iconAllowOverlap: true, text: ["get", "callsign"], offset: [0, 2.2] },
+  layout: { icon: ["concat", "sidc:", ["get", "sidc"]], iconAllowOverlap: true, optional: true, text: ["get", "callsign"], offset: [0, 1.1] },
 });
 ```
 
-It reads the 15-letter codes of 2525B and C and the 20-digit codes of 2525D and E. Each symbol gets the frame and fill of its affiliation (friend, hostile, neutral, unknown, and the dashed pending, assumed friend and suspect frames) and of its dimension (ground, equipment, installation, air, space, sea surface and subsurface), with a dashed frame for planned units, the echelon above it, headquarters, task force and dummy markers, and the icon for common units such as infantry, armor, mechanized infantry, reconnaissance, artillery, air defense, engineers, signal, medical, supply, transport, maintenance and aviation. A code it has no icon for still gets its frame and markers. `drawSymbol(code, { size, label })` returns the same symbol as SVG markup, and a `draw()` function for your own canvas, for HTML markers and legends; `parseSidc(code)` tells you what a code means.
+It reads the 15-letter codes of 2525B and C and the 20-digit codes of 2525D and E. Each symbol gets the frame and fill of its affiliation (friend, hostile, neutral, unknown, and the dashed pending, assumed friend and suspect frames) and of its dimension (ground, equipment, installation, air, space, sea surface and subsurface), with a dashed frame for planned units, the echelon above it, headquarters, task force and dummy markers, and the icon for common units such as infantry, armor, mechanized infantry, reconnaissance, artillery, air defense, engineers, signal, medical, supply, transport, maintenance and aviation. A code it has no icon for still gets its frame and markers. A friendly ground unit's frame is 16 pixels tall, about what TAK clients show; `militarySymbols(map, { size: 32 })` draws them bigger, and `iconSize` in the layer scales them per feature. `drawSymbol(code, { size, label })` returns the same symbol as SVG markup, and a `draw()` function for your own canvas, for HTML markers and legends; `parseSidc(code)` tells you what a code means.
 
 Cursor on Target events load in a GeoJSON source like any other file. `geoJSONToCot(features)` writes features back out as CoT events for a TAK server or client, and `cotTypeToSidc()` and `sidcToCotType()` convert between CoT types such as `a-f-G-U-C-I` and symbol codes.
 
