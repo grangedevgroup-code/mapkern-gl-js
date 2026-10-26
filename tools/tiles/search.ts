@@ -646,7 +646,7 @@ export function stitch(chains: Float64Array[]): Ring[] {
       if (best < 0) break;
       const next = left.splice(best, 1)[0]!;
       if (flip) for (let k = next.length - 2; k >= 0; k -= 2) ring.push(next[k]!, next[k + 1]!);
-      else ring.push(...next);
+      else for (let k = 0; k < next.length; k++) ring.push(next[k]!);
     }
     ring.push(ring[0]!, ring[1]!);
     if (ring.length >= 8) rings.push(Float64Array.from(ring));
