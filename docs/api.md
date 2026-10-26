@@ -44,13 +44,14 @@ const map = new maplet.Map({
 | `tileCacheSize` | 192 | Memory for tiles, in MB |
 | `maxParallelRequests` | 24 | |
 | `requestTimeout` | 30000 | In ms. A timed-out request is retried |
-| `prefetch` | `true` | Load tiles ahead of camera animations |
+| `prefetch` | `true` | Load tiles ahead of camera animations and a ring just outside the view, so a pan shows them at once. They load after everything on screen and never cause a redraw of their own |
 | `transformRequest` | | `(url, kind) => ({ url, headers, credentials })`, for adding API keys or headers |
 | `attributionControl` | `true` | `false` hides it; `{ custom: "..." }` adds your own credit |
+| `logoControl` | `true` | The faint Maplet logo in the bottom-left corner. `false` leaves it out, and `.maplet-logo` styles it |
 | `workerCount` | cores minus one, up to 4 | |
 | `workerUrl` | | URL of `dist/maplet-worker.js`, for sites whose Content Security Policy blocks `blob:` workers |
 | `reducedMotion` | the system setting | `true` turns camera animations into jumps |
-| `locale` | | Your own labels for controls, hints and screen readers: `{ zoomIn, zoomOut, resetNorth, map, marker, popup, closePopup, fullscreen, exitFullscreen, geolocate, locationUnavailable, yourLocation, scrollZoomBlocker, scrollZoomBlockerMac, touchPanBlocker }` |
+| `locale` | | Your own labels for controls, hints and screen readers: `{ zoomIn, zoomOut, resetNorth, map, marker, popup, closePopup, fullscreen, exitFullscreen, geolocate, locationUnavailable, yourLocation, scrollZoomBlocker, scrollZoomBlockerMac, touchPanBlocker, basemaps, flatView, terrainView, tiltedView }` |
 
 When you're done with a map, call `map.remove()`. It stops drawing and frees the workers and GPU memory.
 
@@ -86,7 +87,7 @@ The limits have getters and setters of their own: `getMinZoom()`, `setMinZoom()`
 
 `project(lngLat)` gives the screen position of a place in CSS pixels, and `unproject([x, y])` does the opposite. It returns `null` for points above the horizon on a tilted map. `screenPosition(lngLat)` is `project` with two extras for your own overlays: `visible` says whether the place is in front of the camera and close enough to be drawn, and `occluded` whether a hill is in the way.
 
-People can drag to pan, scroll or pinch to zoom, and double-click to zoom in. Dragging with Shift held draws a box to zoom into, and Escape cancels it. Dragging with the right mouse button, or with Ctrl held, rotates and tilts. On touch screens, twisting two fingers rotates and sliding two fingers up or down tilts. With keyboard focus, the arrow keys pan, Shift with the arrows rotates and tilts, and `+` and `-` zoom.
+People can drag to pan, scroll or pinch to zoom, and double-click to zoom in. Dragging with Shift held draws a box to zoom into, and Escape cancels it. Dragging with the right mouse button, or with Ctrl held, rotates and tilts. On touch screens, a pinch zooms without turning the map; it takes a deliberate twist of two fingers to rotate, and sliding two fingers up or down tilts. A two-finger tap zooms out, and a double tap that keeps the finger down zooms in and out as the finger slides. A pen works like a mouse, with its barrel button for rotating. With keyboard focus, the arrow keys pan, Shift with the arrows rotates and tilts, and `+` and `-` zoom.
 
 Each of these can be switched off and on again while the map runs, for example while someone draws on the map:
 
@@ -265,7 +266,7 @@ map.setTerrain({ source: "dem", exaggeration: 1.5 });
 map.setTerrain(null);
 ```
 
-`setTerrain` turns 3D terrain on with an elevation source from the style, or off again with `null`. `getTerrain()` returns the current setting. While terrain is on, `project`, `unproject`, pointer events and `queryRenderedFeatures` all work on the raised ground, so `event.lngLat` is the spot on the hillside under the pointer. [The style guide](style.md#terrain) explains what changes on screen.
+`setTerrain` turns 3D terrain on with an elevation source from the style, or off again with `null`. `getTerrain()` returns the current setting. `relief`, from 0 to 1, shades the slopes from the top left of the screen, so the shape of the land shows even when you look straight down; 0, the default, leaves the colors as they are. The camera always stays above the ground: zooming in close to a slope stops just above it instead of going through. While terrain is on, `project`, `unproject`, pointer events and `queryRenderedFeatures` all work on the raised ground, so `event.lngLat` is the spot on the hillside under the pointer. [The style guide](style.md#terrain) explains what changes on screen.
 
 ## Sky
 
@@ -301,7 +302,38 @@ map.addControl(new maplet.NavigationControl());
 map.addControl(new maplet.ScaleControl({ unit: "imperial" }), "bottom-left");
 ```
 
-`NavigationControl` has zoom buttons and a compass that turns the map back north and flat. Pass `showZoom: false` or `showCompass: false` to leave one out. `ScaleControl` takes `unit` (`"metric"` or `"imperial"`) and `maxWidth` in pixels. The attribution control is added for you.
+`NavigationControl` has zoom buttons and a compass that turns the map back north and flat. Pass `showZoom: false` or `showCompass: false` to leave one out. `ScaleControl` draws one scale line labelled in both units, such as "200 km · 124 mi"; `unit: "metric"` or `unit: "imperial"` keeps one, and `maxWidth` sets the longest it gets, in pixels.
+
+Each corner fills from its edge inward: the first control added to a corner sits closest to the edge and later ones line up next to it. The attribution control and the logo are added for you, so they stay at the very bottom of their corners with other controls above them.
+
+Controls sit 10 pixels in from the edges of the map. On touch screens the buttons grow to 44 pixels so they're easy to hit, and the margin to 16. Set `--maplet-control-margin` in your CSS to choose your own, for example `.maplet-map { --maplet-control-margin: max(20px, env(safe-area-inset-bottom)); }` for a full-screen map on a phone with rounded corners.
+
+`BasemapControl` is a button that opens a menu of basemaps and swaps the style when one is picked, keeping the camera where it is:
+
+```js
+const basemaps = new maplet.BasemapControl({
+  basemaps: [
+    { name: "Map", style: "https://tiles.openfreemap.org/styles/liberty" },
+    { name: "Satellite", style: mySatelliteStyle },
+  ],
+});
+map.addControl(basemaps);
+basemaps.on("change", ({ index, basemap }) => console.log(index, basemap.name));
+```
+
+`selected` says which one the map starts with, `select(index)` picks one from code and `selected` reads it back. It sits in the bottom-right corner unless you say otherwise.
+
+`TerrainControl` is a single button that steps through a flat map ("2D"), 3D terrain seen from straight above ("3D") and tilted 3D terrain (a tilted "3D"):
+
+```js
+const terrain = new maplet.TerrainControl({
+  source: { type: "dem", url: "https://example.com/elevation.json", encoding: "terrarium" },
+});
+map.addControl(terrain);
+terrain.on("viewchange", ({ view }) => console.log(view));
+```
+
+`source` is an elevation source to add, or the id of one already in the style. `exaggeration`, `relief` (0.5 unless you say otherwise) and `pitch` (60) tune the 3D views. `setView("flat" | "terrain" | "tilted")` switches from code and `view` reads it back, also after someone tilts the map by hand. Terrain stays on when the style changes, for example from a `BasemapControl`.
 
 `FullscreenControl` fills the screen with the map, or with the element you pass as `container`. Browsers without the Fullscreen API, such as Safari on iPhone, get the same effect by stretching the map over the page. It fires `fullscreenstart` and `fullscreenend`, and `isFullscreen()` tells you which state it's in.
 
