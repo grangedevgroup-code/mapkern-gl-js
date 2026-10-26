@@ -42,6 +42,7 @@ const map = new maplet.Map({
 | `preserveDrawingBuffer` | `false` | Keep the last frame around, for example for `canvas.toDataURL()` |
 | `fadeDuration` | 200 | Fade-in for new raster tiles, in ms |
 | `tileCacheSize` | 192 | Memory for tiles, in MB |
+| `diskCache` | `true` | Keeps downloaded tiles, styles, fonts and icons on disk, up to 100 MB, so the map still works when the network or a server is down. `{ size: 500 }` sets the size in MB and `false` turns it off. See [Offline](#offline) |
 | `maxParallelRequests` | 24 | |
 | `requestTimeout` | 30000 | In ms. A timed-out request is retried |
 | `prefetch` | `true` | Load tiles ahead of camera animations and a ring just outside the view, so a pan shows them at once. They load after everything on screen and never cause a redraw of their own |
@@ -439,6 +440,14 @@ map.addSource("offline", { type: "vector", tiles: ["local://roads/{z}/{x}/{y}"] 
 ```
 
 Return an `ArrayBuffer` or `Uint8Array`, or `null` when there's no tile. `maplet.removeProtocol("local")` undoes it. `pmtiles://` is built in.
+
+## Offline
+
+Maplet keeps what it downloads in the browser's storage: tiles, styles, TileJSON, fonts and icons. While a saved copy is fresh, as the server's own `Cache-Control` says, it is used without asking the server, which also saves data. When the device is offline, a request fails, or a server answers with an error, the saved copy is used however old it is, and for the next 30 seconds that server is skipped so tiles don't each wait for it to time out. Places you have looked at before keep working, and a style loads even with no connection.
+
+Answers marked `no-store`, local addresses such as `localhost` and files the person picks from their computer are never stored. The oldest tiles go first once the cache is full. `maplet.clearDiskCache()` empties it, for example when someone signs out.
+
+For a map that must work with no connection at all, ship the area as a PMTiles or MBTiles file and load it from the device; see [Tile files from the user's computer](#tile-files-from-the-users-computer).
 
 ## Diagnostics
 
