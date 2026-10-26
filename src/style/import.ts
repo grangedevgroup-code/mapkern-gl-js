@@ -1,3 +1,4 @@
+import { deepClone } from "../core/clone.ts";
 import { MapletError } from "../core/errors.ts";
 import { fontFromNames } from "../text/glyphs.ts";
 import { compile, isOperator } from "./expression.ts";
@@ -264,7 +265,7 @@ export function importStyle(input: unknown, base?: string): ImportedStyle {
   const skipped = new Skipped();
   const style: Json = { version: 1 };
   for (const key of ["name", "center", "zoom", "bearing", "pitch", "metadata", "transition"]) {
-    if (input[key] !== undefined) style[key] = structuredClone(input[key]);
+    if (input[key] !== undefined) style[key] = deepClone(input[key]);
   }
   const glyphs = typeof input.glyphs === "string" && !input.glyphs.startsWith("mapbox://") ? input.glyphs : null;
   if (glyphs) style.glyphs = absolute(glyphs, base);
@@ -397,7 +398,7 @@ function convertSource(id: string, raw: unknown, base: string | undefined, skipp
         "clusterMinPoints",
         "clusterProperties",
       ]) {
-        if (raw[key] !== undefined) out[key] = structuredClone(raw[key]);
+        if (raw[key] !== undefined) out[key] = deepClone(raw[key]);
       }
       if (raw.lineMetrics === true) skipped.add(`source "${id}": lineMetrics isn't supported yet`);
       if (raw.filter !== undefined)
@@ -487,7 +488,7 @@ function convertLayer(
     if (key.endsWith("-transition")) {
       const target = table[key.slice(0, -"-transition".length)];
       if (target?.group === "paint" && transitionOf(type, `${target.name}Transition`)) {
-        paintOut[`${target.name}Transition`] = structuredClone(value);
+        paintOut[`${target.name}Transition`] = deepClone(value);
         origin.set(`paint.${target.name}Transition`, key);
       }
       continue;
@@ -581,7 +582,7 @@ function convertLayer(
   }
   if (type === "raster") paintOut.fadeDuration ??= 300;
   if (type === "circle") paintOut.pitchScale ??= "map";
-  if (type === "heatmap") paintOut.color ??= structuredClone(V8_HEAT);
+  if (type === "heatmap") paintOut.color ??= deepClone(V8_HEAT);
   if (Object.keys(paintOut).length > 0) out.paint = paintOut;
   if (Object.keys(layoutOut).length > 0) out.layout = layoutOut;
   return { layer: out, origin };
