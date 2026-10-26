@@ -100,11 +100,7 @@ test("KML written from features reads back with names, descriptions and data", (
   const back = kmlToGeoJSON(geoJSONToKml(fc, { name: "Test & co" }));
   assert.equal(back.features.length, shapes.length);
   back.features.forEach((f, i) => {
-    assert.deepEqual(
-      f.geometry,
-      i === 5 ? { type: "GeometryCollection", geometries: [] } && f.geometry : shapes[i],
-      `${i}`,
-    );
+    assert.deepEqual(f.geometry, shapes[i], `${i}`);
     assert.equal(f.properties?.name, fc.features[i]!.properties!.name);
   });
   const kml = geoJSONToKml({ type: "Feature", properties: { name: "bell\u0007" }, geometry: shapes[0]! });
