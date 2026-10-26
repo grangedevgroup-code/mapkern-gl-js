@@ -29,7 +29,7 @@ const GEOMETRIES = new Set([
   "Envelope",
   "Box",
 ]);
-const MEMBERS = new Set(["featureMember", "featureMembers", "member", "featureMembers"]);
+const MEMBERS = new Set(["featureMember", "featureMembers", "member"]);
 const GEOGRAPHIC = new Set([4326, 4258, 4269, 4267, 4283, 4617, 4674, 4979, 4937, 4171]);
 const NUMBER = /^-?(0|[1-9]\d*)(\.\d+)?([eE][-+]?\d+)?$/;
 
@@ -271,33 +271,32 @@ function featureOf(e: XmlElement, crs: Crs, dim: number): Feature {
 }
 
 export function gmlToGeoJSON(text: string): FeatureCollection {
-  const doc = parseXml(text);
-  const root = doc.children[0];
+  const root = parseXml(text).children[0];
   if (!root) throw new GmlError("The GML file is empty");
-  const rootCrs = crsOf(child(child(root, "boundedBy"), "Envelope")?.attrs.srsName ?? root.attrs.srsName, PLAIN);
-  const dim = dimension(root, 2);
   const features: Feature[] = [];
   if (GEOMETRIES.has(root.name)) {
-    const g = geometry(root, rootCrs, dim);
-    return { type: "FeatureCollection", features: g ? [{ type: "Feature", properties: {}, geometry: g }] : [] };
-  }
-  const memberElements = root.children.filter((c) => MEMBERS.has(c.name));
-  const items = memberElements.length > 0 ? memberElements.flatMap((m) => m.children) : root.children;
-  for (const item of items) {
-    if (item.name === "boundedBy" || item.name === "additionalObjects") continue;
-    if (item.name === "FeatureCollection" || item.name === "SimpleFeatureCollection") {
-      features.push(...gmlToGeoJSON(`<x>${serialize(item)}</x>`).features);
-      continue;
-    }
-    features.push(featureOf(item, rootCrs, dim));
+    const g = geometry(root, PLAIN, 2);
+    if (g) features.push({ type: "Feature", properties: {}, geometry: g });
+  } else {
+    collect(root, PLAIN, 2, features);
   }
   return { type: "FeatureCollection", features };
 }
 
-function serialize(e: XmlElement): string {
-  const attrs = Object.entries(e.attrs)
-    .map(([k, v]) => ` ${k}="${v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")}"`)
-    .join("");
-  const text = e.text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  return `<${e.name}${attrs}>${text}${e.children.map(serialize).join("")}</${e.name}>`;
+function collect(collection: XmlElement, parent: Crs, dim: number, out: Feature[]): void {
+  const crs = crsOf(
+    child(child(collection, "boundedBy"), "Envelope")?.attrs.srsName ?? collection.attrs.srsName,
+    parent,
+  );
+  const d = dimension(collection, dim);
+  const memberElements = collection.children.filter((c) => MEMBERS.has(c.name));
+  const items = memberElements.length > 0 ? memberElements.flatMap((m) => m.children) : collection.children;
+  for (const item of items) {
+    if (item.name === "boundedBy" || item.name === "additionalObjects") continue;
+    if (/FeatureCollection$/.test(item.name) || item.children.some((c) => MEMBERS.has(c.name))) {
+      collect(item, crs, d, out);
+      continue;
+    }
+    out.push(featureOf(item, crs, d));
+  }
 }
