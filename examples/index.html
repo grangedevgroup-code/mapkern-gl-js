@@ -40,6 +40,10 @@
   <body>
     <img src="../assets/maplet-logo-black.svg" alt="Maplet" />
     <h1>Examples</h1>
+    <p>
+      Every example runs in the same viewer as the Android demo app: zoom, compass, the 2D/3D button and the basemap
+      button in the bottom-right corner, with the scale beside them. The viewer is <code>examples/viewer.js</code>.
+    </p>
     <ul>
       <li><a href="geojson/">Live GeoJSON</a>: points, lines and shapes that update several times a second.</li>
       <li>
@@ -62,12 +66,13 @@
       </li>
       <li>
         <a href="military/">Military symbols</a>: units from a Cursor on Target file drawn as MIL-STD-2525 symbols, with
-        the MGRS grid of the map's center. Open your own CoT, KML, KMZ, GPX or CSV file with the button.
+        the MGRS grid of the map's center. Open your own CoT, KML, KMZ, GPX, CSV, GeoJSON or Shapefile with the
+        button.
       </li>
       <li>
-        <a href="terrain/">Terrain</a>: hills shaded and raised in 3D from an elevation <code>.pmtiles</code> or
-        <code>.mbtiles</code> file. Open one with the button, or put it at <code>data/terrain.pmtiles</code>. Add
-        <code>?tiles=</code> with your street map file to see it on the hills.
+        <a href="terrain/">Terrain</a>: Mount Rainier in 3D from Mapterhorn's elevation tiles. Open your own
+        elevation <code>.pmtiles</code> or <code>.mbtiles</code> file with the button, or add <code>?elevation=</code>
+        and its path. Add <code>?tiles=</code> with your street map file to see it on the hills.
       </li>
     </ul>
   </body>
