@@ -11,6 +11,7 @@ import { kmlToGeoJSON } from "./kml.ts";
 import { isOsmPbf, isOsmXml, osmPbfToGeoJSON, osmXmlToGeoJSON } from "./osm.ts";
 import { shapefileToGeoJSON } from "./shapefile.ts";
 import { isTopology, topologyToGeoJSON } from "./topojson.ts";
+import { igcToGeoJSON, isIgc, isNmea, isTcx, nmeaToGeoJSON, tcxToGeoJSON } from "./tracks.ts";
 import { parseWkt } from "./wkt.ts";
 import type { ZipEntry } from "./zip.ts";
 import { isZip, readZipEntry, zipEntries } from "./zip.ts";
@@ -42,6 +43,12 @@ export async function bytesToGeoJSON(bytes: Uint8Array, name = "", format?: Feat
       return cotToGeoJSON(text.decode(bytes));
     case "gml":
       return gmlToGeoJSON(text.decode(bytes));
+    case "tcx":
+      return tcxToGeoJSON(text.decode(bytes));
+    case "igc":
+      return igcToGeoJSON(text.decode(bytes));
+    case "nmea":
+      return nmeaToGeoJSON(text.decode(bytes));
     case "osm":
       return isOsmPbf(bytes) ? osmPbfToGeoJSON(bytes) : osmXmlToGeoJSON(text.decode(bytes));
     case "csv":
@@ -70,11 +77,14 @@ function detect(bytes: Uint8Array, name: string): FeatureFormat {
   if (head.startsWith("<")) {
     if (/<gpx[\s>]/i.test(head) || ext === "gpx") return "gpx";
     if (ext === "cot" || isCot(head)) return "cot";
+    if (ext === "tcx" || isTcx(head)) return "tcx";
     if (ext === "osm" || isOsmXml(head)) return "osm";
     if (ext === "gml" || isGml(head)) return "gml";
     return "kml";
   }
   if (head.startsWith("{") || head.startsWith("[")) return "geojson";
+  if (ext === "igc" || isIgc(head)) return "igc";
+  if (ext === "nmea" || isNmea(head)) return "nmea";
   if (
     ext === "wkt" ||
     /^(SRID=\d+;)?\s*(POINT|LINESTRING|POLYGON|MULTIPOINT|MULTILINESTRING|MULTIPOLYGON|GEOMETRYCOLLECTION)\b/i.test(
