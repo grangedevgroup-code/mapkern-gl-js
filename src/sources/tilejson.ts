@@ -10,6 +10,7 @@ import {
 import type { Rect } from "../geo/tile.ts";
 import { MAX_TILE_ZOOM, quadkey, tmsY } from "../geo/tile.ts";
 import type { TileSourceBase } from "../style/types.ts";
+import type { ResponseStore } from "../tiles/cache.ts";
 import type { TransformRequest } from "../tiles/fetch.ts";
 import { expandTemplate, fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 
@@ -58,12 +59,13 @@ export async function resolveTileSet(
   transformRequest: TransformRequest | undefined,
   timeoutMs: number,
   signal: AbortSignal,
+  store: ResponseStore | null = null,
 ): Promise<TileSet> {
   let raw: Record<string, unknown> = {};
   let base: string | undefined;
   if (spec.url) {
     const params = resolveRequest(spec.url, "source", transformRequest);
-    const result = await fetchBytes(params, signal, timeoutMs, "source").catch((error: unknown) => {
+    const result = await fetchBytes(params, signal, timeoutMs, "source", store).catch((error: unknown) => {
       if (signal.aborted) throw error;
       throw new MapletError(
         "source-error",
