@@ -46,7 +46,10 @@ const PLAIN: Crs = { swap: false, unproject: null };
 
 function crsOf(name: string | undefined, parent: Crs): Crs {
   if (!name) return parent;
-  const code = Number(/(\d+)\s*$/.exec(name)?.[1]);
+  const trimmed = name.trim();
+  let start = trimmed.length;
+  while (start > 0 && trimmed.charCodeAt(start - 1) >= 48 && trimmed.charCodeAt(start - 1) <= 57) start--;
+  const code = start < trimmed.length ? Number(trimmed.slice(start)) : Number.NaN;
   if (!Number.isFinite(code)) return parent;
   const modern = /^(?:urn:|https?:\/\/www\.opengis\.net\/def\/crs\/)/i.test(name);
   if (GEOGRAPHIC.has(code)) return { swap: modern, unproject: null };
