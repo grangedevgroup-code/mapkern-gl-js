@@ -35,9 +35,13 @@ final class AssetServer {
 
     void start() {
         try {
-            socket = new ServerSocket(0, 64, InetAddress.getByName("127.0.0.1"));
-        } catch (IOException e) {
-            throw new IllegalStateException("Could not open the local server", e);
+            socket = open(PORT);
+        } catch (IOException taken) {
+            try {
+                socket = open(0);
+            } catch (IOException e) {
+                throw new IllegalStateException("Could not open the local server", e);
+            }
         }
         running = true;
         Thread accept = new Thread(() -> {
