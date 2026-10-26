@@ -115,6 +115,7 @@ export class RasterSource implements MapSource {
   private loader(set: TileSet): TileLoader<RasterTile> {
     const gl = this.ctx.gl;
     const ctx = this.ctx;
+    const placeholders = new Placeholders((z, x, y) => this.manager?.forget(z, x, y));
     return {
       async load(tile: TileCoord, signal: AbortSignal, onDecoding: () => void): Promise<RasterTile | null> {
         const url = tileUrl(set, tile.z, tile.x, tile.y);
@@ -124,6 +125,8 @@ export class RasterSource implements MapSource {
           ctx.requestTimeoutMs,
         );
         if (result.kind === "empty") return null;
+        const fingerprint = placeholders.note(tile, result.data);
+        if (fingerprint === null) return null;
         onDecoding();
         let image: ImageBitmap;
         try {
@@ -139,6 +142,11 @@ export class RasterSource implements MapSource {
         if (signal.aborted) {
           image.close();
           throw new DOMException("Aborted", "AbortError");
+        }
+        if (placeholders.suspect(tile, fingerprint) && !isFlat(image)) {
+          placeholders.confirm(fingerprint, tile);
+          image.close();
+          return null;
         }
         return { image, texture: null, width: image.width, height: image.height };
       },
@@ -164,6 +172,80 @@ export class RasterSource implements MapSource {
       },
     };
   }
+}
+
+export class Placeholders {
+  private readonly keys = new Map<string, number>();
+  private readonly twins = new Map<number, Map<string, number>>();
+  private readonly known = new Set<number>();
+  private readonly forget: (z: number, x: number, y: number) => void;
+
+  constructor(forget: (z: number, x: number, y: number) => void) {
+    this.forget = forget;
+  }
+
+  note(tile: TileCoord, data: ArrayBuffer): number | null {
+    const hash = fingerprint(new Uint8Array(data));
+    if (this.known.has(hash)) return null;
+    const key = `${tile.z}/${tile.x}/${tile.y}`;
+    this.keys.delete(key);
+    this.keys.set(key, hash);
+    if (this.keys.size > 8192) this.keys.delete(this.keys.keys().next().value!);
+    let twins = this.twins.get(hash);
+    if (!twins) {
+      twins = new Map();
+      this.twins.set(hash, twins);
+      if (this.twins.size > 8192) this.twins.delete(this.twins.keys().next().value!);
+    }
+    if (twins.size < 16) twins.set(key, tile.z);
+    return hash;
+  }
+
+  suspect(tile: TileCoord, hash: number): boolean {
+    const twins = this.twins.get(hash);
+    if (!twins || twins.size < 2 || tile.z === 0) return false;
+    for (const z of twins.values()) if (z !== tile.z) return true;
+    return false;
+  }
+
+  confirm(hash: number, tile: TileCoord): void {
+    this.known.add(hash);
+    const current = `${tile.z}/${tile.x}/${tile.y}`;
+    for (const key of this.twins.get(hash)?.keys() ?? []) {
+      if (key === current) continue;
+      const [z, x, y] = key.split("/").map(Number) as [number, number, number];
+      this.forget(z, x, y);
+    }
+  }
+}
+
+function fingerprint(bytes: Uint8Array): number {
+  let h = 0x811c9dc5 ^ bytes.length;
+  for (let i = 0; i < bytes.length; i++) {
+    h ^= bytes[i]!;
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+function isFlat(image: ImageBitmap): boolean {
+  const size = 16;
+  let context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null = null;
+  if (typeof OffscreenCanvas !== "undefined") {
+    context = new OffscreenCanvas(size, size).getContext("2d", { willReadFrequently: true });
+  } else if (typeof document !== "undefined") {
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    context = canvas.getContext("2d", { willReadFrequently: true });
+  }
+  if (!context) return true;
+  context.drawImage(image, 0, 0, size, size);
+  const pixels = context.getImageData(0, 0, size, size).data;
+  for (let i = 4; i < pixels.length; i += 4) {
+    for (let c = 0; c < 4; c++) if (Math.abs(pixels[i + c]! - pixels[c]!) > 3) return false;
+  }
+  return true;
 }
 
 function isPowerOfTwo(n: number): boolean {
