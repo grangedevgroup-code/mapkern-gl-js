@@ -36,7 +36,7 @@ export class PMTilesWriter {
   private readonly byHash = new Map<string, number>();
 
   constructor() {
-    this.dir = mkdtempSync(join(tmpdir(), "maplet-pmtiles-"));
+    this.dir = mkdtempSync(join(tmpdir(), "mapkern-pmtiles-"));
     this.fd = openSync(join(this.dir, "tiles.bin"), "w+");
   }
 
