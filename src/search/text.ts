@@ -107,3 +107,32 @@ export function withinEdits(a: string, b: string, limit: number, length = b.leng
   }
   return prev[m]! <= limit ? prev[m]! : -1;
 }
+
+const SYNONYMS: Record<string, string[]> = {
+  cafe: ["coffee"],
+  fuel: ["gas", "petrol", "gas station"],
+  fast_food: ["burger", "takeout"],
+  supermarket: ["grocery", "groceries"],
+  pharmacy: ["drugstore", "chemist"],
+  atm: ["cash"],
+  bar: ["pub"],
+  pub: ["bar"],
+  toilets: ["restroom", "bathroom", "wc"],
+  hospital: ["er", "emergency"],
+  charging_station: ["ev", "charger", "charging"],
+  parking: ["car park"],
+  hotel: ["lodging"],
+  motel: ["lodging"],
+  library: ["books"],
+  doctors: ["doctor", "clinic"],
+  clinic: ["doctor"],
+  dentist: ["dental"],
+  bank: ["atm"],
+  post_office: ["post", "mail"],
+  aerodrome: ["airport"],
+};
+
+export function categoryWords(category: string): string[] {
+  const value = category.slice(category.indexOf("=") + 1);
+  return [...new Set(tokenize([value.replace(/_/g, " "), ...(SYNONYMS[value] ?? [])].join(" ")))];
+}
