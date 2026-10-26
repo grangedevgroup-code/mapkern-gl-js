@@ -3,15 +3,7 @@ import { BlobRangeSource, HttpRangeSource } from "../sources/pmtiles.ts";
 import type { TermInfo } from "./file.ts";
 import { MemoryRangeSource, SearchFile } from "./file.ts";
 import type { EntryRecord, SearchKind } from "./format.ts";
-import {
-  CATEGORY_WORD,
-  CONTEXT_WORD,
-  ENTRY_BLOCK,
-  PREFIX_TOP,
-  SEARCH_KINDS,
-  SUMMARY_CHUNK,
-  unquantize,
-} from "./format.ts";
+import { CATEGORY_WORD, CODE_WORD, CONTEXT_WORD, OTHER_NAME, PREFIX_TOP, SEARCH_KINDS, unquantize } from "./format.ts";
 import { expandPrefix, isNumber, table, tokenize, withinEdits } from "./text.ts";
 
 export interface SearchResult {
@@ -146,7 +138,7 @@ export class SearchIndex implements Geocoder {
     const summaries = await this.file.summaries(candidates.map((c) => c.id));
     const ranked: Ranked[] = [];
     for (const c of candidates) {
-      const s = summary(summaries, c.id);
+      const s = summary(summaries, this.file.meta.summaryChunk, c.id);
       if (kinds && !kinds.has(s.kind)) continue;
       if (options.bbox) {
         const [w, south, e, n] = options.bbox;
@@ -168,7 +160,10 @@ export class SearchIndex implements Geocoder {
         if (e.lon < w || e.lon > east || e.lat < s || e.lat > n) return;
       }
       const names = tokenize(e.name);
-      const cover = names.length ? Math.min(1, tokens.length / names.length) : 1;
+      const inName = tokens.every((t, k) =>
+        names.some((w) => w === t || (prefixLast && k === tokens.length - 1 && w.startsWith(t))),
+      );
+      const cover = !inName ? 0.5 : names.length ? Math.min(1, tokens.length / names.length) : 1;
       const distance = options.near ? metres(options.near[0], options.near[1], e.lon, e.lat) : undefined;
       scored.push({ r: { id: r.id, score: r.score + cover * 0.15, distance }, e });
     });
@@ -210,7 +205,7 @@ export class SearchIndex implements Geocoder {
           if (!local.includes(kind)) return;
           const distance = distanceTo(e, lon, lat);
           if (distance <= (options.radius ?? REVERSE_RADIUS[kind]))
-            keep(kind, b * ENTRY_BLOCK + i, e, distance, distance);
+            keep(kind, b * this.file.blockSize + i, e, distance, distance);
         });
       });
     }
@@ -225,7 +220,7 @@ export class SearchIndex implements Geocoder {
       const list = [...ids];
       const summaries = await this.file.summaries(list);
       const near = list.filter((id) => {
-        const s = summary(summaries, id);
+        const s = summary(summaries, this.file.meta.summaryChunk, id);
         return SEARCH_KINDS[s.kind] === "place" && metres(lon, lat, s.lon, s.lat) <= radius + 2000;
       });
       const records = await Promise.all(near.map((id) => this.file.entry(id)));
@@ -279,6 +274,10 @@ export class SearchIndex implements Geocoder {
         if (edits > 0) await add(info, edits === 1 ? 0.75 : 0.6, true);
       }
     }
+    await add(await file.term(CODE_WORD + token), 1.15, true);
+    await add(await file.term(OTHER_NAME + token), 0.85, true);
+    if (prefix && token.length >= 4)
+      for (const info of (await file.range(OTHER_NAME + token, 2)).infos) await add(info, 0.8, true);
     await add(await file.term(CATEGORY_WORD + token), 0.8, true);
     await add(await file.term(CONTEXT_WORD + token), 0.7, false);
     if (prefix && token.length >= 3) {
@@ -356,8 +355,9 @@ export class SearchIndex implements Geocoder {
     const out: [number, number][] = [];
     for (const b of this.blocksNear(lon, lat, radius)) {
       const last = out[out.length - 1];
-      if (last && last[1] === b * ENTRY_BLOCK) last[1] = (b + 1) * ENTRY_BLOCK;
-      else out.push([b * ENTRY_BLOCK, (b + 1) * ENTRY_BLOCK]);
+      const size = this.file.blockSize;
+      if (last && last[1] === b * size) last[1] = (b + 1) * size;
+      else out.push([b * size, (b + 1) * size]);
     }
     return out;
   }
@@ -450,10 +450,11 @@ function rangeSource(source: SearchIndexSource, options: SearchIndexOptions): Ra
 
 function summary(
   chunks: Map<number, Uint8Array>,
+  size: number,
   id: number,
 ): { kind: number; rank: number; lon: number; lat: number } {
-  const chunk = chunks.get(Math.floor(id / SUMMARY_CHUNK))!;
-  const o = (id % SUMMARY_CHUNK) * 6;
+  const chunk = chunks.get(Math.floor(id / size))!;
+  const o = (id % size) * 6;
   const [lon, lat] = unquantize(chunk[o + 2]! | (chunk[o + 3]! << 8), chunk[o + 4]! | (chunk[o + 5]! << 8));
   return { kind: chunk[o]!, rank: chunk[o + 1]!, lon, lat };
 }
