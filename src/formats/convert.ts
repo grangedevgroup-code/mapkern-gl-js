@@ -3,6 +3,7 @@ import { cotToGeoJSON, isCot } from "./cot.ts";
 import { csvToGeoJSON } from "./csv.ts";
 import type { FeatureFormat } from "./feature-format.ts";
 import { flatgeobufToGeoJSON, isFlatGeobuf } from "./flatgeobuf.ts";
+import { geopackageToGeoJSON, isGeoPackage } from "./geopackage.ts";
 import { gpxToGeoJSON } from "./gpx.ts";
 import { kmlToGeoJSON } from "./kml.ts";
 import { shapefileToGeoJSON } from "./shapefile.ts";
@@ -25,6 +26,8 @@ export async function bytesToGeoJSON(bytes: Uint8Array, name = "", format?: Feat
   switch (kind) {
     case "flatgeobuf":
       return flatgeobufToGeoJSON(bytes);
+    case "geopackage":
+      return geopackageToGeoJSON(bytes);
     case "kmz":
     case "shapefile":
       return isZip(bytes) ? fromZip(bytes) : shapefileToGeoJSON({ shp: bytes });
@@ -49,6 +52,7 @@ export function objectToGeoJSON(data: unknown): unknown {
 
 function detect(bytes: Uint8Array, name: string): FeatureFormat {
   if (isFlatGeobuf(bytes)) return "flatgeobuf";
+  if (isGeoPackage(bytes)) return "geopackage";
   const ext = extension(name);
   if (isZip(bytes)) return ext === "kmz" ? "kmz" : "shapefile";
   if (ext === "shp") return "shapefile";
@@ -124,6 +128,7 @@ async function fromZip(bytes: Uint8Array): Promise<FeatureCollection> {
   for (const entry of [...byExt("geojson"), ...byExt("json")]) add(jsonToGeoJSON(text.decode(await read(entry))));
   for (const entry of byExt("gpx")) add(gpxToGeoJSON(text.decode(await read(entry))));
   for (const entry of byExt("fgb")) add(flatgeobufToGeoJSON(await read(entry)));
+  for (const entry of byExt("gpkg")) add(await geopackageToGeoJSON(await read(entry)));
   for (const entry of byExt("csv")) add(csvToGeoJSON(text.decode(await read(entry))));
   for (const entry of [...byExt("cot"), ...byExt("xml")]) {
     const source = text.decode(await read(entry));
@@ -131,7 +136,7 @@ async function fromZip(bytes: Uint8Array): Promise<FeatureCollection> {
   }
   if (features.length === 0 && kml.length === 0 && byExt("shp").length === 0) {
     throw new FormatError(
-      "The ZIP file has no map data in it (looked for KML, Shapefile, GeoJSON, GPX, FlatGeobuf, CSV and CoT)",
+      "The ZIP file has no map data in it (looked for KML, Shapefile, GeoJSON, GPX, FlatGeobuf, GeoPackage, CSV and CoT)",
     );
   }
   return { type: "FeatureCollection", features };
