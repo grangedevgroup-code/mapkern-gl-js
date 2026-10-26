@@ -236,6 +236,14 @@ async function main(): Promise<void> {
   log(`done in ${((performance.now() - started) / 1000).toFixed(1)} s`);
 }
 
+function parseBbox(value: string): [number, number, number, number] {
+  const bbox = value.split(",").map(Number) as [number, number, number, number];
+  if (bbox.length !== 4 || bbox.some((v) => !Number.isFinite(v)) || bbox[0] >= bbox[2] || bbox[1] >= bbox[3]) {
+    throw new Error("--bbox must be west,south,east,north with west < east and south < north");
+  }
+  return bbox;
+}
+
 main().catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : error);
   process.exit(1);
