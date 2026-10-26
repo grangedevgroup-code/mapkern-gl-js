@@ -302,7 +302,12 @@ export class LabelRenderer {
         (cameraVersion !== this.placedCamera && now - this.lastPlacement >= PLACE_INTERVAL))
     ) {
       this.reflow = false;
-      this.job = { steps: this.placement(transform.clone(), inputs, now, terrain), structure, camera: cameraVersion };
+      this.job = {
+        steps: this.placement(transform.clone(), inputs, now, terrain),
+        structure,
+        camera: cameraVersion,
+        layers: inputs.map((input) => input.layer),
+      };
       this.lastPlacement = now;
     }
     const job = this.job;
