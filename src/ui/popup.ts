@@ -1,6 +1,6 @@
-import { MapletError } from "../core/errors.ts";
+import { MapkernError } from "../core/errors.ts";
 import { Emitter } from "../core/events.ts";
-import type { MapletMap, MapPointerEvent } from "../core/map.ts";
+import type { MapkernMap, MapPointerEvent } from "../core/map.ts";
 import type { LngLat, LngLatLike } from "../geo/mercator.ts";
 import { toLngLat } from "../geo/mercator.ts";
 import type { Anchor, AnchorOffsets, OffsetLike } from "./anchor.ts";
@@ -35,7 +35,7 @@ const FOCUSABLE =
 
 export class Popup extends Emitter<PopupEvents> {
   private readonly options: PopupOptions;
-  private map: MapletMap | null = null;
+  private map: MapkernMap | null = null;
   private lngLat: LngLat | null = null;
   private pointer: [number, number] | null = null;
   private tracking = false;
@@ -53,7 +53,7 @@ export class Popup extends Emitter<PopupEvents> {
   constructor(options: PopupOptions = {}) {
     super();
     if (options.anchor !== undefined && !isAnchor(options.anchor)) {
-      throw new MapletError("invalid-option", `Unknown popup anchor "${String(options.anchor)}"`);
+      throw new MapkernError("invalid-option", `Unknown popup anchor "${String(options.anchor)}"`);
     }
     this.options = { ...options };
     this.offsets = anchorOffsets(options.offset);
@@ -61,7 +61,7 @@ export class Popup extends Emitter<PopupEvents> {
     this.maxWidth = options.maxWidth ?? "240px";
   }
 
-  addTo(map: MapletMap): this {
+  addTo(map: MapkernMap): this {
     if (this.map === map) return this;
     if (this.map) this.remove();
     this.map = map;
@@ -70,9 +70,9 @@ export class Popup extends Emitter<PopupEvents> {
     container.setAttribute("role", "dialog");
     container.setAttribute("aria-label", this.options.label ?? map.text("popup"));
     const tip = doc.createElement("div");
-    tip.className = "maplet-popup-tip";
+    tip.className = "mapkern-popup-tip";
     const body = doc.createElement("div");
-    body.className = "maplet-popup-content";
+    body.className = "mapkern-popup-content";
     container.append(tip, body);
     container.addEventListener("keydown", this.onKeyDown);
     this.container = container;
@@ -214,12 +214,12 @@ export class Popup extends Emitter<PopupEvents> {
     body.replaceChildren();
     body.style.maxWidth = this.maxWidth;
     if (this.content) body.appendChild(this.content.cloneNode(true));
-    body.classList.toggle("maplet-popup-closable", this.options.closeButton !== false);
+    body.classList.toggle("mapkern-popup-closable", this.options.closeButton !== false);
     if (this.options.closeButton !== false) {
       const doc = body.ownerDocument;
       const close = doc.createElement("button");
       close.type = "button";
-      close.className = "maplet-popup-close";
+      close.className = "mapkern-popup-close";
       close.setAttribute("aria-label", this.map.text("closePopup"));
       close.textContent = "×";
       close.addEventListener("click", () => this.remove());
@@ -230,9 +230,9 @@ export class Popup extends Emitter<PopupEvents> {
   private applyClasses(): void {
     const container = this.container;
     if (!container) return;
-    const anchor = this.anchorShown ? ` maplet-popup-anchor-${this.anchorShown}` : "";
+    const anchor = this.anchorShown ? ` mapkern-popup-anchor-${this.anchorShown}` : "";
     const extra = this.classes.size > 0 ? ` ${[...this.classes].join(" ")}` : "";
-    container.className = `maplet-popup${anchor}${extra}`;
+    container.className = `mapkern-popup${anchor}${extra}`;
   }
 
   private readonly update = (): void => {
@@ -282,7 +282,7 @@ export class Popup extends Emitter<PopupEvents> {
     }
   };
 
-  private listenPointer(map: MapletMap, on: boolean): void {
+  private listenPointer(map: MapkernMap, on: boolean): void {
     if (on) {
       map.on("mousemove", this.onPointerMove);
       map.on("mouseout", this.onPointerOut);
