@@ -109,12 +109,16 @@ async function framesDuring(page: Page, action: string, x: number, y: number, ms
 }
 
 async function createMap(page: Page, style: string, options: Record<string, unknown> = {}): Promise<void> {
-  await page.evaluate(`(async () => {
-    window.errors = [];
-    window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style: ${style}, ...${JSON.stringify(options)} });
-    window.map.on("error", (e) => window.errors.push({ code: e.error.code, message: e.error.message }));
-    await window.map.once("idle");
-  })()`);
+  await page.call(
+    `async (style, options) => {
+      window.errors = [];
+      window.map = new maplet.Map({ container: "map", preserveDrawingBuffer: true, fadeDuration: 0, center: [0, 0], zoom: 3, style, ...options });
+      window.map.on("error", (e) => window.errors.push({ code: e.error.code, message: e.error.message }));
+      await window.map.once("idle");
+    }`,
+    JSON.parse(style),
+    options,
+  );
 }
 
 async function pixel(page: Page, x: number, y: number): Promise<RGBA> {
@@ -3981,8 +3985,9 @@ const specs: Spec[] = [
       if (s0.label !== "2D" || s0.terrain !== null || s0.pitch !== 0)
         fail(`a fourth press goes back to flat: ${JSON.stringify(s0)}`);
       await press();
-      await page.evaluate(
-        `new Promise((r) => { window.map.once("styleload", () => r(0)); window.map.setStyle(${rasterStyle(base, "/fixture/raster")}); })`,
+      await page.call(
+        `(style) => new Promise((r) => { window.map.once("styleload", () => r(0)); window.map.setStyle(style); })`,
+        JSON.parse(rasterStyle(base, "/fixture/raster")),
       );
       await idle(page);
       s0 = await state();
@@ -4269,6 +4274,57 @@ const specs: Spec[] = [
       }
       const errors = await page.evaluate<{ code: string }[]>("window.errors");
       if (errors.some((e) => e.code !== "network")) fail(`unexpected errors: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
+    name: "terrain re-renders draped tiles only when what they show changes",
+    async run({ page, base }) {
+      const style = (line: boolean) =>
+        JSON.stringify({
+          version: 1,
+          sources: {
+            dem: { type: "dem", tiles: [`${base}/fixture/dem/{z}/{x}/{y}.png`], tileSize: 256, maxZoom: 12 },
+            fx: { type: "raster", tiles: [`${base}/fixture/raster/{z}/{x}/{y}.png`], tileSize: 256 },
+            ...(line ? { sq: { type: "geojson", data: square(3, "#000000") } } : {}),
+          },
+          layers: [
+            { id: "r", type: "raster", source: "fx", paint: { fadeDuration: 0 } },
+            ...(line ? [{ id: "l", type: "line", source: "sq", paint: { width: 3, color: "#000000" } }] : []),
+          ],
+          terrain: { source: "dem" },
+        });
+      const count = () =>
+        page.evaluate(`(() => {
+          window.redraws = 0;
+          window.map.on("render", () => { window.redraws += window.map.getDiagnostics().terrain?.redrawn ?? 0; });
+        })()`);
+      const after = async (step: string) => {
+        await page.evaluate(`(() => { window.redraws = 0; })()`);
+        await page.evaluate(step);
+        await page.evaluate(
+          `new Promise((r) => window.map.isMoving() ? window.map.once("moveend", () => r(0)) : r(0))`,
+        );
+        await idle(page);
+        await page.evaluate("new Promise((r) => setTimeout(r, 200))");
+        return page.evaluate<number>("window.redraws");
+      };
+      await createMap(page, style(false), { center: HILL, zoom: 6.2, pitch: 40 });
+      await count();
+      const rasterSlots = await page.evaluate<number>("window.map.terrain.slots.length");
+      const raster = await after("void window.map.setZoom(6.3)");
+      if (raster > rasterSlots / 4)
+        fail(`imagery does not change with zoom, but ${raster} of ${rasterSlots} draped tiles were drawn again`);
+      await page.evaluate("window.map.remove()");
+      await createMap(page, style(true), { center: HILL, zoom: 6.2, pitch: 40 });
+      await count();
+      const slots = await page.evaluate<number>("window.map.terrain.slots.length");
+      const resting = await after("void window.map.setZoom(6.3)");
+      if (resting === 0) fail("lines are drawn in screen pixels, so a zoom change at rest should refresh them");
+      const moving = await after("void window.map.easeTo({ zoom: 6.45, duration: 600 })");
+      if (moving > slots * 2.5) fail(`an animated zoom redrew ${moving} draped tiles for ${slots} slots`);
+      console.log(
+        `     drapes: imagery ${raster}/${rasterSlots}, lines at rest ${resting}/${slots}, animated ${moving}`,
+      );
     },
   },
   {
