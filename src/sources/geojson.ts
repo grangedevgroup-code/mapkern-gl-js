@@ -1,5 +1,5 @@
 import type { Transform } from "../camera/transform.ts";
-import { errorMessage, MapletError } from "../core/errors.ts";
+import { errorMessage, MapkernError } from "../core/errors.ts";
 import type { Rect, TileCoord } from "../geo/tile.ts";
 import { changedKeys } from "../style/diff.ts";
 import type { StyleLayer } from "../style/layer.ts";
@@ -105,7 +105,7 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
 
   setData(data: GeoJSONData): this {
     if (typeof data !== "string" && (typeof data !== "object" || data === null)) {
-      throw new MapletError("invalid-option", "setData needs GeoJSON, a URL or a file", { sourceId: this.id });
+      throw new MapkernError("invalid-option", "setData needs GeoJSON, a URL or a file", { sourceId: this.id });
     }
     this.spec = { ...this.spec, data };
     this.version++;
@@ -146,7 +146,7 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
 
   private async cluster(request: GeoJSONClusterRequest): Promise<Extract<GeoJSONClusterReply, { found: true }>> {
     if (this.spec.cluster !== true) {
-      throw new MapletError("invalid-option", `GeoJSON source "${this.id}" doesn't cluster; set cluster: true`, {
+      throw new MapkernError("invalid-option", `GeoJSON source "${this.id}" doesn't cluster; set cluster: true`, {
         sourceId: this.id,
       });
     }
@@ -158,7 +158,7 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
       reply = await pool.send<GeoJSONClusterReply>("geojson-cluster", request, [], undefined, this.affinity);
     }
     if (reply.missing || !reply.found) {
-      throw new MapletError("invalid-option", `There is no cluster with id ${request.id} in "${this.id}"`, {
+      throw new MapkernError("invalid-option", `There is no cluster with id ${request.id} in "${this.id}"`, {
         sourceId: this.id,
         clusterId: request.id,
       });
@@ -303,7 +303,7 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
       try {
         const result = await fetchBytes(params, signal, this.ctx.requestTimeoutMs, "source", this.ctx.diskCache);
         if (result.kind === "empty") {
-          throw new MapletError("source-error", `GeoJSON source "${this.id}" found no data at ${url}`, {
+          throw new MapkernError("source-error", `GeoJSON source "${this.id}" found no data at ${url}`, {
             sourceId: this.id,
             url,
           });
@@ -398,17 +398,17 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
     };
   }
 
-  private loadError(error: unknown): MapletError {
-    if (error instanceof MapletError) return error;
+  private loadError(error: unknown): MapkernError {
+    if (error instanceof MapkernError) return error;
     if (error instanceof FetchFailure) {
-      return new MapletError(
+      return new MapkernError(
         error.failure.kind === "auth" ? "auth" : "source-error",
         `GeoJSON source "${this.id}" could not load its data: ${error.failure.message}`,
         { sourceId: this.id, failure: error.failure },
         error,
       );
     }
-    return new MapletError(
+    return new MapkernError(
       "source-error",
       `GeoJSON source "${this.id}" could not load its data: ${errorMessage(error)}`,
       { sourceId: this.id },
@@ -419,7 +419,7 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
 
 function clusterNumber(id: unknown): number {
   if (typeof id !== "number" || !Number.isInteger(id) || id < 0) {
-    throw new MapletError("invalid-option", "Cluster ids are the whole numbers found in cluster_id");
+    throw new MapkernError("invalid-option", "Cluster ids are the whole numbers found in cluster_id");
   }
   return id;
 }
