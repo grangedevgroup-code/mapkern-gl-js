@@ -3,7 +3,7 @@ export type SearchKind = (typeof SEARCH_KINDS)[number];
 
 export const MAGIC = "MKS2";
 export const VERSION = 2;
-export const ENTRY_BLOCK = 128;
+export const ENTRY_BLOCK = 512;
 export const SUMMARY_CHUNK = 4096;
 export const CONTEXT_BLOCK = 256;
 export const POSTING_CHUNK = 4096;
@@ -32,6 +32,9 @@ export interface SearchMeta {
   entries: number;
   terms: number;
   categories: string[];
+  entryBlock: number;
+  summaryChunk: number;
+  contextBlock: number;
   attribution?: string;
 }
 
