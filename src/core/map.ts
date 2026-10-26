@@ -1298,32 +1298,14 @@ export class MapletMap extends Emitter<MapEvents> {
       return floor === null || floor <= t.elevation + 1e-3;
     };
     const requested = t.zoom;
-    const lowest = Math.max(t.minZoom, requested - 8);
-    let step = 1 / 64;
-    let above = requested;
-    let found: number | null = null;
-    while (above > lowest) {
-      const z = Math.max(lowest, above - step);
-      if (clear(z)) {
-        found = z;
-        break;
-      }
-      above = z;
-      step = Math.min(step * 1.5, 0.5);
-    }
-    if (found === null) {
+    const zoom = highestClearZoom(requested, Math.max(t.minZoom, requested - 8), clear);
+    if (zoom === null) {
+      t.setZoom(requested);
       const floor = this.cameraFloor(terrain);
       if (floor !== null) t.setElevation(floor);
       return;
     }
-    let low = found;
-    let high = above;
-    for (let i = 0; i < 10; i++) {
-      const mid = (low + high) / 2;
-      if (clear(mid)) low = mid;
-      else high = mid;
-    }
-    t.setZoom(low);
+    t.setZoom(zoom);
   }
 
   private nearPeak(terrain: Terrain): number {
