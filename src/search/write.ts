@@ -41,6 +41,7 @@ export interface WriteOptions {
   bbox: [number, number, number, number];
   compress: (bytes: Uint8Array) => Uint8Array;
   attribution?: string;
+  shapes?: boolean;
   log?: (message: string) => void;
 }
 
@@ -140,7 +141,7 @@ export function writeSearchFile(input: IndexEntry[], options: WriteOptions): Uin
     const end = Math.min(n, start + ENTRY_BLOCK);
     for (let id = start; id < end; id++) {
       const e = entries[id]!;
-      const shape = e.shape ? e.shape.map((p) => Array.from(p)) : null;
+      const shape = e.shape && options.shapes !== false ? e.shape.map((p) => Array.from(p)) : null;
       writeEntry(
         w,
         {
@@ -290,6 +291,9 @@ export function writeSearchFile(input: IndexEntry[], options: WriteOptions): Uin
     entries: n,
     terms: terms.length,
     categories,
+    entryBlock: ENTRY_BLOCK,
+    summaryChunk: SUMMARY_CHUNK,
+    contextBlock: CONTEXT_BLOCK,
   };
   if (options.attribution) meta.attribution = options.attribution;
   const sections = [
