@@ -1,5 +1,5 @@
 import { deepClone } from "../core/clone.ts";
-import { MapletError } from "../core/errors.ts";
+import { MapkernError } from "../core/errors.ts";
 import { fontFromNames } from "../text/glyphs.ts";
 import { compile, isOperator } from "./expression.ts";
 import type { PropertyDef } from "./layer.ts";
@@ -260,7 +260,7 @@ export function isStyleV8(value: unknown): boolean {
 
 export function importStyle(input: unknown, base?: string): ImportedStyle {
   if (!isObject(input) || input.version !== 8) {
-    throw new MapletError("invalid-style", "importStyle reads styles written for the version 8 style format");
+    throw new MapkernError("invalid-style", "importStyle reads styles written for the version 8 style format");
   }
   const skipped = new Skipped();
   const style: Json = { version: 1 };
