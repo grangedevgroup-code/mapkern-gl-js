@@ -10,7 +10,7 @@
   <body>
     <div id="map"></div>
     <script type="module">
-      import { BASEMAPS, TERRAIN, createViewer, fileButton, maplet } from "../viewer.js";
+      import { BASEMAPS, createViewer, fileButton, maplet, TERRAIN } from "../viewer.js";
 
       const params = new URLSearchParams(location.search);
       const tiles = params.get("tiles");
