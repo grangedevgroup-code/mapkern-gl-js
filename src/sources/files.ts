@@ -1,4 +1,4 @@
-import { MapletError } from "../core/errors.ts";
+import { MapkernError } from "../core/errors.ts";
 import { MBTilesArchive, registerMbtilesArchive, registerMbtilesProtocol } from "./mbtiles.ts";
 import { BlobRangeSource, PMTilesArchive, registerArchive, registerPmtilesProtocol } from "./pmtiles.ts";
 
@@ -18,5 +18,5 @@ export async function openTileFile(file: Blob): Promise<string> {
     registerArchive(key, new PMTilesArchive(source));
     return `pmtiles://${key}`;
   }
-  throw new MapletError("invalid-option", "openTileFile needs a PMTiles or MBTiles file");
+  throw new MapkernError("invalid-option", "openTileFile needs a PMTiles or MBTiles file");
 }
