@@ -129,7 +129,10 @@ export type UiText =
   | "basemaps"
   | "flatView"
   | "terrainView"
-  | "tiltedView";
+  | "tiltedView"
+  | "search"
+  | "searchPlaceholder"
+  | "noResults";
 
 const NEAR_SAMPLES = 8;
 const PREFETCH_MARGIN = 1.4;
