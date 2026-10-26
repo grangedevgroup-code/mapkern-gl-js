@@ -32,6 +32,8 @@ import { assertValid, Style } from "../style/style.ts";
 import type { LayerSpec, SkySpec, SourceSpec, StyleSpec, StyleSpecV8, SunSpec, TerrainSpec } from "../style/types.ts";
 import { sunTime, validateSky, validateSun } from "../style/validate.ts";
 import { highestClearZoom, metersToWorld, Terrain } from "../terrain/terrain.ts";
+import type { ResponseStore } from "../tiles/cache.ts";
+import { sharedDiskCache } from "../tiles/cache.ts";
 import type { TransformRequest } from "../tiles/fetch.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileStats } from "../tiles/manager.ts";
@@ -44,6 +46,7 @@ import { DebugOverlay } from "../ui/debug.ts";
 import { LogoControl } from "../ui/logo.ts";
 import type { WorkerFactory } from "../worker/pool.ts";
 import { WorkerPool } from "../worker/pool.ts";
+import { deepClone } from "./clone.ts";
 import { errorMessage, MapletError } from "./errors.ts";
 import type { Listener } from "./events.ts";
 import { Emitter } from "./events.ts";
@@ -100,6 +103,7 @@ export interface MapOptions {
   transformRequest?: TransformRequest;
   attributionControl?: boolean | { custom?: string | string[] };
   logoControl?: boolean;
+  diskCache?: boolean | { size?: number };
   workerCount?: number;
   workerUrl?: string;
   reducedMotion?: boolean;
@@ -366,6 +370,7 @@ export class MapletMap extends Emitter<MapEvents> {
   private readonly glContext: GL;
   private readonly painter: Painter;
   private readonly scheduler: RequestScheduler;
+  private readonly diskCache: ResponseStore | null;
   private readonly handlers: InputHandlers | null;
   private readonly options: MapOptions;
   private readonly resizeObserver: ResizeObserver | null;
@@ -509,6 +514,7 @@ export class MapletMap extends Emitter<MapEvents> {
     }
     this.painter = new Painter(this.glContext);
     this.scheduler = new RequestScheduler(checkNumber(options.maxParallelRequests, "maxParallelRequests", 24));
+    this.diskCache = openDiskCache(options.diskCache);
     this.pixelRatioValue = this.computePixelRatio();
 
     this.canvas.addEventListener("webglcontextlost", this.onContextLost, false);
@@ -946,7 +952,7 @@ export class MapletMap extends Emitter<MapEvents> {
       if (issues.length > 0) {
         throw new MapletError("invalid-option", `${issues[0]!.path} ${issues[0]!.message}`, { sky });
       }
-      style.meta.sky = structuredClone(sky);
+      style.meta.sky = deepClone(sky);
     }
     this.triggerRepaint();
     return this;
@@ -954,7 +960,7 @@ export class MapletMap extends Emitter<MapEvents> {
 
   getSky(): SkySpec | null {
     const sky = this.style?.meta.sky;
-    return sky ? structuredClone(sky) : null;
+    return sky ? deepClone(sky) : null;
   }
 
   setSun(sun: (Omit<SunSpec, "time"> & { time?: SunSpec["time"] | Date }) | null): this {
@@ -968,7 +974,7 @@ export class MapletMap extends Emitter<MapEvents> {
       if (issues.length > 0) {
         throw new MapletError("invalid-option", `${issues[0]!.path} ${issues[0]!.message}`, { sun });
       }
-      style.meta.sun = structuredClone(spec);
+      style.meta.sun = deepClone(spec);
     }
     this.triggerRepaint();
     return this;
@@ -976,7 +982,7 @@ export class MapletMap extends Emitter<MapEvents> {
 
   getSun(): SunSpec | null {
     const sun = this.style?.meta.sun;
-    return sun ? structuredClone(sun) : null;
+    return sun ? deepClone(sun) : null;
   }
 
   private sunLook(sun: SunSpec | undefined): SunLook | null {
@@ -1350,7 +1356,7 @@ export class MapletMap extends Emitter<MapEvents> {
       const controller = new AbortController();
       this.styleRequest = controller;
       const params = resolveRequest(style, "style", this.options.transformRequest);
-      fetchBytes(params, controller.signal, this.requestTimeout(), "style")
+      fetchBytes(params, controller.signal, this.requestTimeout(), "style", this.diskCache)
         .then((result) => {
           if (controller.signal.aborted || this.removed) return;
           if (result.kind === "empty") throw new MapletError("invalid-style", `Style not found at ${style}`);
@@ -1416,11 +1422,15 @@ export class MapletMap extends Emitter<MapEvents> {
 
   async loadImage(url: string): Promise<ImageBitmap> {
     const params = resolveRequest(url, "image", this.options.transformRequest);
-    const result = await fetchBytes(params, new AbortController().signal, this.requestTimeout(), "image").catch(
-      (error: unknown) => {
-        throw resourceError(error, `Could not load the image ${url}`);
-      },
-    );
+    const result = await fetchBytes(
+      params,
+      new AbortController().signal,
+      this.requestTimeout(),
+      "image",
+      this.diskCache,
+    ).catch((error: unknown) => {
+      throw resourceError(error, `Could not load the image ${url}`);
+    });
     if (result.kind === "empty") throw new MapletError("http", `There is no image at ${url}`, { url });
     try {
       return await createImageBitmap(new Blob([result.data], { type: result.contentType || "image/png" }));
@@ -1766,17 +1776,17 @@ export class MapletMap extends Emitter<MapEvents> {
 
   getFilter(layerId: string): unknown {
     const filter = (this.layer(layerId).spec as { filter?: unknown }).filter;
-    return filter === undefined ? undefined : structuredClone(filter);
+    return filter === undefined ? undefined : deepClone(filter);
   }
 
   getPaintProperty(layerId: string, name: string): unknown {
     const value = (this.layer(layerId).spec as { paint?: Record<string, unknown> }).paint?.[name];
-    return value === undefined ? undefined : structuredClone(value);
+    return value === undefined ? undefined : deepClone(value);
   }
 
   getLayoutProperty(layerId: string, name: string): unknown {
     const value = (this.layer(layerId).spec as { layout?: Record<string, unknown> }).layout?.[name];
-    return value === undefined ? undefined : structuredClone(value);
+    return value === undefined ? undefined : deepClone(value);
   }
 
   isSourceLoaded(id: string): boolean {
@@ -2074,7 +2084,7 @@ export class MapletMap extends Emitter<MapEvents> {
 
   private async loadGlyphs(url: string, signal: AbortSignal): Promise<Uint8Array | null> {
     const params = resolveRequest(url, "glyphs", this.options.transformRequest);
-    const result = await fetchBytes(params, signal, this.requestTimeout(), "glyphs");
+    const result = await fetchBytes(params, signal, this.requestTimeout(), "glyphs", this.diskCache);
     if (result.kind === "empty") return null;
     const bytes = new Uint8Array(result.data);
     if (bytes.length < 2 || bytes[0] !== 0x1f || bytes[1] !== 0x8b) return bytes;
@@ -2110,7 +2120,7 @@ export class MapletMap extends Emitter<MapEvents> {
   private async loadSprite(prefix: string, url: string, ratio: number, signal: AbortSignal): Promise<void> {
     const get = async (suffix: string, extension: string) => {
       const params = resolveRequest(spriteUrl(url, suffix, extension), "image", this.options.transformRequest);
-      return fetchBytes(params, signal, this.requestTimeout(), "image");
+      return fetchBytes(params, signal, this.requestTimeout(), "image", this.diskCache);
     };
     let suffix = ratio > 1 ? "@2x" : "";
     let [index, sheet] = await Promise.all([get(suffix, ".json"), get(suffix, ".png")]);
@@ -2196,6 +2206,7 @@ export class MapletMap extends Emitter<MapEvents> {
       workers: () => this.workerPool(),
       transformRequest: this.options.transformRequest,
       requestTimeoutMs: this.requestTimeout(),
+      diskCache: this.diskCache,
       cacheBytes: Math.max(16, checkNumber(this.options.tileCacheSize, "tileCacheSize", 192)) * 1024 * 1024,
       fadeDuration: checkNumber(this.options.fadeDuration, "fadeDuration", 200),
       prefetchLimit: this.options.prefetch === false ? 0 : 48,
@@ -2850,4 +2861,13 @@ function absoluteUrl(url: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+const DISK_CACHE_MB = 100;
+
+function openDiskCache(option: MapOptions["diskCache"]): ResponseStore | null {
+  if (option === false) return null;
+  const size = typeof option === "object" && option !== null ? option.size : undefined;
+  const mb = checkNumber(size, "diskCache.size", DISK_CACHE_MB);
+  return mb > 0 ? sharedDiskCache(mb * 1024 * 1024) : null;
 }
