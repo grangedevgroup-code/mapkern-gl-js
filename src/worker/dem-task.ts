@@ -1,5 +1,5 @@
 import type { DemGrid, Unpack } from "../terrain/dem.ts";
-import { decodeDem, gradients } from "../terrain/dem.ts";
+import { decodeDem, decodeElevations, gradients } from "../terrain/dem.ts";
 
 export interface DemPixels {
   data: Uint8ClampedArray;
@@ -9,7 +9,24 @@ export interface DemPixels {
 export interface DemRequest {
   bytes?: ArrayBuffer;
   pixels?: DemPixels;
+  raw?: ArrayBuffer;
   unpack: Unpack;
+}
+
+const RAW_MAGIC = [0x4d, 0x4b, 0x45, 0x4c];
+
+export function encodeRawElevation(values: Float32Array, size: number): ArrayBuffer {
+  const out = new ArrayBuffer(8 + size * size * 4);
+  new Uint8Array(out, 0, 4).set(RAW_MAGIC);
+  new DataView(out).setUint32(4, size, true);
+  new Float32Array(out, 8, size * size).set(values.subarray(0, size * size));
+  return out;
+}
+
+export function isRawElevation(bytes: ArrayBuffer): boolean {
+  if (bytes.byteLength < 8) return false;
+  const head = new Uint8Array(bytes, 0, 4);
+  return RAW_MAGIC.every((b, i) => head[i] === b);
 }
 
 export const NO_OFFSCREEN = "This browser cannot read elevation tiles off screen";
@@ -30,12 +47,20 @@ export async function decodeDemTile(
   request: DemRequest,
   signal: AbortSignal,
 ): Promise<{ result: DemReply | null; transfer?: Transferable[] }> {
+  if (request.raw) {
+    const size = new DataView(request.raw).getUint32(4, true);
+    if (request.raw.byteLength < 8 + size * size * 4) throw new Error("Elevation tile is shorter than its size says");
+    return finish(decodeElevations(new Float32Array(request.raw, 8, size * size), size));
+  }
   let pixels = request.pixels;
   if (!pixels) {
     if (typeof OffscreenCanvas === "undefined" || !request.bytes) throw new Error(NO_OFFSCREEN);
     pixels = await readPixels(request.bytes, signal, (size) => new OffscreenCanvas(size, size));
   }
-  const grid = decodeDem(pixels.data, pixels.size, request.unpack);
+  return finish(decodeDem(pixels.data, pixels.size, request.unpack));
+}
+
+function finish(grid: ReturnType<typeof decodeDem>): { result: DemReply | null; transfer?: Transferable[] } {
   if (!grid) return { result: null };
   const gradient = gradients(grid);
   const transfer: Transferable[] = [grid.elevation.buffer, gradient.buffer];
