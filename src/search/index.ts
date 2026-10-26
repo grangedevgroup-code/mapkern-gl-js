@@ -305,18 +305,19 @@ export class SearchIndex implements Geocoder {
     };
   }
 
-  private quality(m: TokenMatch, e: number): number {
+  private quality(m: TokenMatch, e: number): { value: number; direct: boolean } {
     const d = this.data;
     let best = 0;
     for (const { term, quality } of m.terms) {
       if (quality <= best) continue;
       if (sortedHas(d.postings, d.termStart[term]!, d.termStart[term + 1]!, e)) best = quality;
     }
-    const c = m.contexts.get(d.context[e]!);
-    if (c !== undefined) best = Math.max(best, c * 0.85);
     const k = m.categories.get(d.category[e]!);
     if (k !== undefined) best = Math.max(best, k * 0.8);
-    return best;
+    const direct = best > 0;
+    const c = m.contexts.get(d.context[e]!);
+    if (c !== undefined) best = Math.max(best, c * 0.85);
+    return { value: best, direct };
   }
 
   private find(token: string): number {
