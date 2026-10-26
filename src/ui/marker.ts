@@ -1,6 +1,6 @@
-import { MapletError } from "../core/errors.ts";
+import { MapkernError } from "../core/errors.ts";
 import { Emitter } from "../core/events.ts";
-import type { MapletMap } from "../core/map.ts";
+import type { MapkernMap } from "../core/map.ts";
 import type { LngLat, LngLatLike } from "../geo/mercator.ts";
 import { toLngLat } from "../geo/mercator.ts";
 import type { Anchor, AnchorOffsets, Offset, OffsetLike } from "./anchor.ts";
@@ -61,7 +61,7 @@ export class Marker extends Emitter<MarkerEvents> {
   private anchor: Anchor;
   private offset: Offset;
   private lngLat: LngLat | null = null;
-  private map: MapletMap | null = null;
+  private map: MapkernMap | null = null;
   private popup: Popup | null = null;
   private draggable: boolean;
   private rotation: number;
@@ -77,7 +77,7 @@ export class Marker extends Emitter<MarkerEvents> {
   constructor(options: MarkerOptions = {}) {
     super();
     if (options.anchor !== undefined && !isAnchor(options.anchor)) {
-      throw new MapletError("invalid-option", `Unknown marker anchor "${String(options.anchor)}"`);
+      throw new MapkernError("invalid-option", `Unknown marker anchor "${String(options.anchor)}"`);
     }
     this.scale = positive(options.scale, "scale", 1);
     this.clickTolerance = positive(options.clickTolerance, "clickTolerance", 3);
@@ -91,16 +91,16 @@ export class Marker extends Emitter<MarkerEvents> {
     this.pitchAlignment = options.pitchAlignment ?? "auto";
     this.occludedOpacity = Math.min(1, Math.max(0, finite(options.occludedOpacity, "occludedOpacity", 0.2)));
     this.label = options.label;
-    this.element.classList.add("maplet-marker");
+    this.element.classList.add("mapkern-marker");
     for (const name of (options.className ?? "").split(/\s+/).filter(Boolean)) this.element.classList.add(name);
-    this.element.classList.toggle("maplet-marker-draggable", this.draggable);
+    this.element.classList.toggle("mapkern-marker-draggable", this.draggable);
     this.applyOrigin();
     this.element.addEventListener("pointerdown", this.onPointerDown);
     this.element.addEventListener("click", this.onClick);
     this.element.addEventListener("keydown", this.onKeyDown);
   }
 
-  addTo(map: MapletMap): this {
+  addTo(map: MapkernMap): this {
     if (this.map === map) return this;
     this.remove();
     this.map = map;
@@ -194,7 +194,7 @@ export class Marker extends Emitter<MarkerEvents> {
 
   setDraggable(draggable: boolean): this {
     this.draggable = draggable === true;
-    this.element.classList.toggle("maplet-marker-draggable", this.draggable);
+    this.element.classList.toggle("mapkern-marker-draggable", this.draggable);
     if (!this.draggable) this.endDrag(null);
     return this;
   }
@@ -351,7 +351,7 @@ export class Marker extends Emitter<MarkerEvents> {
       if (el.hasPointerCapture(drag.pointer)) el.releasePointerCapture(drag.pointer);
     } catch {}
     if (!drag.active) return;
-    el.classList.remove("maplet-marker-dragging");
+    el.classList.remove("mapkern-marker-dragging");
     this.suppressClick = event !== null && event.type === "pointerup";
     this.emit("dragend", { target: this, type: "dragend" });
   }
@@ -383,7 +383,7 @@ export class Marker extends Emitter<MarkerEvents> {
     if (!drag.active) {
       if (Math.hypot(x - drag.startX, y - drag.startY) < this.clickTolerance) return;
       drag.active = true;
-      this.element.classList.add("maplet-marker-dragging");
+      this.element.classList.add("mapkern-marker-dragging");
       this.emit("dragstart", { target: this, type: "dragstart" });
     }
     const lngLat = map.unproject([x - drag.dx, y - drag.dy]);
@@ -423,7 +423,7 @@ export class Marker extends Emitter<MarkerEvents> {
 
 function pinElement(doc: Document, color: string, scale: number): HTMLElement {
   const el = doc.createElement("div");
-  el.className = "maplet-marker-pin";
+  el.className = "mapkern-marker-pin";
   const svg = doc.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", `0 0 ${PIN_WIDTH} ${PIN_HEIGHT}`);
   svg.setAttribute("width", String(PIN_WIDTH * scale));
@@ -447,13 +447,13 @@ function pinElement(doc: Document, color: string, scale: number): HTMLElement {
 function finite(value: unknown, name: string, fallback: number): number {
   if (value === undefined) return fallback;
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new MapletError("invalid-option", `${name} must be a finite number`);
+    throw new MapkernError("invalid-option", `${name} must be a finite number`);
   }
   return value;
 }
 
 function positive(value: unknown, name: string, fallback: number): number {
   const n = finite(value, name, fallback);
-  if (n <= 0) throw new MapletError("invalid-option", `${name} must be greater than 0`);
+  if (n <= 0) throw new MapkernError("invalid-option", `${name} must be greater than 0`);
   return n;
 }
