@@ -1,4 +1,4 @@
-import { MapletError } from "../core/errors.ts";
+import { MapkernError } from "../core/errors.ts";
 
 export interface Program {
   readonly name: string;
@@ -53,7 +53,7 @@ export class GL {
   static create(canvas: HTMLCanvasElement, attributes: WebGLContextAttributes): GL {
     const gl = canvas.getContext("webgl2", attributes);
     if (!gl) {
-      throw new MapletError("webgl-unavailable", "WebGL 2 is not available in this browser or on this device");
+      throw new MapkernError("webgl-unavailable", "WebGL 2 is not available in this browser or on this device");
     }
     return new GL(gl);
   }
@@ -154,7 +154,7 @@ export class GL {
   createBuffer(target: GLenum, data: ArrayBufferView, usage: GLenum = this.gl.STATIC_DRAW): WebGLBuffer {
     const gl = this.gl;
     const buffer = gl.createBuffer();
-    if (!buffer) throw new MapletError("context-lost", "Could not create a GPU buffer");
+    if (!buffer) throw new MapkernError("context-lost", "Could not create a GPU buffer");
     gl.bindBuffer(target, buffer);
     gl.bufferData(target, data, usage);
     return buffer;
@@ -163,7 +163,7 @@ export class GL {
   createTexture(source: TexImageSource, options: { mipmap: boolean; premultiplied: boolean }): WebGLTexture {
     const gl = this.gl;
     const texture = gl.createTexture();
-    if (!texture) throw new MapletError("context-lost", "Could not create a GPU texture");
+    if (!texture) throw new MapkernError("context-lost", "Could not create a GPU texture");
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, options.premultiplied);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -197,7 +197,7 @@ export class GL {
   ): WebGLTexture {
     const gl = this.gl;
     const texture = gl.createTexture();
-    if (!texture) throw new MapletError("context-lost", "Could not create a GPU texture");
+    if (!texture) throw new MapkernError("context-lost", "Could not create a GPU texture");
     const [internal, layout, type] = this.dataLayout(format);
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
@@ -274,7 +274,7 @@ export class GL {
     const vs = this.shader(gl.VERTEX_SHADER, prelude + source.vertex, key);
     const fs = this.shader(gl.FRAGMENT_SHADER, prelude + source.fragment, key);
     const handle = gl.createProgram();
-    if (!handle) throw new MapletError("shader-compile", `Could not create program ${key}`);
+    if (!handle) throw new MapkernError("shader-compile", `Could not create program ${key}`);
     gl.attachShader(handle, vs);
     gl.attachShader(handle, fs);
     gl.linkProgram(handle);
@@ -298,7 +298,7 @@ export class GL {
       this.release(program);
       gl.deleteProgram(handle);
       this.programs.delete(program.name);
-      throw new MapletError("shader-compile", `Program ${program.name} failed to build: ${log}`, {
+      throw new MapkernError("shader-compile", `Program ${program.name} failed to build: ${log}`, {
         program: program.name,
         log,
       });
@@ -335,7 +335,7 @@ export class GL {
   private shader(type: GLenum, text: string, key: string): WebGLShader {
     const gl = this.gl;
     const shader = gl.createShader(type);
-    if (!shader) throw new MapletError("shader-compile", `Could not create shader for ${key}`);
+    if (!shader) throw new MapkernError("shader-compile", `Could not create shader for ${key}`);
     gl.shaderSource(shader, text);
     gl.compileShader(shader);
     return shader;
