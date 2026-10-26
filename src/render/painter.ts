@@ -362,10 +362,12 @@ export class Painter {
         if (drift >= RESTING_ZOOM_STEP && tolerance !== Number.POSITIVE_INFINITY) this.drapesBehind = true;
         continue;
       }
-      if (performance.now() > deadline && (drawn || this.drapeFallback(slot))) {
+      const busy = performance.now() > deadline || (frame.moving === true && redrawn >= MOVING_DRAPES);
+      if (busy && (drawn || this.drapeFallback(slot))) {
         this.drapesBehind = true;
         continue;
       }
+      redrawn++;
       const entry = this.drapes.target(slot.key, size);
       gl.bindFramebuffer(gl.FRAMEBUFFER, entry.framebuffer);
       g.setViewport(0, 0, size, size);
@@ -455,13 +457,15 @@ export class Painter {
     gl.depthFunc(gl.LEQUAL);
     gl.uniform1i(uniform(program, "u_drape"), 0);
     gl.uniform1i(uniform(program, "u_dem"), 1);
+    gl.uniform1i(uniform(program, "u_gradient"), 2);
     gl.uniform1f(uniform(program, "u_world"), t.worldSize);
     gl.uniform1f(uniform(program, "u_exaggeration"), terrain.exaggeration);
     const sunLight = frame.sun?.light ?? null;
     const light = sunLight ?? (terrain.relief > 0 ? reliefLight(t.bearing) : null);
     gl.uniform3f(uniform(program, "u_sun_light"), light?.[0] ?? 0, light?.[1] ?? 0, light?.[2] ?? 1);
     gl.uniform1f(uniform(program, "u_sun_gain"), sunLight ? 0.7 : light ? terrain.relief : 0);
-    const uMeters = uniform(program, "u_dem_meters");
+    const uGradientTexel = uniform(program, "u_gradient_texel");
+    const uGradientScale = uniform(program, "u_gradient_scale");
     const uMatrix = uniform(program, "u_matrix");
     const uRect = uniform(program, "u_dem_rect");
     const uSize = uniform(program, "u_dem_size");
@@ -485,13 +489,16 @@ export class Painter {
       const dem = data ? terrain.source.elevationTexture(data) : null;
       g.bindTexture(0, entry.texture);
       g.bindTexture(1, dem ?? this.flatDem);
+      g.bindTexture(2, data?.gradientTexture ?? this.flatDem);
       const n = 2 ** slot.z;
       t.tileMatrix(slot.z, slot.x, slot.y, slot.wrap, 1, this.matrix);
       gl.uniformMatrix4fv(uMatrix, false, this.matrix);
       const r = slot.rect;
       gl.uniform4f(uRect, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
       gl.uniform1f(uSize, data ? data.grid.size : 1);
-      gl.uniform1f(uMeters, EARTH_CIRCUMFERENCE / n / (Math.max(1e-9, r.x1 - r.x0) * (data ? data.grid.size : 1)));
+      const cells = data ? data.grid.size : 1;
+      gl.uniform2f(uGradientTexel, cells / (cells + 2), 1 / (cells + 2));
+      gl.uniform1f(uGradientScale, data ? (2 ** data.z * cells) / EARTH_CIRCUMFERENCE : 0);
       gl.uniform1f(uHas, dem ? 1 : 0);
       gl.uniform2f(uRows, slot.y / n, (slot.y + 1) / n);
       const range = data ? data.grid.max - data.grid.min : 0;
@@ -500,6 +507,7 @@ export class Painter {
       this.stats.drawCalls++;
       this.stats.pieces++;
     }
+    g.bindTexture(2, null);
     g.bindTexture(1, null);
     gl.activeTexture(gl.TEXTURE0);
     g.setDepth(false, false);
