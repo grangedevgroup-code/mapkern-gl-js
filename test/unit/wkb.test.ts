@@ -42,6 +42,20 @@ test("GeoPackage geometry blobs skip their header and envelope", () => {
   assert.deepEqual(parseGeoPackageGeometry(wkb), { type: "Point", coordinates: [30, 10] });
 });
 
+test("CSV geometry columns can hold hex WKB or PostGIS EWKB", () => {
+  const point = vectors.find((v) => v.wkt === "POINT (30 10)" && v.flavor === "extended" && v.order === 1)!;
+  const line = vectors.find((v) => v.wkt.startsWith("LINESTRING (") && v.flavor === "iso" && v.order === 0)!;
+  const fc = csvToGeoJSON(`id,wkb_geometry\n1,${point.hex}\n2,\\x${line.hex.toLowerCase()}\n3,POINT (1 2)\n4,0102`);
+  assert.deepEqual(
+    fc.features.map((f) => [f.properties?.id, f.geometry]),
+    [
+      [1, point.expected],
+      [2, line.expected],
+      [3, { type: "Point", coordinates: [1, 2] }],
+    ],
+  );
+});
+
 test("broken WKB is reported instead of read past its end", () => {
   const line = vectors.find((v) => v.wkt.startsWith("LINESTRING (") && v.flavor === "iso" && v.order === 1)!;
   const bytes = hex(line.hex);
