@@ -268,6 +268,8 @@ export class StyleLayer {
   private readonly fixedValues = new Map<string, unknown>();
   private stateRevision = -1;
   private stateUse = false;
+  private zoomRevision = -1;
+  private zoomUse = false;
   revision = 0;
   motion = 0;
   private clock = 0;
