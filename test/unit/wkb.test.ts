@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { csvToGeoJSON } from "../../src/formats/csv.ts";
 import { parseGeoPackageGeometry, parseHexWkb, parseWkb, WkbError } from "../../src/formats/wkb.ts";
 
 interface Vector {
