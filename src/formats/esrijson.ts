@@ -92,18 +92,13 @@ function geometryOf(g: EsriGeometry, hasZ: boolean, unproject: Unproject | null)
       : { type: "MultiLineString", coordinates: paths };
   }
   if (Array.isArray(g.rings)) {
-    const raw = g.rings.map((r) => r.map((c) => [number(c[0]) ?? Number.NaN, number(c[1]) ?? Number.NaN]));
-    const grouped = assemblePolygons(raw.filter((r) => r.length >= 4 && r.every((c) => !Number.isNaN(c[0]!))));
-    if (!grouped) return null;
-    const lookup = new Map<string, number[]>();
-    g.rings.forEach((r) => {
-      for (const c of r) lookup.set(`${c[0]},${c[1]}`, c);
-    });
-    const toPosition = (c: Position) => point(lookup.get(`${c[0]},${c[1]}`) ?? c)!;
-    if (grouped.type === "Polygon")
-      return { type: "Polygon", coordinates: grouped.coordinates.map((r) => r.map(toPosition)) };
-    if (grouped.type === "MultiPolygon") {
-      return { type: "MultiPolygon", coordinates: grouped.coordinates.map((p) => p.map((r) => r.map(toPosition))) };
+    const valid = g.rings
+      .map((r) => r.map((c) => c.map(Number)))
+      .filter((r) => r.length >= 4 && r.every((c) => Number.isFinite(c[0]) && Number.isFinite(c[1])));
+    const grouped = assemblePolygons(valid);
+    if (grouped?.type === "Polygon") return { type: "Polygon", coordinates: grouped.coordinates.map(line) };
+    if (grouped?.type === "MultiPolygon") {
+      return { type: "MultiPolygon", coordinates: grouped.coordinates.map((p) => p.map(line)) };
     }
     return null;
   }
