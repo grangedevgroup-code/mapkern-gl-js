@@ -1,6 +1,6 @@
-import * as maplet from "../dist/maplet.js";
+import * as mapkern from "../dist/mapkern.js";
 
-export { maplet };
+export { mapkern };
 
 export const BASEMAPS = [
   { name: "Map", style: "https://tiles.openfreemap.org/styles/liberty" },
@@ -32,7 +32,7 @@ export const TERRAIN = {
 };
 
 function memory(enabled) {
-  const prefix = `maplet-viewer:${location.pathname}:`;
+  const prefix = `mapkern-viewer:${location.pathname}:`;
   return {
     get(key) {
       if (!enabled) return null;
@@ -73,7 +73,7 @@ export function createViewer(options = {}) {
   const stored = memory(remember);
   const remembered = stored.get("basemap");
   const selected = choose(basemaps, basemaps.some((b) => b.name === remembered) ? remembered : basemap);
-  const map = new maplet.Map({
+  const map = new mapkern.Map({
     container,
     hash: page,
     maxPitch: 85,
@@ -83,14 +83,14 @@ export function createViewer(options = {}) {
   });
   if (attributionControl !== false) {
     const custom = typeof attributionControl === "object" ? attributionControl : {};
-    map.addControl(new maplet.AttributionControl(custom), "bottom-left");
+    map.addControl(new mapkern.AttributionControl(custom), "bottom-left");
   }
-  const picker = basemaps.length > 1 ? new maplet.BasemapControl({ basemaps, selected }) : null;
-  const terrainControl = terrain ? new maplet.TerrainControl({ source: terrain }) : null;
+  const picker = basemaps.length > 1 ? new mapkern.BasemapControl({ basemaps, selected }) : null;
+  const terrainControl = terrain ? new mapkern.TerrainControl({ source: terrain }) : null;
   if (picker) map.addControl(picker, "bottom-right");
   if (terrainControl) map.addControl(terrainControl, "bottom-right");
-  map.addControl(new maplet.NavigationControl(), "bottom-right");
-  map.addControl(new maplet.ScaleControl(), "bottom-right");
+  map.addControl(new mapkern.NavigationControl(), "bottom-right");
+  map.addControl(new mapkern.ScaleControl(), "bottom-right");
   picker?.on("change", (event) => stored.set("basemap", event.basemap.name));
   terrainControl?.on("viewchange", (event) => stored.set("view", event.view));
   const start = stored.get("view") ?? view;
@@ -109,7 +109,7 @@ export function createViewer(options = {}) {
 }
 
 function addPanel(map, children) {
-  const el = element("div", { className: "maplet-control maplet-viewer-panel" }, ...children);
+  const el = element("div", { className: "mapkern-control mapkern-viewer-panel" }, ...children);
   map.addControl({ onAdd: () => el, onRemove: () => el.remove() }, "top-left");
   return el;
 }
@@ -122,11 +122,11 @@ export function element(tag, properties = {}, ...children) {
 }
 
 export function row(...children) {
-  return element("div", { className: "maplet-viewer-row" }, ...children);
+  return element("div", { className: "mapkern-viewer-row" }, ...children);
 }
 
 export function button(label, onClick) {
-  const el = element("button", { type: "button", className: "maplet-viewer-button", textContent: label });
+  const el = element("button", { type: "button", className: "mapkern-viewer-button", textContent: label });
   el.addEventListener("click", onClick);
   return el;
 }
@@ -139,7 +139,7 @@ export function fileButton(label, accept, onFile) {
     input.value = "";
     if (file) onFile(file);
   });
-  return element("label", { className: "maplet-viewer-file" }, input, element("span", { textContent: label }));
+  return element("label", { className: "mapkern-viewer-file" }, input, element("span", { textContent: label }));
 }
 
 export function beforeLabels(map) {
