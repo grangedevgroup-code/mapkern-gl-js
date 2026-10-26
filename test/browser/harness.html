@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Maplet browser test</title>
+    <title>Mapkern browser test</title>
     <style>
       html,
       body {
@@ -19,9 +19,9 @@
   <body>
     <div id="map"></div>
     <script type="module">
-      import * as maplet from "/dist/maplet.js";
+      import * as mapkern from "/dist/mapkern.js";
 
-      window.maplet = maplet;
+      window.mapkern = mapkern;
       window.pixel = (x, y) => {
         const source = window.map.getCanvas();
         const ratio = source.width / source.clientWidth;
