@@ -191,6 +191,135 @@ async function idle(page: Page): Promise<void> {
 
 const specs: Spec[] = [
   {
+    name: "MapLibre code runs unchanged on the maplibre entry",
+    async run({ page, base, shot }) {
+      await page.goto(`${base}/test/browser/harness-maplibre.html`);
+      await page.waitFor("window.ready");
+      const state = await page.evaluate<{
+        errors: string[];
+        events: string[];
+        classes: Record<string, boolean>;
+        centre: [boolean, number, number];
+        bounds: boolean[];
+        order: string[];
+        lineSource: string;
+        fillColor: string;
+        layerType: string;
+        hits: unknown[][];
+        dotHits: string[];
+        box: unknown[];
+        marker: number[];
+        popup: boolean;
+        dot: [number, number];
+        line: [number, number];
+      }>(`(async () => {
+        const errors = [];
+        const events = [];
+        window.clicks = [];
+        const square = { type: "Feature", properties: { name: "square", nested: { a: 1 } }, geometry: { type: "Polygon", coordinates: [[[-10, -10], [10, -10], [10, 10], [-10, 10], [-10, -10]]] } };
+        const map = new maplibregl.Map({
+          container: "map",
+          preserveDrawingBuffer: true,
+          fadeDuration: 0,
+          center: { lon: 0, lat: 0 },
+          zoom: 3,
+          attributionControl: false,
+          style: {
+            version: 8,
+            sources: { g: { type: "geojson", data: { type: "FeatureCollection", features: [square] } } },
+            layers: [
+              { id: "bg", type: "background", paint: { "background-color": "#ffffff" } },
+              { id: "fill", type: "fill", source: "g", paint: { "fill-color": "#ff0000" } },
+            ],
+          },
+        });
+        window.map = map;
+        map.on("error", (e) => errors.push(String(e.error && e.error.message)));
+        map.on("style.load", (e) => events.push(e.type + ":" + (e.target === map)));
+        await map.once("load");
+        map.addSource("pts", { type: "geojson", data: { type: "Feature", properties: { id: 7 }, geometry: { type: "Point", coordinates: [20, 0] } } });
+        map.addLayer({ id: "dots", type: "circle", source: "pts", paint: { "circle-radius": 10, "circle-color": "#0000ff" } });
+        map.addLayer({ id: "line", type: "line", source: { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [[-20, -15], [20, -15]] } } }, paint: { "line-color": "#00aa00", "line-width": 8 } }, "dots");
+        map.setPaintProperty("fill", "fill-color", "#ff8800");
+        await new Promise((resolve) => { map.once("idle", resolve); map.triggerRepaint(); });
+        const centre = map.project([0, 0]);
+        const dot = map.project([20, 0]);
+        const line = map.project([0, -15]);
+        const hits = map.queryRenderedFeatures(centre, { layers: ["fill"] });
+        const dotHits = map.queryRenderedFeatures([dot.x, dot.y]);
+        const box = map.queryRenderedFeatures([[0, 0], [800, 600]], { layers: ["fill", "dots"], filter: ["==", ["get", "id"], 7] });
+        const c = map.getCenter();
+        const b = map.getBounds();
+        const style = map.getStyle();
+        map.on("click", "fill", (e) => window.clicks.push([e.lngLat instanceof maplibregl.LngLat, e.point instanceof maplibregl.Point, e.features.map((f) => f.layer.id)]));
+        const sub = map.on("move", (e) => events.push("move:" + (e.target === map)));
+        map.jumpTo({ center: [1, 0] });
+        sub.unsubscribe();
+        map.jumpTo({ center: [0, 0] });
+        await new Promise((resolve) => { map.once("idle", resolve); map.triggerRepaint(); });
+        const popup = new maplibregl.Popup({ closeOnClick: false }).setLngLat([0, 5]).setHTML("<b style='color: red'>hi</b>").addTo(map);
+        const marker = new maplibregl.Marker({ color: "#123456" }).setLngLat({ lng: 5, lat: 5 }).addTo(map);
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const classes = {
+          map: map.getContainer().classList.contains("maplibregl-map"),
+          canvas: map.getCanvas().classList.contains("maplibregl-canvas"),
+          corner: !!document.querySelector(".maplibregl-ctrl-bottom-left"),
+          popup: !!document.querySelector(".maplibregl-popup .maplibregl-popup-content b[style]"),
+          tip: !!document.querySelector(".maplibregl-popup-tip"),
+          anchor: !!document.querySelector("[class*=maplibregl-popup-anchor-]"),
+          marker: !!document.querySelector(".maplibregl-marker"),
+        };
+        return {
+          errors,
+          events,
+          classes,
+          centre: [c instanceof maplibregl.LngLat, c.lng, c.lat],
+          bounds: [b instanceof maplibregl.LngLatBounds, b.getWest() < -10, b.getNorth() > 10],
+          order: style.layers.map((l) => l.id),
+          lineSource: typeof style.sources.line,
+          fillColor: map.getPaintProperty("fill", "fill-color"),
+          layerType: map.getLayer("fill").type,
+          hits: hits.map((h) => [h.layer.id, h.layer.type, h.properties.name, h.source]),
+          dotHits: dotHits.map((h) => h.layer.id),
+          box: box.map((h) => h.properties.id),
+          marker: marker.getLngLat().toArray(),
+          popup: popup.getLngLat() instanceof maplibregl.LngLat,
+          dot: [dot.x, dot.y],
+          line: [line.x, line.y],
+        };
+      })()`);
+      await shot("maplibre-api");
+      const report = JSON.stringify(state);
+      if (state.errors.length > 0) fail(`errors: ${report}`);
+      if (!state.events.includes("style.load:true")) fail(`style.load should fire with the map as target: ${report}`);
+      if (state.events.filter((e) => e.startsWith("move:")).length !== 1)
+        fail(`unsubscribe should stop the move listener after one move: ${report}`);
+      if (!state.centre[0] || Math.abs(state.centre[1]) > 1e-9) fail(`getCenter should return a LngLat: ${report}`);
+      if (state.bounds.some((v) => !v)) fail(`getBounds should return LngLatBounds around the view: ${report}`);
+      if (JSON.stringify(state.order) !== '["bg","fill","line","dots"]') fail(`layer order: ${report}`);
+      if (state.lineSource !== "object") fail(`an inline layer source should become a source: ${report}`);
+      if (state.fillColor !== "#ff8800" || state.layerType !== "fill") fail(`getters: ${report}`);
+      if (JSON.stringify(state.hits) !== '[["fill","fill","square","g"]]') fail(`synchronous query: ${report}`);
+      if (state.dotHits[0] !== "dots") fail(`point query should hit the dot first: ${report}`);
+      if (JSON.stringify(state.box) !== "[7]") fail(`box query with a filter: ${report}`);
+      if (JSON.stringify(state.marker) !== "[5,5]" || !state.popup) fail(`marker and popup positions: ${report}`);
+      for (const [name, present] of Object.entries(state.classes))
+        if (!present) fail(`missing ${name} class: ${report}`);
+      const fill = await pixel(page, 400, 300);
+      if (!near(fill, [255, 136, 0, 255], 12)) fail(`the fill should be orange after setPaintProperty: ${fill}`);
+      const dot = await pixel(page, Math.round(state.dot[0]), Math.round(state.dot[1]));
+      if (!near(dot, [0, 0, 255, 255], 12)) fail(`the dot should be blue: ${dot}`);
+      const line = await pixel(page, Math.round(state.line[0]), Math.round(state.line[1]));
+      if (!near(line, [0, 170, 0, 255], 24)) fail(`the line should be green: ${line}`);
+      await page.mouse("mouseMoved", 400, 300);
+      await page.mouse("mousePressed", 400, 300, { buttons: 1 });
+      await page.mouse("mouseReleased", 400, 300);
+      await page.waitFor("window.clicks.length > 0", 3000);
+      const clicks = await page.evaluate<unknown[]>("window.clicks");
+      if (JSON.stringify(clicks) !== '[[true,true,["fill"]]]') fail(`layer click: ${JSON.stringify(clicks)}`);
+    },
+  },
+  {
     name: "raster tiles render at the right zoom and position",
     async run({ page, base, shot }) {
       await createMap(page, rasterStyle(base, "/fixture/raster"));

@@ -180,7 +180,7 @@ test("protocol results become bytes whatever the handler returned", async () => 
 });
 
 test("MapLibre protocol handlers run in both the promise and the callback style", async () => {
-  let seen: { url: string; type?: string; aborted: boolean } | null = null;
+  let seen: { url: string; type?: string | undefined; aborted: boolean } | null = null;
   addProtocol("compat-promise", async (params, controller) => {
     seen = { url: params.url, type: params.type, aborted: controller.signal.aborted };
     return { data: new Uint8Array([7, 7]).buffer };
