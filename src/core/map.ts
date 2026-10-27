@@ -6,6 +6,7 @@ import { featureKey } from "../formats/mvt.ts";
 import type { LngLat, LngLatLike } from "../geo/mercator.ts";
 import { latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY, toLngLat, wrapLongitude } from "../geo/mercator.ts";
 import { sunAltitude, sunAzimuth, sunPosition } from "../geo/sun.ts";
+import type { TileCoord } from "../geo/tile.ts";
 import type { InputOptions, TouchType } from "../input/handlers.ts";
 import { InputHandlers } from "../input/handlers.ts";
 import { GL } from "../render/gl.ts";
