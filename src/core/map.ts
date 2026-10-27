@@ -2169,8 +2169,8 @@ export class MapkernMap extends Emitter<MapEvents> {
 
   private async loadSprite(prefix: string, url: string, ratio: number, signal: AbortSignal): Promise<void> {
     const get = async (suffix: string, extension: string) => {
-      const params = resolveRequest(spriteUrl(url, suffix, extension), "image", this.options.transformRequest);
-      return fetchBytes(params, signal, this.requestTimeout(), "image", this.diskCache);
+      const params = resolveRequest(spriteUrl(url, suffix, extension), "sprite", this.options.transformRequest);
+      return fetchBytes(params, signal, this.requestTimeout(), "sprite", this.diskCache);
     };
     let suffix = ratio > 1 ? "@2x" : "";
     let [index, sheet] = await Promise.all([get(suffix, ".json"), get(suffix, ".png")]);
