@@ -191,6 +191,7 @@ export const PAINT: Record<LayerType, Record<string, PropertyDef>> = {
     accentColor: p("color", "#000000", false),
     illuminationDirection: fixed(335, numberAtLeast(0)),
     illuminationAnchor: fixed("viewport", oneOf("viewport", "map")),
+    method: fixed("lambert", oneOf("lambert", "standard")),
   },
 };
 

@@ -808,6 +808,12 @@ export class Painter {
       gl.uniform1f(uniform(program, "u_flat"), Math.sin(LIGHT_ALTITUDE));
     }
     gl.uniform1f(uniform(program, "u_gain"), 1.2 * exaggeration);
+    const standard = layer.fixed<string>("method") === "standard";
+    gl.uniform1i(uniform(program, "u_method"), standard ? 1 : 0);
+    gl.uniform1f(uniform(program, "u_intensity"), exaggeration);
+    const lightAnchor = layer.fixed<string>("illuminationAnchor") === "map" ? 0 : frame.view.bearing;
+    gl.uniform1f(uniform(program, "u_azimuth"), (layer.fixed<number>("illuminationDirection") + lightAnchor) * DEG);
+    const uDerive = uniform(program, "u_derive");
     for (const [name, property] of [
       ["u_shadow", "shadowColor"],
       ["u_highlight", "highlightColor"],
@@ -841,6 +847,7 @@ export class Painter {
       gl.uniform2f(uTexel, size / (size + 2), 1 / (size + 2));
       gl.uniform2f(uRows, y / n, (y + 1) / n);
       gl.uniform1f(uScale, (vertical * n * size) / EARTH_CIRCUMFERENCE);
+      gl.uniform1f(uDerive, (512 * n) / (EARTH_CIRCUMFERENCE * 2 ** (z < 2 ? 0.4 : z < 4.5 ? 0.35 : 0.3)));
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       this.stats.drawCalls++;
       this.stats.pieces++;

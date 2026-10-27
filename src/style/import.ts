@@ -593,6 +593,9 @@ function convertLayer(
       case "line-gradient":
         skipped.add("line-gradient isn't drawn yet, the line color is used", id);
         continue;
+      case "hillshade-method":
+        if (value !== "standard") skipped.add(`hillshade-method ${String(value)} is drawn as standard`, id);
+        continue;
       case "icon-pitch-alignment":
         if (value === "map") skipped.add(`${key} map isn't supported yet, icons face the screen`, id);
         continue;
@@ -629,6 +632,7 @@ function convertLayer(
       : ["Open Sans", "Arial Unicode MS", "sans-serif"];
   }
   if (type === "raster") paintOut.fadeDuration ??= 300;
+  if (type === "hillshade") paintOut.method = "standard";
   if (type === "circle") paintOut.pitchScale ??= "map";
   if (type === "heatmap") paintOut.color ??= deepClone(V8_HEAT);
   if (Object.keys(paintOut).length > 0) out.paint = paintOut;
