@@ -153,6 +153,92 @@ export async function resolveFeatures(
   return out.filter((f): f is QueriedFeature => f !== null);
 }
 
+export function resolveFeaturesSync(
+  picked: readonly PickedFeature[],
+  sources: ReadonlyMap<string, MapSource>,
+  stateOf: StateReader,
+): QueriedFeature[] {
+  const out: QueriedFeature[] = [];
+  const seen = new Set<string>();
+  for (const hit of picked) {
+    const sourceId = hit.layer.source;
+    if (!sourceId) continue;
+    const source = sources.get(sourceId);
+    const index = hit.bucket.features.source(hit.feature);
+    if (source?.type === "geojson") {
+      const entry = hit.tile.data?.table?.get(index);
+      if (!entry) continue;
+      const key = `${hit.layer.id}|${index}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        type: "Feature",
+        id: entry.id,
+        properties: { ...entry.properties },
+        geometry: tileGeometry({ type: entry.type, extent: entry.extent, geometry: () => entry.parts }, hit.tile),
+        layer: hit.layer.id,
+        source: sourceId,
+        sourceLayer: undefined,
+        state: stateOf(sourceId, undefined, entry.id),
+      });
+      continue;
+    }
+    if (source?.type !== "vector") continue;
+    const raw = hit.tile.data?.raw;
+    if (!raw) continue;
+    const feature = vectorHit(hit, index, source, decodedLayersSync(raw), seen, stateOf);
+    if (feature) out.push(feature);
+  }
+  return out;
+}
+
+function vectorHit(
+  hit: PickedFeature,
+  index: number,
+  source: MapSource,
+  tileLayers: Map<string, VectorLayer>,
+  seen: Set<string>,
+  stateOf: StateReader,
+): QueriedFeature | null {
+  const name = hit.layer.sourceLayer;
+  const layer = name ? tileLayers.get(name) : tileLayers.values().next().value;
+  if (!layer || index >= layer.length) return null;
+  const feature = layer.feature(index);
+  const properties: Record<string, unknown> = { ...feature.properties() };
+  const promote = promotedKey((source.spec as { promoteId?: unknown }).promoteId, layer.name);
+  const id = promote ? featureIdValue(properties[promote]) : feature.id;
+  const key = id !== undefined ? `${hit.layer.id}|id:${id}` : `${hit.layer.id}|${hit.tile.key}|${index}`;
+  if (seen.has(key)) return null;
+  seen.add(key);
+  return {
+    type: "Feature",
+    id,
+    properties,
+    geometry: tileGeometry(feature, hit.tile),
+    layer: hit.layer.id,
+    source: source.id,
+    sourceLayer: name,
+    state: stateOf(source.id, name, id),
+  };
+}
+
+const syncDecoded = new Map<ArrayBuffer, Map<string, VectorLayer>>();
+
+function decodedLayersSync(raw: ArrayBuffer): Map<string, VectorLayer> {
+  const cached = syncDecoded.get(raw);
+  if (cached) {
+    syncDecoded.delete(raw);
+    syncDecoded.set(raw, cached);
+    return cached;
+  }
+  let bytes = new Uint8Array(raw);
+  if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) bytes = gunzipSync(bytes);
+  const layers = decodeTile(bytes);
+  syncDecoded.set(raw, layers);
+  while (syncDecoded.size > DECODED_TILES) syncDecoded.delete(syncDecoded.keys().next().value!);
+  return layers;
+}
+
 function promotedKey(promote: unknown, layer: string): string | undefined {
   if (typeof promote === "string") return promote;
   if (typeof promote === "object" && promote !== null) {
