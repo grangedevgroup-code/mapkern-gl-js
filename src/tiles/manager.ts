@@ -309,6 +309,19 @@ export class TileManager<D> {
     if (tile) this.drop(tile);
   }
 
+  refreshTiles(coords: readonly TileCoord[]): void {
+    for (const { z, x, y } of coords) {
+      const tile = this.tiles.get(tileKey(z, x, y));
+      if (!tile) continue;
+      if (tile.state === "ready") tile.generation = -1;
+      else if (tile.state === "empty" || tile.state === "failed") tile.transition("queued");
+      else continue;
+      tile.attempts = 0;
+      tile.retryAt = 0;
+      tile.failure = null;
+    }
+  }
+
   refresh(): void {
     this.generation++;
     for (const tile of [...this.tiles.values()]) {
