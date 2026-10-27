@@ -138,11 +138,13 @@ export class SearchIndex implements Geocoder {
     const kinds = wanted ? new Set(wanted.map((k) => SEARCH_KINDS.indexOf(k))) : null;
     if (tokens.length === 1 && options.near) {
       const ranges = this.rangesNear(options.near[0], options.near[1], NEAR_RADIUS);
-      for (const m of matches[0]!) {
-        if (m.ids.length >= m.info.count) continue;
-        const near = await this.file.postingsWithin(m.info, ranges);
-        m.ids = Uint32Array.from(new Set([...m.ids, ...near])).sort();
-      }
+      await Promise.all(
+        matches[0]!.map(async (m) => {
+          if (m.ids.length >= m.info.count) return;
+          const near = await this.file.postingsWithin(m.info, ranges);
+          m.ids = Uint32Array.from(new Set([...m.ids, ...near])).sort();
+        }),
+      );
     }
     let candidates: Candidate[] = [];
     for (const allowMissing of tokens.length >= 3 ? [0, 1] : [0]) {
@@ -209,8 +211,10 @@ export class SearchIndex implements Geocoder {
     });
     scored.sort((a, b) => b.r.score - a.r.score);
     const out: SearchResult[] = [];
-    for (const { r, e, distance } of scored) {
-      const result = await this.result(r.id, e, r.score, distance);
+    const results = await Promise.all(
+      scored.slice(0, limit * 3).map(({ r, e, distance }) => this.result(r.id, e, r.score, distance)),
+    );
+    for (const result of results) {
       if (
         out.some(
           (o) => o.kind === result.kind && o.name === result.name && o.context === result.context && close(o, result),
@@ -277,8 +281,11 @@ export class SearchIndex implements Geocoder {
       const list = found.get(kind);
       if (!list) continue;
       list.sort((a, b) => a.order - b.order || b.e.rank - a.e.rank);
-      for (const { id, e, distance } of list.slice(0, single ? limit : 1))
-        out.push(await this.result(id, e, 1, distance));
+      out.push(
+        ...(await Promise.all(
+          list.slice(0, single ? limit : 1).map(({ id, e, distance }) => this.result(id, e, 1, distance)),
+        )),
+      );
     }
     return out.slice(0, limit);
   }
@@ -505,7 +512,7 @@ function rangeSource(source: SearchIndexSource, options: SearchIndexOptions): Ra
   if (source instanceof ArrayBuffer) return new MemoryRangeSource(new Uint8Array(source));
   if (typeof Blob !== "undefined" && source instanceof Blob) return new BlobRangeSource(source, "blob");
   const base = typeof location === "undefined" ? undefined : location.href;
-  return new HttpRangeSource(new URL(String(source), base).href, options.headers ?? {});
+  return new HttpRangeSource(new URL(String(source), base).href, options.headers ?? {}, undefined, "no-store");
 }
 
 function summary(
