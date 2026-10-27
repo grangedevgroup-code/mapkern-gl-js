@@ -6,31 +6,6 @@ export interface MapInternals {
   style(): Style | null;
   enableSyncQueries(): void;
   queryRenderedFeaturesSync(geometry?: QueryGeometry, options?: QueryOptions): QueriedFeature[];
-  customLayers(): CustomLayerHost;
-}
-
-export interface CustomLayerHost {
-  add(layer: CustomLayer, beforeId?: string): void;
-  remove(id: string): boolean;
-  has(id: string): boolean;
-}
-
-export interface CustomRenderInput {
-  gl: WebGL2RenderingContext;
-  matrix: Float64Array;
-  projection: Float64Array;
-  fov: number;
-  nearZ: number;
-  farZ: number;
-}
-
-export interface CustomLayer {
-  readonly id: string;
-  readonly renderingMode: "2d" | "3d";
-  onAdd?(gl: WebGL2RenderingContext): void;
-  onRemove?(gl: WebGL2RenderingContext): void;
-  prerender?(input: CustomRenderInput): void;
-  render(input: CustomRenderInput): void;
 }
 
 const registry = new WeakMap<object, MapInternals>();
