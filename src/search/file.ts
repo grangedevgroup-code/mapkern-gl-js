@@ -6,6 +6,7 @@ export interface TermInfo {
   term: string;
   count: number;
   head: Uint32Array;
+  ranks: Uint8Array;
   inline: Uint32Array | null;
   chunks: { first: number; last: number; at: number; length: number }[];
 }
@@ -289,7 +290,8 @@ export class SearchFile {
             id += r.varint();
             ids[k] = id;
           }
-          infos.push({ term: terms[i]!, count, head: ids, inline: ids, chunks: [] });
+          const ranks = r.raw(count).slice();
+          infos.push({ term: terms[i]!, count, head: ids, ranks, inline: ids, chunks: [] });
           continue;
         }
         const head = new Uint32Array(headLength);
@@ -298,11 +300,12 @@ export class SearchFile {
           id += r.varint();
           head[k] = id;
         }
+        const ranks = r.raw(headLength).slice();
         const chunks: TermInfo["chunks"] = [];
         const c = r.varint();
         for (let k = 0; k < c; k++)
           chunks.push({ first: r.varint(), last: r.varint(), at: r.varint(), length: r.varint() });
-        infos.push({ term: terms[i]!, count, head, inline: null, chunks });
+        infos.push({ term: terms[i]!, count, head, ranks, inline: null, chunks });
       }
       return { terms, infos };
     });
