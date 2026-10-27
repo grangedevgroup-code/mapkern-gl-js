@@ -100,6 +100,7 @@ export class RasterSource implements MapSource {
       },
       tileEvents(this.id, this.ctx),
     );
+    if (previous) this.ctx.content(this.id);
   }
 
   setFadeDuration(ms: number): void {
