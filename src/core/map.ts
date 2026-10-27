@@ -1845,6 +1845,35 @@ export class MapkernMap extends Emitter<MapEvents> {
     return source.loaded && source.isIdle();
   }
 
+  refreshTiles(sourceId: string, tiles?: readonly TileCoord[]): this {
+    const source = this.style?.sources.get(sourceId);
+    if (!source) throw new MapkernError("invalid-option", `There is no source with id "${sourceId}"`, { sourceId });
+    const manager = (source as { manager?: TileManager<unknown> | null }).manager;
+    if (!manager) source.reload();
+    else if (tiles === undefined) manager.refresh();
+    else manager.refreshTiles(tiles);
+    this.triggerRepaint();
+    return this;
+  }
+
+  setTransformRequest(transform: TransformRequest | null): this {
+    if (transform) this.options.transformRequest = transform;
+    else delete this.options.transformRequest;
+    return this;
+  }
+
+  queryTerrainElevation(lngLat: LngLatLike): number | null {
+    const terrain = this.terrain;
+    if (!terrain) return null;
+    const [lng, lat] = toLngLat(lngLat);
+    const x = mercatorX(lng);
+    return terrain.elevationAt(x - Math.floor(x), mercatorY(lat));
+  }
+
+  getCenterElevation(): number {
+    return this.transform.elevation;
+  }
+
   areTilesLoaded(): boolean {
     for (const source of this.style?.sources.values() ?? []) {
       if (source.loaded && !source.isIdle()) return false;
