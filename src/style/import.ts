@@ -258,6 +258,56 @@ export function isStyleV8(value: unknown): boolean {
   return isObject(value) && value.version === 8;
 }
 
+export interface ImportedLayer {
+  layer: LayerSpec | null;
+  skipped: string[];
+}
+
+export interface ImportedSource {
+  source: SourceSpec | null;
+  skipped: string[];
+}
+
+export function importLayer(raw: unknown, sources: Record<string, SourceSpec>, serverFonts: boolean): ImportedLayer {
+  if (!isObject(raw) || typeof raw.id !== "string") {
+    throw new MapkernError("invalid-style", "A layer needs an id and a type");
+  }
+  const skipped = new Skipped();
+  const converted = convertLayer(raw, sources, skipped, serverFonts);
+  const layer = converted ? settle(converted.layer, converted.origin, raw.id, sources, skipped) : null;
+  return { layer, skipped: skipped.list() };
+}
+
+export function importSource(id: string, raw: unknown, base?: string): ImportedSource {
+  const skipped = new Skipped();
+  const source = convertSource(id, raw, base, skipped);
+  if (!source) return { source: null, skipped: skipped.list() };
+  const issues = validateSource(id, source);
+  if (issues.length > 0) {
+    skipped.add(`source "${id}" couldn't be read: ${issues[0]!.message}`);
+    return { source: null, skipped: skipped.list() };
+  }
+  return { source, skipped: skipped.list() };
+}
+
+export function importSky(root: { sky?: unknown; fog?: unknown }): { sky: SkySpec | null; skipped: string[] } {
+  const skipped = new Skipped();
+  const sky = convertSky(root as Record<string, unknown>, skipped) ?? null;
+  return { sky, skipped: skipped.list() };
+}
+
+export function importFilter(filter: unknown): unknown {
+  return convertFilter(filter);
+}
+
+export function layerTypeOf(v8Type: string): LayerType | undefined {
+  return TYPES[v8Type];
+}
+
+export function serverGlyphs(glyphs: unknown): string | null {
+  return typeof glyphs === "string" && !glyphs.startsWith("mapbox://") ? glyphs : null;
+}
+
 export function importStyle(input: unknown, base?: string): ImportedStyle {
   if (!isObject(input) || input.version !== 8) {
     throw new MapkernError("invalid-style", "importStyle reads styles written for the version 8 style format");
