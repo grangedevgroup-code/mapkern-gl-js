@@ -458,6 +458,7 @@ export class StyleLayer {
   }
 
   setZoomRange(minZoom: number, maxZoom: number): void {
+    if (minZoom !== this.minZoom || maxZoom !== this.maxZoom) this.revision++;
     this.minZoom = minZoom;
     this.maxZoom = maxZoom;
     this.spec.minZoom = minZoom;
@@ -465,6 +466,7 @@ export class StyleLayer {
   }
 
   setVisible(visible: boolean): void {
+    if (visible !== this.visible) this.revision++;
     this.visible = visible;
     this.spec.visible = visible;
   }
