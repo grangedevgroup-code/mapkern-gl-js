@@ -1603,7 +1603,7 @@ export class CompatMap {
           out.sourceId = e.sourceId;
           out.source = this.shadow?.sources.get(e.sourceId);
           out.sourceDataType = e.kind === "metadata" ? "metadata" : "content";
-          let loaded = false;
+          let loaded: boolean;
           try {
             loaded = this.native.isSourceLoaded(e.sourceId);
           } catch {
