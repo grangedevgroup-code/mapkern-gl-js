@@ -1598,8 +1598,39 @@ export class MapkernMap extends Emitter<MapEvents> {
   };
 
   async queryRenderedFeatures(geometry?: QueryGeometry, options: QueryOptions = {}): Promise<QueriedFeature[]> {
+    const query = this.pickQuery(geometry, options);
+    if (!query) return [];
+    const picked = await this.painter.pick(query.frame, query.box, query.accept, query.ground);
+    return resolveFeatures(picked, query.sources, this.stateOf);
+  }
+
+  private queryRenderedSync(geometry?: QueryGeometry, options: QueryOptions = {}): QueriedFeature[] {
+    const query = this.pickQuery(geometry, options);
+    if (!query) return [];
+    const picked = this.painter.pickSync(query.frame, query.box, query.accept, query.ground);
+    return resolveFeaturesSync(picked, query.sources, this.stateOf);
+  }
+
+  private enableSyncQueries(): void {
+    if (this.syncQueries) return;
+    this.syncQueries = true;
+    for (const source of this.style?.sources.values() ?? []) {
+      if (source.type === "geojson") (source as GeoJSONSource).manager?.refresh();
+    }
+  }
+
+  private pickQuery(
+    geometry: QueryGeometry | undefined,
+    options: QueryOptions,
+  ): {
+    frame: FrameInput;
+    box: PickBox;
+    accept: (layer: StyleLayer) => boolean;
+    ground: { frame: FrameInput; box: PickBox } | undefined;
+    sources: ReadonlyMap<string, MapSource>;
+  } | null {
     const style = this.style;
-    if (!style || this.removed || this.contextLost) return [];
+    if (!style || this.removed || this.contextLost) return null;
     const box = this.queryBox(geometry);
     let accept: (layer: StyleLayer) => boolean = () => true;
     if (options.layers !== undefined) {
