@@ -834,6 +834,16 @@ export class MapkernMap extends Emitter<MapEvents> {
     return this;
   }
 
+  getVerticalFieldOfView(): number {
+    return this.transform.fov;
+  }
+
+  setVerticalFieldOfView(fov: number): this {
+    this.transform.setFov(checkNumber(fov, "fov", this.transform.fov));
+    this.cameraChanged();
+    return this;
+  }
+
   getMinPitch(): number {
     return this.transform.minPitch;
   }
