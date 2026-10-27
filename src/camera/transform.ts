@@ -180,6 +180,7 @@ export class Transform {
     t.maxPitch = this.maxPitch;
     t.renderWorldCopies = this.renderWorldCopies;
     t.keepInWorld = this.keepInWorld;
+    t.fovDeg = this.fovDeg;
     t.cx = this.cx;
     t.cy = this.cy;
     t.z = this.z;
