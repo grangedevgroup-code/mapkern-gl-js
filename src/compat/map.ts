@@ -551,6 +551,7 @@ export class CompatMap {
   private animationFrame = 0;
   private readonly unalias: () => void;
   private readonly noted = new Set<string>();
+  private loadFired = false;
 
   constructor(options: CompatMapOptions) {
     if (!isJson(options)) throw new Error("new Map(options) needs an options object");
@@ -643,6 +644,9 @@ export class CompatMap {
     this.touchPitch = handlerSwitch(m.touchPitch, m);
     this.cooperativeGestures = handlerSwitch(m.cooperativeGestures, m);
     m.on("styleload", (event) => this.noteSkipped(event.skipped));
+    m.on("load", () => {
+      this.loadFired = true;
+    });
     this.setStyle(o.style === undefined || o.style === null ? EMPTY_STYLE : o.style, { diff: false });
   }
 
@@ -655,8 +659,8 @@ export class CompatMap {
     return terrain ? { ...terrain } : null;
   }
 
-  get loadedFlag(): boolean {
-    return this.native.loaded();
+  get _loaded(): boolean {
+    return this.loadFired;
   }
 
   get showTileBoundaries(): boolean {
