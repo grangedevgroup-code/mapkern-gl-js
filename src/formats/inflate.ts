@@ -96,6 +96,19 @@ class Bits {
   }
 }
 
+export function gunzipSync(data: Uint8Array): Uint8Array {
+  if (data.length < 18 || data[0] !== 0x1f || data[1] !== 0x8b || data[2] !== 8)
+    throw new InflateError("not gzip data");
+  const flags = data[3]!;
+  let at = 10;
+  if (flags & 4) at += 2 + (data[at]! | (data[at + 1]! << 8));
+  if (flags & 8) while (at < data.length && data[at++] !== 0);
+  if (flags & 16) while (at < data.length && data[at++] !== 0);
+  if (flags & 2) at += 2;
+  if (at >= data.length) throw new InflateError("gzip data ends early");
+  return inflateSync(data.subarray(at), false);
+}
+
 export function inflateSync(data: Uint8Array, zlib = true): Uint8Array {
   let start = 0;
   if (zlib) {
