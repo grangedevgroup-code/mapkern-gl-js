@@ -63,6 +63,23 @@ const map = new mapkern.Map({ container: "map", style: "https://tiles.openfreema
 
 OpenFreeMap also has `bright`, `dark` and `fiord`. If a style uses something Mapkern can't draw yet, that part is left out and the rest still shows; the `styleload` event lists what was left out in `event.skipped`. Pass `style: null` for a blank map you fill yourself.
 
+## Coming from MapLibre or Mapbox
+
+If you already have an app written for MapLibre GL JS or Mapbox GL JS, you don't need to rewrite it. Change the import and keep the rest:
+
+```js
+import maplibregl from "mapkern-gl/maplibre";
+// or, for Mapbox code: import mapboxgl from "mapkern-gl/mapbox";
+
+const map = new maplibregl.Map({ container: "map", style: "https://tiles.openfreemap.org/styles/liberty" });
+map.on("load", () => {
+  map.addSource("points", { type: "geojson", data: "points.geojson" });
+  map.addLayer({ id: "points", type: "circle", source: "points", paint: { "circle-color": "#e55e5e" } });
+});
+```
+
+Layers, sources and paint properties use the names you already know, events carry `LngLat` and `Point` objects, and markers, popups and controls keep the `.maplibregl-*` classes your CSS targets. [Switching from MapLibre or Mapbox](docs/maplibre.md) covers bundler aliases, script tags and the few things that work differently.
+
 ## Your own tiles
 
 Mapkern can make its own street map tiles from OpenStreetMap data, so you don't need a map provider. Download an extract for your region from [Geofabrik](https://download.geofabrik.de/), then cut out the area you want:
