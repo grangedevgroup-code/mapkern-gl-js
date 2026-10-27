@@ -172,6 +172,7 @@ Shades the ground from an [elevation](#elevation) source as if it were lit from 
 | `accentColor` | `#000000` | Darkens steep slopes, whichever way they face |
 | `illuminationDirection` | 335 | Where the light comes from, in degrees clockwise from the top of the screen. 335 is the top left. Fixed value only |
 | `illuminationAnchor` | `viewport` | `viewport` keeps the light on the same side of the screen when you rotate the map, `map` turns it with the map, so 0 is north. Fixed value only |
+| `method` | `lambert` | `lambert` is Mapkern's own shading, lit from 45 degrees up. `standard` is the shading MapLibre and Mapbox draw, which styles written for them get by default. Fixed value only |
 
 Flat ground stays clear, so the layer works on top of land and water fills. Put it below roads and labels. When you zoom out, slopes are steepened a little so mountain ranges stay visible.
 
