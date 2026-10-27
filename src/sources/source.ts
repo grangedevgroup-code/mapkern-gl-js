@@ -1,5 +1,5 @@
 import type { Transform } from "../camera/transform.ts";
-import { MapkernError } from "../core/errors.ts";
+import { errorMessage, MapkernError } from "../core/errors.ts";
 import type { GL } from "../render/gl.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { SourceSpec } from "../style/types.ts";
