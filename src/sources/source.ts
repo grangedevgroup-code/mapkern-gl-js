@@ -44,6 +44,16 @@ export interface MapSource {
   adopt?(spec: SourceSpec): boolean;
 }
 
+export function sourceFailure(sourceId: string, error: unknown): MapkernError {
+  if (error instanceof MapkernError) return error;
+  return new MapkernError(
+    "source-error",
+    `Source "${sourceId}" failed to load: ${errorMessage(error)}`,
+    { sourceId },
+    error,
+  );
+}
+
 export function tileEvents(sourceId: string, ctx: SourceContext): ManagerEvents {
   return {
     changed: () => ctx.changed(),
