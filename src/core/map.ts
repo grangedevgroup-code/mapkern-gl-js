@@ -11,7 +11,7 @@ import type { InputOptions, TouchType } from "../input/handlers.ts";
 import { InputHandlers } from "../input/handlers.ts";
 import { GL } from "../render/gl.ts";
 import type { SunLook } from "../render/night.ts";
-import type { PickBox } from "../render/painter.ts";
+import type { FrameInput, PickBox } from "../render/painter.ts";
 import { Painter } from "../render/painter.ts";
 import { DemSource } from "../sources/dem.ts";
 import { GeoJSONSource } from "../sources/geojson.ts";
@@ -54,10 +54,11 @@ import { Emitter } from "./events.ts";
 import { MapHash } from "./hash.ts";
 import type { ImageInput, ImageOptions } from "./images.ts";
 import { pixelsOf, spriteImages, spriteSheets, spriteUrl, styleImage } from "./images.ts";
+import { registerInternals } from "./internal.ts";
 import type { LayerEventType, PointerInput, PointerType } from "./layer-events.ts";
 import { LAYER_EVENT_TYPES, LayerEvents } from "./layer-events.ts";
 import type { QueriedFeature, SourceQueriedFeature, StateReader } from "./query.ts";
-import { queryVectorSource, resolveFeatures } from "./query.ts";
+import { queryVectorSource, resolveFeatures, resolveFeaturesSync } from "./query.ts";
 
 export interface SetStyleOptions {
   diff?: boolean;
@@ -436,6 +437,7 @@ export class MapkernMap extends Emitter<MapEvents> {
   private loadedFired = false;
   private idleFired = false;
   private contextLost = false;
+  private syncQueries = false;
   private pixelRatioValue: number;
   private cameraVersion = 0;
   private renderedVersion = -1;
@@ -454,6 +456,11 @@ export class MapkernMap extends Emitter<MapEvents> {
 
   constructor(options: MapOptions) {
     super();
+    registerInternals(this, {
+      style: () => this.style,
+      enableSyncQueries: () => this.enableSyncQueries(),
+      queryRenderedFeaturesSync: (geometry, options) => this.queryRenderedSync(geometry, options),
+    });
     if (typeof options !== "object" || options === null) {
       throw new MapkernError("invalid-option", "new Map(options) needs an options object");
     }
@@ -2325,6 +2332,7 @@ export class MapkernMap extends Emitter<MapEvents> {
       fadeDuration: checkNumber(this.options.fadeDuration, "fadeDuration", 200),
       prefetchLimit: this.options.prefetch === false ? 0 : 48,
       pixelRatio: () => this.pixelRatioValue,
+      featureTables: () => this.syncQueries,
       error: (error) => this.fail(error, typeof error.detail.sourceId === "string" ? error.detail.sourceId : undefined),
       content: (sourceId) => {
         this.emit("sourcedata", { ...this.event("sourcedata"), sourceId, kind: "content" });
