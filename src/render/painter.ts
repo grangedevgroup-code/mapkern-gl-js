@@ -627,31 +627,13 @@ export class Painter {
         this.pickBuffer.clear();
         this.vector.draw(input, layer, manager, stats, pass);
         if (draws.length === 0) continue;
-        reads.push({ layer, draws, read: this.pickBuffer.copy() });
+        if (sync) reads.push({ layer, draws, read: null, pixels: this.pickBuffer.read().slice() });
+        else reads.push({ layer, draws, read: this.pickBuffer.copy(), pixels: null });
       }
     } finally {
       if (bound) this.pickBuffer.end();
     }
-    const labels = this.labels.hits(box, (layer) => layer.isVisible(zoom) && accept(layer));
-    const results = reads.length > 0 ? await this.pickBuffer.collect(reads.map((r) => r.read)) : [];
-    for (let r = 0; r < reads.length; r++) {
-      const pixels = results[r];
-      if (!pixels) continue;
-      const { layer, draws } = reads[r]!;
-      const seen = new Set<number>();
-      for (let p = 0; p < pixels.length; p += 4) {
-        const draw = pixels[p]!;
-        if (draw === 0) continue;
-        const feature = pixels[p + 1]!;
-        const key = draw * 4294967296 + feature;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const hit = draws[draw - 1];
-        if (hit) found.push({ layer, tile: hit.piece.tile, bucket: hit.bucket, feature });
-      }
-    }
-    const order = new Map(frame.layers.map((l, i) => [l, i]));
-    return [...labels, ...found].sort((a, b) => (order.get(b.layer) ?? 0) - (order.get(a.layer) ?? 0));
+    return reads;
   }
 
   destroy(): void {
