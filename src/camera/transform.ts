@@ -114,16 +114,6 @@ export class Transform {
     return this.fovDeg;
   }
 
-  get near(): number {
-    this.update();
-    return this.nearZ;
-  }
-
-  get far(): number {
-    this.update();
-    return this.farZ;
-  }
-
   get scale(): number {
     return 2 ** this.z;
   }
