@@ -35,7 +35,7 @@ type Callback = (error?: unknown, data?: unknown, cacheControl?: string | null, 
 export type AddProtocolAction = (
   params: RequestParameters,
   abortController: AbortController & Callback,
-) => Promise<GetResourceResponse<unknown>> | { cancel(): void } | undefined | void;
+) => Promise<GetResourceResponse<unknown>> | { cancel(): void } | undefined;
 
 export function resourceType(kind: ResourceKind, url: string): ResourceType {
   switch (kind) {
