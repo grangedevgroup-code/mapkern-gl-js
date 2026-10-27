@@ -250,6 +250,7 @@ export function writeSearchFile(input: IndexEntry[], options: WriteOptions): Uin
         info.varint(id - last);
         last = id;
       }
+      for (const id of head) info.byte(entries[id]!.rank);
       const count = Math.ceil(ids.length / POSTING_CHUNK);
       info.varint(count);
       for (let c = 0; c < count; c++) {
@@ -273,6 +274,7 @@ export function writeSearchFile(input: IndexEntry[], options: WriteOptions): Uin
         info.varint(id - prev);
         prev = id;
       }
+      for (const id of ids) info.byte(entries[id]!.rank);
     }
     blockTerms.push(term);
     if (blockTerms.length >= TERMS_PER_BLOCK || blockInfo.length >= TERM_BLOCK_BYTES) flush();
