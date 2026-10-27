@@ -296,10 +296,6 @@ export function importSky(root: { sky?: unknown; fog?: unknown }): { sky: SkySpe
   return { sky, skipped: skipped.list() };
 }
 
-export function importFilter(filter: unknown): unknown {
-  return convertFilter(filter);
-}
-
 export function layerTypeOf(v8Type: string): LayerType | undefined {
   return TYPES[v8Type];
 }
