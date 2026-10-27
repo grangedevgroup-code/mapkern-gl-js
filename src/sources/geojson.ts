@@ -333,6 +333,7 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
       y: tile.y,
       layers: programs,
       overzoom: tile.z >= this.options().maxZoom,
+      table: this.ctx.featureTables(),
     };
     const pool = this.ctx.workers();
     let reply = await pool.send<GeoJSONTileReply>("geojson-tile", request, [], signal, this.affinity);
