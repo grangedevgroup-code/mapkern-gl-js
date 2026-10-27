@@ -949,6 +949,10 @@ export class MapkernMap extends Emitter<MapEvents> {
     this.elevationTo = null;
     this.applyCamera(options);
     this.cameraChanged();
+    if (!this.hostCall && this.gestureDepth === 0 && !this.removed) {
+      this.emitCameraEvents();
+      this.emitCameraEvents();
+    }
     return this;
   }
 
