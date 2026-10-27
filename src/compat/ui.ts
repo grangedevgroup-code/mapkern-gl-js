@@ -233,7 +233,29 @@ function markerOptions(first?: HTMLElement | MarkerOptions, second?: MarkerOptio
   return out;
 }
 
-export class Marker extends NativeMarker {
+type MarkerBase = Omit<
+  NativeMarker,
+  | "addTo"
+  | "getLngLat"
+  | "setLngLat"
+  | "getOffset"
+  | "setOffset"
+  | "getPopup"
+  | "remove"
+  | "setPopup"
+  | "togglePopup"
+  | "setDraggable"
+  | "setRotation"
+  | "setRotationAlignment"
+  | "setPitchAlignment"
+  | "setOccludedOpacity"
+  | "addClassName"
+  | "removeClassName"
+>;
+const MarkerBase = NativeMarker as unknown as new (options: NativeMarkerOptions) => MarkerBase;
+const nativeMarker = NativeMarker.prototype;
+
+export class Marker extends MarkerBase {
   private opacityValue: string | undefined;
 
   constructor(first?: HTMLElement | MarkerOptions, second?: MarkerOptions) {
@@ -245,26 +267,29 @@ export class Marker extends NativeMarker {
     if (o?.opacity !== undefined) this.setOpacity(o.opacity);
   }
 
-  override addTo(map: unknown): this {
-    return super.addTo(nativeMap(map));
+  addTo(map: unknown): this {
+    nativeMarker.addTo.call(this as unknown as NativeMarker, nativeMap(map));
+    return this;
   }
 
-  override getLngLat(): LngLat {
-    const ll = super.getLngLat();
+  getLngLat(): LngLat {
+    const ll = nativeMarker.getLngLat.call(this as unknown as NativeMarker);
     return ll ? new LngLat(ll[0], ll[1]) : (undefined as unknown as LngLat);
   }
 
-  override setLngLat(lngLat: LngLatLike): this {
-    return super.setLngLat(lngLatTuple(lngLat));
+  setLngLat(lngLat: LngLatLike): this {
+    nativeMarker.setLngLat.call(this as unknown as NativeMarker, lngLatTuple(lngLat));
+    return this;
   }
 
-  getOffsetPoint(): Point {
-    const [x, y] = super.getOffset();
+  getOffset(): Point {
+    const [x, y] = nativeMarker.getOffset.call(this as unknown as NativeMarker);
     return new Point(x, y);
   }
 
-  override setOffset(offset: Offset): this {
-    return super.setOffset(offsetTuple(offset) as [number, number] | number);
+  setOffset(offset: Offset): this {
+    nativeMarker.setOffset.call(this as unknown as NativeMarker, offsetTuple(offset) as [number, number] | number);
+    return this;
   }
 
   setOpacity(opacity?: string | number, opacityWhenCovered?: string | number): this {
@@ -273,6 +298,60 @@ export class Marker extends NativeMarker {
     if (opacityWhenCovered !== undefined && Number.isFinite(Number(opacityWhenCovered))) {
       this.setOccludedOpacity(Number(opacityWhenCovered));
     }
+    return this;
+  }
+
+  getPopup(): Popup | null {
+    return nativeMarker.getPopup.call(this as unknown as NativeMarker) as unknown as Popup | null;
+  }
+
+  remove(): this {
+    nativeMarker.remove.call(this as unknown as NativeMarker);
+    return this;
+  }
+
+  setPopup(popup?: Popup | null): this {
+    nativeMarker.setPopup.call(this as unknown as NativeMarker, popup as never);
+    return this;
+  }
+
+  togglePopup(): this {
+    nativeMarker.togglePopup.call(this as unknown as NativeMarker);
+    return this;
+  }
+
+  setDraggable(draggable: boolean): this {
+    nativeMarker.setDraggable.call(this as unknown as NativeMarker, draggable);
+    return this;
+  }
+
+  setRotation(rotation: number): this {
+    nativeMarker.setRotation.call(this as unknown as NativeMarker, rotation);
+    return this;
+  }
+
+  setRotationAlignment(alignment: "map" | "viewport" | "auto"): this {
+    nativeMarker.setRotationAlignment.call(this as unknown as NativeMarker, alignment);
+    return this;
+  }
+
+  setPitchAlignment(alignment: "map" | "viewport" | "auto"): this {
+    nativeMarker.setPitchAlignment.call(this as unknown as NativeMarker, alignment);
+    return this;
+  }
+
+  setOccludedOpacity(opacity: number): this {
+    nativeMarker.setOccludedOpacity.call(this as unknown as NativeMarker, opacity);
+    return this;
+  }
+
+  addClassName(name: string): this {
+    nativeMarker.addClassName.call(this as unknown as NativeMarker, name);
+    return this;
+  }
+
+  removeClassName(name: string): this {
+    nativeMarker.removeClassName.call(this as unknown as NativeMarker, name);
     return this;
   }
 
@@ -306,7 +385,25 @@ function popupOffset(offset: PopupOptions["offset"]): NativePopupOptions["offset
   return out as NativePopupOptions["offset"];
 }
 
-export class Popup extends NativePopup {
+type PopupBase = Omit<
+  NativePopup,
+  | "addTo"
+  | "getLngLat"
+  | "setLngLat"
+  | "setOffset"
+  | "setHTML"
+  | "remove"
+  | "trackPointer"
+  | "setText"
+  | "setDOMContent"
+  | "setMaxWidth"
+  | "addClassName"
+  | "removeClassName"
+>;
+const PopupBase = NativePopup as unknown as new (options: NativePopupOptions) => PopupBase;
+const nativePopup = NativePopup.prototype;
+
+export class Popup extends PopupBase {
   constructor(options: PopupOptions = {}) {
     const native: NativePopupOptions = {};
     if (options.closeButton !== undefined) native.closeButton = options.closeButton;
@@ -321,29 +418,70 @@ export class Popup extends NativePopup {
     super(native);
   }
 
-  override addTo(map: unknown): this {
-    return super.addTo(nativeMap(map));
+  addTo(map: unknown): this {
+    nativePopup.addTo.call(this as unknown as NativePopup, nativeMap(map));
+    return this;
   }
 
-  override getLngLat(): LngLat {
-    const ll = super.getLngLat();
+  getLngLat(): LngLat {
+    const ll = nativePopup.getLngLat.call(this as unknown as NativePopup);
     return ll ? new LngLat(ll[0], ll[1]) : (undefined as unknown as LngLat);
   }
 
-  override setLngLat(lngLat: LngLatLike): this {
-    return super.setLngLat(lngLatTuple(lngLat));
+  setLngLat(lngLat: LngLatLike): this {
+    nativePopup.setLngLat.call(this as unknown as NativePopup, lngLatTuple(lngLat));
+    return this;
   }
 
-  override setHTML(html: string): this {
+  setHTML(html: string): this {
     const doc = typeof document !== "undefined" ? document : null;
-    if (!doc) return super.setHTML(html);
+    if (!doc) {
+      nativePopup.setHTML.call(this as unknown as NativePopup, html);
+      return this;
+    }
     const template = doc.createElement("template");
     template.innerHTML = html;
     return this.setDOMContent(template.content);
   }
 
-  override setOffset(offset?: PopupOptions["offset"]): this {
-    return super.setOffset(popupOffset(offset));
+  remove(): this {
+    nativePopup.remove.call(this as unknown as NativePopup);
+    return this;
+  }
+
+  trackPointer(): this {
+    nativePopup.trackPointer.call(this as unknown as NativePopup);
+    return this;
+  }
+
+  setText(text: string): this {
+    nativePopup.setText.call(this as unknown as NativePopup, text);
+    return this;
+  }
+
+  setDOMContent(node: Node): this {
+    nativePopup.setDOMContent.call(this as unknown as NativePopup, node);
+    return this;
+  }
+
+  setMaxWidth(width: string): this {
+    nativePopup.setMaxWidth.call(this as unknown as NativePopup, width);
+    return this;
+  }
+
+  addClassName(name: string): this {
+    nativePopup.addClassName.call(this as unknown as NativePopup, name);
+    return this;
+  }
+
+  removeClassName(name: string): this {
+    nativePopup.removeClassName.call(this as unknown as NativePopup, name);
+    return this;
+  }
+
+  setOffset(offset?: PopupOptions["offset"]): this {
+    nativePopup.setOffset.call(this as unknown as NativePopup, popupOffset(offset));
+    return this;
   }
 
   setSubpixelPositioning(_value: boolean): this {
