@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mapkern MapLibre API test</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      #map {
+        position: absolute;
+        inset: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script type="module">
+      import maplibregl from "/dist/maplibre.js";
+
+      window.maplibregl = maplibregl;
+      window.pixel = (x, y) => {
+        const source = window.map.getCanvas();
+        const ratio = source.width / source.clientWidth;
+        const c = document.createElement("canvas");
+        c.width = 1;
+        c.height = 1;
+        const ctx = c.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(source, Math.floor(x * ratio), Math.floor(y * ratio), 1, 1, 0, 0, 1, 1);
+        return Array.from(ctx.getImageData(0, 0, 1, 1).data);
+      };
+      window.ready = true;
+    </script>
+  </body>
+</html>
