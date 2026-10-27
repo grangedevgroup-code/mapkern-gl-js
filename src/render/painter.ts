@@ -68,6 +68,13 @@ export interface PickedFeature {
   feature: number;
 }
 
+interface PickRead {
+  layer: StyleLayer;
+  draws: { piece: RenderPiece<VectorTile>; bucket: VectorBucket }[];
+  read: PendingRead | null;
+  pixels: Uint32Array | null;
+}
+
 export interface PaintStats {
   drawCalls: number;
   pieces: number;
