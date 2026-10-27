@@ -61,7 +61,35 @@ export async function buildGeoJSONTile(
     x: request.x,
     y: request.y,
   });
-  return { result: { missing: false, tile: built.result }, transfer: built.transfer };
+  if (!request.table) return { result: { missing: false, tile: built.result }, transfer: built.transfer };
+  const table = featureTable(layer);
+  const transfer = [...built.transfer];
+  for (const entry of table) for (const part of entry.parts) transfer.push(part.buffer);
+  return { result: { missing: false, tile: built.result, table }, transfer };
+}
+
+function featureTable(layer: FeatureLayer): TileFeatureEntry[] {
+  const byIndex = new Map<number, TileFeatureEntry>();
+  for (let i = 0; i < layer.length; i++) {
+    const feature = layer.feature(i);
+    const index = feature.source ?? -1;
+    if (index < 0) continue;
+    const parts = feature.geometry().map((part) => part.slice());
+    const known = byIndex.get(index);
+    if (known) {
+      if (known.type === feature.type) known.parts.push(...parts);
+      continue;
+    }
+    byIndex.set(index, {
+      index,
+      id: feature.textId ?? feature.id,
+      properties: feature.properties(),
+      type: feature.type,
+      extent: feature.extent,
+      parts,
+    });
+  }
+  return [...byIndex.values()];
 }
 
 export async function geojsonFeatures(request: {
