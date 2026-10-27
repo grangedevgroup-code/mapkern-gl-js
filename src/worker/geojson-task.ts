@@ -1,10 +1,11 @@
 import { bytesToGeoJSON, objectToGeoJSON } from "../formats/convert.ts";
 import type { FeatureFormat } from "../formats/feature-format.ts";
+import type { FeatureType, PropertyValue } from "../formats/mvt.ts";
 import type { GeometryType } from "../style/expression.ts";
 import { compile } from "../style/expression.ts";
 import type { GeoJSONOptions, GeoJSONSummary, QueriedSourceFeature, SourceGeoJSONFeature } from "./geojson.ts";
 import { GeoJSONIndex } from "./geojson.ts";
-import type { LayerProgram, VectorTileResult } from "./vector-task.ts";
+import type { FeatureLayer, LayerProgram, VectorTileResult } from "./vector-task.ts";
 import { buildBuckets } from "./vector-task.ts";
 
 export interface GeoJSONLoadRequest {
