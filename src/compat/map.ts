@@ -694,7 +694,7 @@ export class CompatMap {
   whenSourceSettles(id: string): Promise<void> {
     return new Promise((resolve) => {
       const check = () => {
-        let settled = true;
+        let settled: boolean;
         try {
           settled = this.native.isSourceLoaded(id);
         } catch {
