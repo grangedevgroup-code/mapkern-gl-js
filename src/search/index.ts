@@ -238,7 +238,7 @@ export class SearchIndex implements Geocoder {
     if (local.length) {
       const radius = Math.max(...local.map((k) => options.radius ?? REVERSE_RADIUS[k]));
       const blocks = this.blocksNear(lon, lat, radius);
-      const loaded = await Promise.all(blocks.map((b) => this.file.entryBlock(b)));
+      const loaded = await this.file.entryBlocks(blocks);
       blocks.forEach((b, n) => {
         loaded[n]!.forEach((e, i) => {
           const kind = SEARCH_KINDS[e.kind]!;
@@ -285,55 +285,58 @@ export class SearchIndex implements Geocoder {
 
   private async match(token: string, prefix: boolean, contexts: boolean): Promise<Match[]> {
     const file = this.file;
-    const out: Match[] = [];
-    const seen = new Set<string>();
-    const add = async (info: TermInfo | null, quality: number, direct: boolean, limit = POSTING_LIMIT) => {
-      if (!info || seen.has(info.term)) return;
-      seen.add(info.term);
-      const ids = await file.postings(info, contexts ? limit : Math.min(limit, PREFIX_LIMIT));
-      out.push({ info, ids, head: info.head, quality, direct });
-    };
-    if (prefix && token.length === 1) {
-      await add(await file.term(PREFIX_TOP + token), 0.9, true);
-      return out;
-    }
-    await add(await file.term(token), 1, true);
-    if (prefix) {
-      if (token.length <= 3) await add(await file.term(PREFIX_TOP + token), 0.9, true);
-      else {
-        const { infos } = await file.range(token, PREFIX_BLOCKS);
-        for (const info of infos)
-          await add(
-            info,
-            0.85 + 0.1 * (token.length / info.term.length),
-            true,
-            info.term === token ? POSTING_LIMIT : PREFIX_LIMIT,
-          );
+    type Found = { info: TermInfo; quality: number; direct: boolean; limit: number };
+    const one = (term: string, quality: number, direct: boolean, limit = POSTING_LIMIT): Promise<Found[]> =>
+      file.term(term).then((info) => (info ? [{ info, quality, direct, limit }] : []));
+    const many = (start: string, blocks: number, rate: (info: TermInfo) => number | null, direct: boolean) =>
+      file.range(start, blocks).then(({ infos }) =>
+        infos.flatMap((info) => {
+          const quality = rate(info);
+          return quality === null
+            ? []
+            : [{ info, quality, direct, limit: info.term === start ? POSTING_LIMIT : PREFIX_LIMIT }];
+        }),
+      );
+    const jobs: Promise<Found[]>[] = [];
+    if (prefix && token.length === 1) jobs.push(one(PREFIX_TOP + token, 0.9, true));
+    else {
+      jobs.push(one(token, 1, true), one(CODE_WORD + token, 1.15, true), one(OTHER_NAME + token, 0.9, true));
+      jobs.push(one(CATEGORY_WORD + token, 0.8, true));
+      if (contexts) jobs.push(one(CONTEXT_WORD + token, 0.7, false));
+      if (prefix) {
+        if (token.length <= 3) jobs.push(one(PREFIX_TOP + token, 0.9, true));
+        else jobs.push(many(token, PREFIX_BLOCKS, (info) => 0.85 + 0.1 * (token.length / info.term.length), true));
+        for (const short of expandPrefix(token)) jobs.push(one(short, 0.9, true));
+        if (token.length >= 4) jobs.push(many(OTHER_NAME + token, 2, () => 0.8, true));
+        if (token.length >= 3) {
+          jobs.push(many(CATEGORY_WORD + token, 1, () => 0.7, true));
+          if (contexts) jobs.push(many(CONTEXT_WORD + token, 1, () => 0.6, false));
+        }
       }
-      for (const short of expandPrefix(token)) await add(await file.term(short), 0.9, true);
     }
-    await add(await file.term(CODE_WORD + token), 1.15, true);
-    await add(await file.term(OTHER_NAME + token), 0.9, true);
-    if (prefix && token.length >= 4)
-      for (const info of (await file.range(OTHER_NAME + token, 2)).infos) await add(info, 0.8, true, PREFIX_LIMIT);
-    if (!out.some((m) => m.direct) && token.length >= 4 && !isNumber(token)) {
+    let found = (await Promise.all(jobs)).flat();
+    if (!found.some((f) => f.direct) && token.length >= 4 && !isNumber(token)) {
       const limit = token.length >= 8 ? 2 : 1;
-      const infos: TermInfo[] = [];
-      for (const start of typoStarts(token)) infos.push(...(await file.range(start, TYPO_BLOCKS)).infos);
-      for (const info of infos) {
+      const rate = (info: TermInfo) => {
         const t = info.term;
         const edits = withinEdits(token, t, limit, prefix ? Math.min(t.length, token.length) : t.length);
-        if (edits > 0) await add(info, edits === 1 ? 0.75 : 0.6, true, PREFIX_LIMIT);
-      }
+        return edits > 0 ? (edits === 1 ? 0.75 : 0.6) : null;
+      };
+      const typos = await Promise.all(typoStarts(token).map((start) => many(start, TYPO_BLOCKS, rate, true)));
+      found = found.concat(typos.flat().map((f) => ({ ...f, limit: PREFIX_LIMIT })));
     }
-    await add(await file.term(CATEGORY_WORD + token), 0.8, true);
-    if (contexts) await add(await file.term(CONTEXT_WORD + token), 0.7, false);
-    if (prefix && token.length >= 3) {
-      if (contexts)
-        for (const info of (await file.range(CONTEXT_WORD + token, 1)).infos) await add(info, 0.6, false, PREFIX_LIMIT);
-      for (const info of (await file.range(CATEGORY_WORD + token, 1)).infos) await add(info, 0.7, true, PREFIX_LIMIT);
-    }
-    return out;
+    found.sort((x, y) => y.quality - x.quality);
+    const seen = new Set<string>();
+    const unique = found.filter((f) => !seen.has(f.info.term) && seen.add(f.info.term));
+    return Promise.all(
+      unique.map(async (f) => ({
+        info: f.info,
+        ids: await file.postings(f.info, contexts ? f.limit : Math.min(f.limit, PREFIX_LIMIT)),
+        head: f.info.head,
+        quality: f.quality,
+        direct: f.direct,
+      })),
+    );
   }
 
   private combine(all: Match[][], allowMissing: number, near: [number, number] | undefined): Candidate[] {
