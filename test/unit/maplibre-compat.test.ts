@@ -89,7 +89,7 @@ test("Point does the point-geometry math", () => {
   close(r.y, 1);
   assert.deepEqual(p.matMult([0, 1, 1, 0]), new Point(4, 3));
   assert.equal(p.dist(new Point(0, 0)), 5);
-  close(new Point(1, 0).angleWith(new Point(0, 1)), -Math.PI / 2);
+  close(new Point(1, 0).angleWith(new Point(0, 1)), Math.PI / 2);
   assert.deepEqual(Point.convert([1, 2]), new Point(1, 2));
   assert.deepEqual(Point.convert({ x: 1, y: 2 }), new Point(1, 2));
   const q = new Point(1, 2);
