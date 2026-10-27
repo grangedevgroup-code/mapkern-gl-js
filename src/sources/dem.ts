@@ -70,19 +70,42 @@ export class DemSource implements MapSource {
     return size > 0 ? size : 512;
   }
 
-  async load(signal: AbortSignal): Promise<void> {
-    const set = await resolveTileSet(
-      this.id,
-      archiveSpec(this.spec),
-      { minZoom: 0, maxZoom: 15 },
-      this.ctx.transformRequest,
-      this.ctx.requestTimeoutMs,
-      signal,
-      this.ctx.diskCache,
-    );
-    if (signal.aborted) return;
+  private readonly target = new TileSetTarget(
+    (signal) =>
+      resolveTileSet(
+        this.id,
+        archiveSpec(this.spec),
+        { minZoom: 0, maxZoom: 15 },
+        this.ctx.transformRequest,
+        this.ctx.requestTimeoutMs,
+        signal,
+        this.ctx.diskCache,
+      ),
+    (set) => this.start(set),
+    (error) => this.ctx.error(sourceFailure(this.id, error)),
+  );
+
+  load(signal: AbortSignal): Promise<void> {
+    return this.target.load(signal);
+  }
+
+  setTiles(tiles: readonly string[]): this {
+    this.spec = withTiles(this.spec, tiles);
+    this.target.retarget();
+    return this;
+  }
+
+  setUrl(url: string): this {
+    this.spec = withUrl(this.spec, url);
+    this.target.retarget();
+    return this;
+  }
+
+  private start(set: TileSet): void {
+    const previous = this.manager;
     this.tileSet = set;
     this.ctx.scheduler.setGroupLimit(this.id, 12);
+    previous?.destroy();
     this.manager = new TileManager<DemTile>(
       this.id,
       { tileSize: this.tileSize, minZoom: set.minZoom, maxZoom: set.maxZoom, roundZoom: true, bounds: set.bounds },
