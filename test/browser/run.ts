@@ -2677,7 +2677,13 @@ const specs: Spec[] = [
         terrain: { source: "dem" },
       };
       await createMap(page, JSON.stringify(draped), { zoom: 3, center: [0, 0], pitch: 30 });
-      const reds = await framesDuring(page, `window.map.setPaintProperty("f", "color", "#0000ff")`, 400, 300, 700);
+      const reds = await framesDuring(
+        page,
+        `window.map.setPaintProperty("f", "colorTransition", { duration: 1200 }); window.map.setPaintProperty("f", "color", "#0000ff")`,
+        400,
+        300,
+        1600,
+      );
       const mixed = reds.filter((p) => p[0] > 10 && p[0] < 245 && p[2] > 10 && p[2] < 245).length;
       const last = reds[reds.length - 1]!;
       await shot("transition-terrain");
