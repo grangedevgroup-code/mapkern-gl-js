@@ -74,6 +74,11 @@ class Bits {
     this.bit = 0;
   }
 
+  seek(pos: number): void {
+    this.pos = pos;
+    this.align();
+  }
+
   decode(t: Table): number {
     let code = 0;
     let first = 0;
@@ -124,7 +129,7 @@ export function inflateSync(data: Uint8Array, zlib = true): Uint8Array {
       room(len);
       out.set(data.subarray(at, at + len), size);
       size += len;
-      (bits as unknown as { pos: number }).pos = at + len;
+      bits.seek(at + len);
       continue;
     }
     let literals: Table;
