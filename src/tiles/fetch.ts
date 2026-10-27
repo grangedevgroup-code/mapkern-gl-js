@@ -4,7 +4,7 @@ import type { ProtocolHandler, ProtocolRequest } from "./protocols.ts";
 import { protocolFor } from "./protocols.ts";
 import type { TileFailure } from "./tile.ts";
 
-export type ResourceKind = "style" | "source" | "tile" | "glyphs" | "image";
+export type ResourceKind = "style" | "source" | "tile" | "glyphs" | "sprite" | "image";
 
 export interface RequestParameters {
   url: string;
