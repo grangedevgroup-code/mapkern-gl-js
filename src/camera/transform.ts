@@ -110,6 +110,10 @@ export class Transform {
     return this.pitchDeg;
   }
 
+  get fov(): number {
+    return this.fovDeg;
+  }
+
   get scale(): number {
     return 2 ** this.z;
   }
