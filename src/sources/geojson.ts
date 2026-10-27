@@ -348,7 +348,12 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
         retryable: false,
       });
     }
-    return vectorTile(reply.tile, signature, null);
+    const built = vectorTile(reply.tile, signature, null);
+    if (reply.table) {
+      built.table = new Map(reply.table.map((entry) => [entry.index, entry]));
+      for (const entry of reply.table) for (const part of entry.parts) built.bytes += part.byteLength;
+    }
+    return built;
   }
 
   private restore(): Promise<void> {
