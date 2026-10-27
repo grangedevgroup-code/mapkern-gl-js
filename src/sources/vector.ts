@@ -47,6 +47,7 @@ export interface VectorBucket {
 export interface VectorTile {
   buckets: Map<string, VectorBucket>;
   raw: ArrayBuffer | null;
+  table?: Map<number, TileFeatureEntry> | null;
   signature: string;
   bytes: number;
   uploaded: boolean;
