@@ -23,13 +23,20 @@ export class HttpRangeSource implements RangeSource {
   private readonly url: string;
   private readonly headers: Record<string, string>;
   private readonly credentials: RequestCredentials | undefined;
+  private readonly cache: RequestCache | undefined;
   private whole: Promise<Uint8Array> | null = null;
 
-  constructor(url: string, headers: Record<string, string> = {}, credentials?: RequestCredentials) {
+  constructor(
+    url: string,
+    headers: Record<string, string> = {},
+    credentials?: RequestCredentials,
+    cache?: RequestCache,
+  ) {
     this.key = url;
     this.url = url;
     this.headers = headers;
     this.credentials = credentials;
+    this.cache = cache;
   }
 
   async read(
@@ -43,6 +50,7 @@ export class HttpRangeSource implements RangeSource {
     }
     const init: RequestInit = { signal, headers: { ...this.headers, range: `bytes=${offset}-${offset + length - 1}` } };
     if (this.credentials) init.credentials = this.credentials;
+    if (this.cache) init.cache = this.cache;
     let response: Response;
     try {
       response = await fetch(this.url, init);
