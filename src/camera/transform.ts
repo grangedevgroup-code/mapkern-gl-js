@@ -396,6 +396,14 @@ export class Transform {
     this.setZoom(this.z);
   }
 
+  setFov(degrees: number): void {
+    const next = Math.max(0.1, Math.min(150, degrees));
+    if (next === this.fovDeg) return;
+    this.fovDeg = next;
+    this.dirty = true;
+    this.setPitch(this.pitchDeg);
+  }
+
   setPitchRange(minPitch: number, maxPitch: number): void {
     this.minPitch = Math.max(0, Math.min(minPitch, maxPitch));
     this.maxPitch = Math.min(85, Math.max(minPitch, maxPitch));
