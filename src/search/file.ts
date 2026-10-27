@@ -185,6 +185,27 @@ export class SearchFile {
     return out;
   }
 
+  async postingsWithin(info: TermInfo, ranges: readonly (readonly [number, number])[]): Promise<number[]> {
+    const inside = (id: number) => ranges.some(([a, b]) => id >= a && id < b);
+    if (info.inline) return Array.from(info.inline).filter(inside);
+    const wanted = info.chunks.filter((c) => ranges.some(([a, b]) => c.first < b && c.last >= a));
+    const out: number[] = [];
+    for (const c of wanted) {
+      const ids = await this.load(`p${c.at}`, async () => {
+        const r = new Reader(await this.bytes(c.at, c.length));
+        const list: number[] = [];
+        let id = 0;
+        while (!r.done) {
+          id += r.varint();
+          list.push(id);
+        }
+        return Uint32Array.from(list);
+      });
+      for (const id of ids) if (inside(id)) out.push(id);
+    }
+    return out;
+  }
+
   async summaries(ids: ArrayLike<number>): Promise<Map<number, Uint8Array>> {
     const chunks = new Set<number>();
     const size = this.meta.summaryChunk;
