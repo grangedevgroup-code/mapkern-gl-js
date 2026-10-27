@@ -23,9 +23,21 @@ export interface GeoJSONTileRequest {
   y: number;
   layers: LayerProgram[];
   overzoom: boolean;
+  table?: boolean;
 }
 
-export type GeoJSONTileReply = { missing: true } | { missing: false; tile: VectorTileResult };
+export interface TileFeatureEntry {
+  index: number;
+  id: number | string | undefined;
+  properties: Record<string, PropertyValue>;
+  type: FeatureType;
+  extent: number;
+  parts: Int32Array[];
+}
+
+export type GeoJSONTileReply =
+  | { missing: true }
+  | { missing: false; tile: VectorTileResult; table?: TileFeatureEntry[] | undefined };
 
 const indexes = new Map<string, GeoJSONIndex>();
 
