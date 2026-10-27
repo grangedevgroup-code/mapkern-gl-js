@@ -540,16 +540,68 @@ export class Painter {
     ground?: { frame: FrameInput; box: PickBox },
   ): Promise<PickedFeature[]> {
     if (this.gl.isLost) return [];
+    const reads = this.pickLayers(frame, box, accept, ground, false);
+    const labels = this.labels.hits(box, (layer) => layer.isVisible(frame.transform.zoom) && accept(layer));
+    const results = reads.length > 0 ? await this.pickBuffer.collect(reads.map((r) => r.read)) : [];
+    return this.pickHits(frame, labels, reads, results);
+  }
+
+  pickSync(
+    frame: FrameInput,
+    box: PickBox,
+    accept: (layer: StyleLayer) => boolean,
+    ground?: { frame: FrameInput; box: PickBox },
+  ): PickedFeature[] {
+    if (this.gl.isLost) return [];
+    const reads = this.pickLayers(frame, box, accept, ground, true);
+    const labels = this.labels.hits(box, (layer) => layer.isVisible(frame.transform.zoom) && accept(layer));
+    return this.pickHits(
+      frame,
+      labels,
+      reads,
+      reads.map((r) => r.pixels),
+    );
+  }
+
+  private pickHits(
+    frame: FrameInput,
+    labels: PickedFeature[],
+    reads: readonly PickRead[],
+    results: readonly (Uint32Array | null)[],
+  ): PickedFeature[] {
+    const found: PickedFeature[] = [];
+    for (let r = 0; r < reads.length; r++) {
+      const pixels = results[r];
+      if (!pixels) continue;
+      const { layer, draws } = reads[r]!;
+      const seen = new Set<number>();
+      for (let p = 0; p < pixels.length; p += 4) {
+        const draw = pixels[p]!;
+        if (draw === 0) continue;
+        const feature = pixels[p + 1]!;
+        const key = draw * 4294967296 + feature;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const hit = draws[draw - 1];
+        if (hit) found.push({ layer, tile: hit.piece.tile, bucket: hit.bucket, feature });
+      }
+    }
+    const order = new Map(frame.layers.map((l, i) => [l, i]));
+    return [...labels, ...found].sort((a, b) => (order.get(b.layer) ?? 0) - (order.get(a.layer) ?? 0));
+  }
+
+  private pickLayers(
+    frame: FrameInput,
+    box: PickBox,
+    accept: (layer: StyleLayer) => boolean,
+    ground: { frame: FrameInput; box: PickBox } | undefined,
+    sync: boolean,
+  ): PickRead[] {
     const zoom = frame.transform.zoom;
     const main = pickSetup(frame, box);
     const flat = ground ? pickSetup(ground.frame, ground.box) : main;
     const stats: PaintStats = { drawCalls: 0, pieces: 0, drapes: 0 };
-    const found: PickedFeature[] = [];
-    const reads: {
-      layer: StyleLayer;
-      draws: { piece: RenderPiece<VectorTile>; bucket: VectorBucket }[];
-      read: PendingRead | null;
-    }[] = [];
+    const reads: PickRead[] = [];
     let bound: PickSetup | null = null;
     try {
       for (let i = frame.layers.length - 1; i >= 0; i--) {
