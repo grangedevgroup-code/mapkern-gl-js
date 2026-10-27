@@ -4,6 +4,7 @@ import { decodeDem, decodeElevations, gradients } from "../terrain/dem.ts";
 export interface DemPixels {
   data: Uint8ClampedArray;
   size: number;
+  altered: boolean;
 }
 
 export interface DemRequest {
@@ -53,11 +54,12 @@ export async function decodeDemTile(
     return finish(decodeElevations(new Float32Array(request.raw, 8, size * size), size));
   }
   let pixels = request.pixels;
+  if (!pixels && request.bytes) pixels = (await exactPixels(request.bytes)) ?? undefined;
   if (!pixels) {
     if (typeof OffscreenCanvas === "undefined" || !request.bytes) throw new Error(NO_OFFSCREEN);
-    pixels = await readPixels(request.bytes, signal, (size) => new OffscreenCanvas(size, size));
+    pixels = await canvasPixels(request.bytes, signal, (size) => new OffscreenCanvas(size, size));
   }
-  return finish(decodeDem(pixels.data, pixels.size, request.unpack));
+  return finish(decodeDem(pixels.data, pixels.size, request.unpack, pixels.altered));
 }
 
 function finish(grid: ReturnType<typeof decodeDem>): { result: DemReply | null; transfer?: Transferable[] } {
@@ -153,8 +155,14 @@ export async function readPixels(
   signal: AbortSignal,
   canvas: (size: number) => Canvas2D | null,
 ): Promise<DemPixels> {
-  const exact = await exactPixels(bytes);
-  if (exact) return exact;
+  return (await exactPixels(bytes)) ?? canvasPixels(bytes, signal, canvas);
+}
+
+async function canvasPixels(
+  bytes: ArrayBuffer,
+  signal: AbortSignal,
+  canvas: (size: number) => Canvas2D | null,
+): Promise<DemPixels> {
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const altered = await canvasAltered(canvas);
   let bitmap: ImageBitmap;
@@ -175,7 +183,7 @@ export async function readPixels(
     const ctx = canvas(size)?.getContext("2d", { willReadFrequently: true }) ?? null;
     if (!ctx) throw new Error(NO_OFFSCREEN);
     ctx.drawImage(bitmap, 0, 0);
-    return { data: ctx.getImageData(0, 0, size, size).data, size };
+    return { data: ctx.getImageData(0, 0, size, size).data, size, altered };
   } finally {
     bitmap.close();
   }
