@@ -104,6 +104,13 @@ interface SourceLayerBase extends LayerBase {
   filter?: Expression;
 }
 
+export interface CustomLayerSpec extends LayerBase {
+  type: "custom";
+  renderingMode?: "2d" | "3d";
+  paint?: Record<string, never>;
+  layout?: Record<string, never>;
+}
+
 export interface BackgroundLayerSpec extends LayerBase {
   type: "background";
   paint?: { color?: Value<Color>; opacity?: Value<number> } & Transitions<"color" | "opacity">;
@@ -291,6 +298,7 @@ export interface HillshadeLayerSpec extends LayerBase {
 }
 
 export type LayerSpec =
+  | CustomLayerSpec
   | BackgroundLayerSpec
   | RasterLayerSpec
   | FillLayerSpec
