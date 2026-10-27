@@ -1,3 +1,4 @@
+import { inflateSync } from "../formats/inflate.ts";
 import type { RangeSource } from "../sources/pmtiles.ts";
 import type { EntryRecord, SearchMeta } from "./format.ts";
 import { decoder, HEADER_SIZE, MAGIC, Reader, readEntry, SECTIONS, SearchIndexError, VERSION } from "./format.ts";
@@ -26,8 +27,7 @@ export class MemoryRangeSource implements RangeSource {
 }
 
 export async function inflate(data: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+  return inflateSync(data);
 }
 
 const SPAN_GAP = 16 * 1024;
@@ -191,21 +191,11 @@ export class SearchFile {
     const inside = (id: number) => ranges.some(([a, b]) => id >= a && id < b);
     if (info.inline) return Array.from(info.inline).filter(inside);
     const wanted = info.chunks.filter((c) => ranges.some(([a, b]) => c.first < b && c.last >= a));
-    const out: number[] = [];
-    for (const c of wanted) {
-      const ids = await this.load(`p${c.at}`, async () => {
-        const r = new Reader(await this.bytes(c.at, c.length));
-        const list: number[] = [];
-        let id = 0;
-        while (!r.done) {
-          id += r.varint();
-          list.push(id);
-        }
-        return Uint32Array.from(list);
-      });
-      for (const id of ids) if (inside(id)) out.push(id);
-    }
-    return out;
+    const lists = await this.batch(
+      wanted.map((c) => ({ key: `p${c.at}`, at: c.at, length: c.length })),
+      parsePostings,
+    );
+    return lists.flatMap((ids) => Array.from(ids).filter(inside));
   }
 
   async summaries(ids: ArrayLike<number>): Promise<Map<number, Uint8Array>> {
