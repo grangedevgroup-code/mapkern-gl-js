@@ -552,6 +552,8 @@ export class CompatMap {
   private readonly unalias: () => void;
   private readonly noted = new Set<string>();
   private loadFired = false;
+  private imageResolver: ((id: string) => unknown) | null = null;
+  private resolverHooked = false;
 
   constructor(options: CompatMapOptions) {
     if (!isJson(options)) throw new Error("new Map(options) needs an options object");
@@ -1347,6 +1349,29 @@ export class CompatMap {
       animated.onRemove?.();
     }
     if (this.native.hasImage(id)) this.native.removeImage(id);
+    return this;
+  }
+
+  setMissingStyleImageResolver(resolver: ((id: string) => void | Promise<void>) | null): this {
+    this.imageResolver = typeof resolver === "function" ? resolver : null;
+    if (!this.resolverHooked) {
+      this.resolverHooked = true;
+      this.native.on("styleimagemissing", (event) => {
+        const resolve = this.imageResolver;
+        if (!resolve) return;
+        try {
+          const pending = resolve(event.id);
+          if (pending && typeof (pending as Promise<void>).then === "function") {
+            (pending as Promise<void>).then(
+              () => this.native.triggerRepaint(),
+              (error: unknown) => this.error(error),
+            );
+          }
+        } catch (error) {
+          this.error(error);
+        }
+      });
+    }
     return this;
   }
 
