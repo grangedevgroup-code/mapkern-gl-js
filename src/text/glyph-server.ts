@@ -10,6 +10,7 @@ export interface ServerGlyph {
 }
 
 export const SERVER_BORDER = 3;
+const SERVER_ASCENDER = 24.2;
 
 export type GlyphLoader = (url: string, signal: AbortSignal) => Promise<Uint8Array | null>;
 
