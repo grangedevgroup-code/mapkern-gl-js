@@ -11,9 +11,9 @@ import { TileManager } from "../tiles/manager.ts";
 import type { DemReply } from "../worker/dem-task.ts";
 import { isRawElevation, NO_OFFSCREEN, readPixels } from "../worker/dem-task.ts";
 import type { MapSource, SourceContext } from "./source.ts";
-import { tileEvents } from "./source.ts";
+import { sourceFailure, tileEvents } from "./source.ts";
 import type { TileSet } from "./tilejson.ts";
-import { archiveSpec, lngLatBounds, resolveTileSet, tileUrl } from "./tilejson.ts";
+import { archiveSpec, lngLatBounds, resolveTileSet, TileSetTarget, tileUrl, withTiles, withUrl } from "./tilejson.ts";
 
 export interface DemTile {
   readonly z: number;
