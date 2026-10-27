@@ -3,13 +3,13 @@ import { test } from "node:test";
 import { decodeGlyphs, fromServer, GlyphServer, genericStack, glyphUrl } from "../../src/text/glyph-server.ts";
 import { BLOCK_FONT, glyphRange } from "../browser/glyph-pbf.ts";
 
-test("glyph ranges decode with the top measured up from the baseline", () => {
+test("glyph ranges decode with the top placed the way MapLibre places it", () => {
   const glyphs = decodeGlyphs(glyphRange("Block Regular", 0, BLOCK_FONT));
   const w = glyphs.get(87)!;
   assert.equal(w.width, 14);
   assert.equal(w.height, 14);
   assert.equal(w.left, 1);
-  assert.equal(w.top, 14);
+  assert.equal(w.top, 18.2);
   assert.equal(w.advance, 16);
   assert.equal(w.bitmap?.length, 20 * 20);
   const space = glyphs.get(32)!;
