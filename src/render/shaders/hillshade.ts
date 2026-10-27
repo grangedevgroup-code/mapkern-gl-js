@@ -35,8 +35,8 @@ void main() {
   vec2 g = texture(u_gradient, v_uv * u_texel.x + u_texel.y).rg;
   float k = cosh(PI * (1.0 - 2.0 * mix(u_rows.x, u_rows.y, v_uv.y)));
   if (u_method == 1) {
-    vec2 deriv = clamp(g * u_derive, -1.0, 1.0);
-    float slope = atan(1.25 * length(deriv) * k);
+    vec2 deriv = clamp(g * u_derive, -4.0, 4.0) * k;
+    float slope = atan(0.625 * length(deriv));
     float aspect = deriv.x != 0.0 ? atan(deriv.y, -deriv.x) : PI / 2.0 * (deriv.y > 0.0 ? 1.0 : -1.0);
     float base = 1.875 - u_intensity * 1.75;
     float steep = u_intensity != 0.5 ? (pow(base, slope) - 1.0) / (pow(base, PI / 2.0) - 1.0) * (PI / 2.0) : slope;

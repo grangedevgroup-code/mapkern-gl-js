@@ -832,6 +832,7 @@ export class Painter {
     const uRows = uniform(program, "u_rows");
     const uScale = uniform(program, "u_scale");
     const vertical = (0.5 + exaggeration) * hillshadeBoost(zoom);
+    const displayZ = Math.round(zoom + Math.log2(512 / source.tileSize));
     for (const piece of manager.pieces) {
       const data = piece.tile.data;
       if (!data?.gradientTexture || (frame.accept && !frame.accept(piece))) continue;
@@ -847,7 +848,7 @@ export class Painter {
       gl.uniform2f(uTexel, size / (size + 2), 1 / (size + 2));
       gl.uniform2f(uRows, y / n, (y + 1) / n);
       gl.uniform1f(uScale, (vertical * n * size) / EARTH_CIRCUMFERENCE);
-      gl.uniform1f(uDerive, (512 * n) / (EARTH_CIRCUMFERENCE * 2 ** (z < 2 ? 0.4 : z < 4.5 ? 0.35 : 0.3)));
+      gl.uniform1f(uDerive, standardSlopeScale(size, Math.max(z, displayZ)));
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       this.stats.drawCalls++;
       this.stats.pieces++;
@@ -946,6 +947,12 @@ export class Painter {
 
 const DEG = Math.PI / 180;
 const LIGHT_ALTITUDE = 45 * DEG;
+
+export function standardSlopeScale(size: number, z: number): number {
+  const factor = z < 2 ? 0.4 : z < 4.5 ? 0.35 : 0.3;
+  const boost = z < 15 ? 2 ** ((15 - z) * factor) : 1;
+  return ((size * 2 ** z) / EARTH_CIRCUMFERENCE) * boost;
+}
 
 export function hillshadeBoost(zoom: number): number {
   return 2 ** (0.3 * Math.max(0, 12 - zoom));

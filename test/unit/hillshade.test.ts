@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { EARTH_CIRCUMFERENCE } from "../../src/geo/mercator.ts";
 import { standardSlopeScale } from "../../src/render/painter.ts";
 
 const maplibreScale = (size: number, z: number) => {
@@ -19,7 +20,7 @@ test("standard hillshade scales slope like the MapLibre prepare pass at every zo
 });
 
 test("standard hillshade boosts low zooms and stops boosting at z15", () => {
-  const perPixel = (z: number) => standardSlopeScale(512, z) / ((512 * 2 ** z) / 40030173.6);
+  const perPixel = (z: number) => standardSlopeScale(512, z) / ((512 * 2 ** z) / EARTH_CIRCUMFERENCE);
   assert.ok(Math.abs(perPixel(9) - 2 ** 1.8) < 1e-3);
   assert.ok(Math.abs(perPixel(15) - 1) < 1e-3);
   assert.ok(Math.abs(perPixel(17) - 1) < 1e-3);
