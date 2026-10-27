@@ -37,6 +37,64 @@ export interface TileSetDefaults {
   maxZoom: number;
 }
 
+export function withTiles<T extends TileSourceBase>(spec: T, tiles: readonly string[]): T {
+  if (!Array.isArray(tiles) || tiles.length === 0 || !tiles.every((t) => typeof t === "string")) {
+    throw new MapkernError("invalid-option", "setTiles needs a non-empty list of tile URL templates");
+  }
+  const { url: _url, ...rest } = spec;
+  return { ...rest, tiles: [...tiles] } as T;
+}
+
+export function withUrl<T extends TileSourceBase>(spec: T, url: string): T {
+  if (typeof url !== "string" || url.length === 0) {
+    throw new MapkernError("invalid-option", "setUrl needs the URL of a TileJSON document or tile archive");
+  }
+  const { tiles: _tiles, ...rest } = spec;
+  return { ...rest, url } as T;
+}
+
+export class TileSetTarget {
+  private lifetime: AbortSignal | null = null;
+  private generation = 0;
+  private pending: Promise<void> = Promise.resolve();
+  private readonly resolve: (signal: AbortSignal) => Promise<TileSet>;
+  private readonly start: (set: TileSet) => void;
+  private readonly failed: (error: unknown) => void;
+
+  constructor(
+    resolve: (signal: AbortSignal) => Promise<TileSet>,
+    start: (set: TileSet) => void,
+    failed: (error: unknown) => void,
+  ) {
+    this.resolve = resolve;
+    this.start = start;
+    this.failed = failed;
+  }
+
+  async load(signal: AbortSignal): Promise<void> {
+    this.lifetime = signal;
+    const generation = this.generation;
+    const set = await this.resolve(signal);
+    if (signal.aborted) return;
+    if (generation !== this.generation) return this.pending;
+    this.start(set);
+  }
+
+  retarget(): void {
+    const signal = this.lifetime;
+    const generation = ++this.generation;
+    if (!signal || signal.aborted) return;
+    this.pending = this.resolve(signal).then(
+      (set) => {
+        if (!signal.aborted && generation === this.generation) this.start(set);
+      },
+      (error: unknown) => {
+        if (!signal.aborted && generation === this.generation) this.failed(error);
+      },
+    );
+  }
+}
+
 export function archiveSpec<T extends TileSourceBase>(spec: T): T {
   const url = spec.url;
   const m = url ? /\.(pmtiles|mbtiles)(\?|#|$)/i.exec(url) : null;
