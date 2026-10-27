@@ -20,6 +20,7 @@ export interface SourceContext {
   readonly fadeDuration: number;
   readonly prefetchLimit: number;
   readonly pixelRatio: () => number;
+  featureTables(): boolean;
   error(error: MapkernError): void;
   content(sourceId: string): void;
   changed(): void;
