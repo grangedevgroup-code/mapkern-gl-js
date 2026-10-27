@@ -92,7 +92,7 @@ export function aliasClasses(container: HTMLElement): () => void {
   return () => observer.disconnect();
 }
 
-const CSS = `
+export const COMPAT_CSS = `
 .maplibregl-ctrl:not(.mapkern-control):not(.mapkern-attribution):not(.mapkern-scale):not(.mapkern-logo),
 .mapboxgl-ctrl:not(.mapkern-control):not(.mapkern-attribution):not(.mapkern-scale):not(.mapkern-logo) {
   clear: both;
@@ -142,7 +142,7 @@ export function injectCompatStyles(doc: Document): void {
   injected = true;
   const style = doc.createElement("style");
   style.setAttribute("data-mapkern-compat", "");
-  style.textContent = CSS;
+  style.textContent = COMPAT_CSS;
   doc.head.appendChild(style);
 }
 

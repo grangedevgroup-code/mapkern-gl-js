@@ -139,7 +139,8 @@ export {
 
 export const config = { MAX_PARALLEL_IMAGE_REQUESTS: 16 };
 
-const namespace: Record<string, unknown> = {
+const namespace = {
+  accessToken: undefined as string | undefined,
   AttributionControl,
   Evented,
   FullscreenControl,

@@ -30,7 +30,17 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/mapkern.js"
     },
+    "./maplibre": {
+      "types": "./dist/types/maplibre.d.ts",
+      "import": "./dist/maplibre.js"
+    },
+    "./mapbox": {
+      "types": "./dist/types/mapbox.d.ts",
+      "import": "./dist/mapbox.js"
+    },
     "./mapkern.css": "./dist/mapkern.css",
+    "./maplibre.css": "./dist/maplibre.css",
+    "./mapbox.css": "./dist/maplibre.css",
     "./package.json": "./package.json"
   },
   "files": [

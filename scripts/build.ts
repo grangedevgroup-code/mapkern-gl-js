@@ -52,6 +52,18 @@ export async function buildAll(options: BuildOptions = {}): Promise<void> {
       minify: true,
       sourcemap: true,
     }),
+    ...(["maplibre", "mapbox"] as const).flatMap((name) => [
+      build({ ...common, entryPoints: [`src/${name}.ts`], format: "esm", outfile: `dist/${name}.js`, sourcemap: true }),
+      build({
+        ...common,
+        entryPoints: [`src/${name}.ts`],
+        format: "iife",
+        globalName: `${name}gl`,
+        outfile: `dist/${name}.global.js`,
+        minify: true,
+        sourcemap: true,
+      }),
+    ]),
   ]);
   const tools = {
     absWorkingDir: root,
@@ -73,6 +85,8 @@ export async function buildAll(options: BuildOptions = {}): Promise<void> {
   ]);
   const { CSS } = await import("../src/ui/css.ts");
   writeFileSync(join(dist, "mapkern.css"), `${CSS.trim()}\n`);
+  const { COMPAT_CSS } = await import("../src/compat/ui.ts");
+  writeFileSync(join(dist, "maplibre.css"), `${CSS.trim()}\n${COMPAT_CSS.trim()}\n`);
   if (options.types !== false) {
     rmSync(join(dist, "types"), { recursive: true, force: true });
     const tsc = join(root, "node_modules", "typescript", "bin", "tsc");
