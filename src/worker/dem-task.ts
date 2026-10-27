@@ -68,11 +68,95 @@ function finish(grid: ReturnType<typeof decodeDem>): { result: DemReply | null; 
   return { result: { grid, gradient }, transfer };
 }
 
+interface DecodedFrame {
+  readonly format: string | null;
+  readonly displayWidth: number;
+  readonly displayHeight: number;
+  allocationSize(): number;
+  copyTo(destination: Uint8Array): Promise<{ offset: number; stride: number }[]>;
+  close(): void;
+}
+
+interface FrameDecoder {
+  decode(): Promise<{ image: DecodedFrame }>;
+  close(): void;
+}
+
+interface FrameDecoderClass {
+  new (init: { data: Uint8Array; type: string; colorSpaceConversion: "none"; premultiplyAlpha: "none" }): FrameDecoder;
+  isTypeSupported(type: string): Promise<boolean>;
+}
+
+const PACKED = new Set(["RGBA", "RGBX", "BGRA", "BGRX"]);
+
+export async function exactPixels(bytes: ArrayBuffer): Promise<DemPixels | null> {
+  const Decoder = (globalThis as { ImageDecoder?: FrameDecoderClass }).ImageDecoder;
+  if (!Decoder) return null;
+  const type = imageType(new Uint8Array(bytes));
+  let decoder: FrameDecoder | null = null;
+  let frame: DecodedFrame | null = null;
+  try {
+    if (!(await Decoder.isTypeSupported(type))) return null;
+    decoder = new Decoder({
+      data: new Uint8Array(bytes),
+      type,
+      colorSpaceConversion: "none",
+      premultiplyAlpha: "none",
+    });
+    frame = (await decoder.decode()).image;
+    const size = frame.displayWidth;
+    const format = frame.format;
+    if (size !== frame.displayHeight || size < 2 || !format || !PACKED.has(format)) return null;
+    const raw = new Uint8Array(frame.allocationSize());
+    const [plane] = await frame.copyTo(raw);
+    if (!plane) return null;
+    const data = new Uint8ClampedArray(size * size * 4);
+    const bgr = format.startsWith("BGR");
+    const opaque = format.endsWith("X");
+    for (let y = 0; y < size; y++) {
+      let from = plane.offset + y * plane.stride;
+      let to = y * size * 4;
+      for (let x = 0; x < size; x++, from += 4, to += 4) {
+        data[to] = raw[bgr ? from + 2 : from]!;
+        data[to + 1] = raw[from + 1]!;
+        data[to + 2] = raw[bgr ? from : from + 2]!;
+        data[to + 3] = opaque ? 255 : raw[from + 3]!;
+      }
+    }
+    return { data, size, altered: false };
+  } catch {
+    return null;
+  } finally {
+    frame?.close();
+    decoder?.close();
+  }
+}
+
+let canvasCheck: Promise<boolean> | null = null;
+
+function canvasAltered(canvas: (size: number) => Canvas2D | null): Promise<boolean> {
+  canvasCheck ??= (async () => {
+    const ctx = canvas(16)?.getContext("2d", { willReadFrequently: true }) ?? null;
+    if (!ctx) return false;
+    const probe = ctx.createImageData(16, 16);
+    for (let i = 0; i < probe.data.length; i++) probe.data[i] = i % 4 === 3 ? 255 : (i * 37 + 11) & 255;
+    ctx.putImageData(probe, 0, 0);
+    const back = ctx.getImageData(0, 0, 16, 16).data;
+    for (let i = 0; i < back.length; i++) if (back[i] !== probe.data[i]) return true;
+    return false;
+  })();
+  return canvasCheck;
+}
+
 export async function readPixels(
   bytes: ArrayBuffer,
   signal: AbortSignal,
   canvas: (size: number) => Canvas2D | null,
 ): Promise<DemPixels> {
+  const exact = await exactPixels(bytes);
+  if (exact) return exact;
+  if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+  const altered = await canvasAltered(canvas);
   let bitmap: ImageBitmap;
   try {
     bitmap = await createImageBitmap(new Blob([bytes], { type: imageType(new Uint8Array(bytes)) }), {
