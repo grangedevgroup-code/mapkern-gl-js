@@ -40,12 +40,44 @@ export function unpackFor(encoding: DemEncoding | undefined): Unpack {
   return [encoding.red, encoding.green, encoding.blue, encoding.offset];
 }
 
-export function decodeDem(pixels: ArrayLike<number>, size: number, unpack: Unpack): DemGrid | null {
+export function decodeDem(pixels: ArrayLike<number>, size: number, unpack: Unpack, repair = false): DemGrid | null {
   const [r, g, b, offset] = unpack;
-  return build(size, (x, y) => {
-    const p = (y * size + x) * 4;
-    return pixels[p + 3] === 255 ? pixels[p]! * r + pixels[p + 1]! * g + pixels[p + 2]! * b + offset : Number.NaN;
-  });
+  const values = new Float32Array(size * size);
+  for (let i = 0; i < size * size; i++) {
+    const p = i * 4;
+    values[i] = pixels[p + 3] === 255 ? pixels[p]! * r + pixels[p + 1]! * g + pixels[p + 2]! * b + offset : Number.NaN;
+  }
+  if (repair) removeSpikes(values, size, Math.abs(r) * 0.45);
+  return build(size, (x, y) => values[y * size + x]!);
+}
+
+export function removeSpikes(values: Float32Array, size: number, threshold: number): number {
+  const around: number[] = [];
+  let fixed = 0;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const v = values[y * size + x]!;
+      if (Number.isNaN(v)) continue;
+      around.length = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+          const n = values[ny * size + nx]!;
+          if (!Number.isNaN(n)) around.push(n);
+        }
+      }
+      if (around.length < 3) continue;
+      around.sort((a, c) => a - c);
+      if (v > around[around.length - 1]! + threshold || v < around[0]! - threshold) {
+        values[y * size + x] = around[around.length >> 1]!;
+        fixed++;
+      }
+    }
+  }
+  return fixed;
 }
 
 export function decodeElevations(values: ArrayLike<number>, size: number): DemGrid | null {
