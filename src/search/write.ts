@@ -213,6 +213,7 @@ export function writeSearchFile(input: IndexEntry[], options: WriteOptions): Uin
   const terms = [...postings.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   const termDir = new Writer();
   const blocks: { first: string; at: number; length: number }[] = [];
+  const packed: { first: string; bytes: Uint8Array }[] = [];
   let blockTerms: string[] = [];
   let blockInfo = new Writer();
   const flush = () => {
@@ -230,8 +231,7 @@ export function writeSearchFile(input: IndexEntry[], options: WriteOptions): Uin
       prev = bytes;
     }
     w.raw(blockInfo.finish());
-    const [at, length] = put(compress(w.finish()));
-    blocks.push({ first: blockTerms[0]!, at, length });
+    packed.push({ first: blockTerms[0]!, bytes: compress(w.finish()) });
     blockTerms = [];
     blockInfo = new Writer();
   };
@@ -280,6 +280,10 @@ export function writeSearchFile(input: IndexEntry[], options: WriteOptions): Uin
     if (blockTerms.length >= TERMS_PER_BLOCK || blockInfo.length >= TERM_BLOCK_BYTES) flush();
   }
   flush();
+  for (const b of packed) {
+    const [at, length] = put(b.bytes);
+    blocks.push({ first: b.first, at, length });
+  }
   termDir.varint(blocks.length);
   for (const b of blocks) {
     termDir.text(b.first);
