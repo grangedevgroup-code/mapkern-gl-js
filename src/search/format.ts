@@ -2,7 +2,7 @@ export const SEARCH_KINDS = ["place", "address", "street", "poi"] as const;
 export type SearchKind = (typeof SEARCH_KINDS)[number];
 
 export const MAGIC = "MKS2";
-export const VERSION = 2;
+export const VERSION = 3;
 export const ENTRY_BLOCK = 512;
 export const SUMMARY_CHUNK = 4096;
 export const CONTEXT_BLOCK = 256;
