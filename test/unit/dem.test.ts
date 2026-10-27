@@ -7,6 +7,7 @@ import {
   decodeDem,
   gradients,
   NEIGHBORS,
+  removeSpikes,
   sampleElevation,
   unpackFor,
   writeFrame,
@@ -222,4 +223,20 @@ test("image type is sniffed from the bytes", () => {
   assert.equal(imageType(Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 0, 0, 0, 0)), "image/png");
   assert.equal(imageType(Uint8Array.of(0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x57, 0x45, 0x42, 0x50)), "image/webp");
   assert.equal(imageType(Uint8Array.of(0xff, 0xd8, 0xff, 0xe0)), "image/jpeg");
+});
+
+test("lone points knocked off by a whole red step are put back and real peaks stay", () => {
+  const size = 16;
+  const values = new Float32Array(size * size);
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) values[y * size + x] = 1000 + 40 * Math.max(0, 4 - Math.hypot(x - 11, y - 11));
+  const peak = values[11 * size + 11]!;
+  values[3 * size + 4]! += 256;
+  values[6 * size + 2]! -= 256;
+  values[0]! += 512;
+  assert.equal(removeSpikes(values, size, 256 * 0.45), 3);
+  assert.equal(values[3 * size + 4], 1000);
+  assert.equal(values[6 * size + 2], 1000);
+  assert.equal(values[0], 1000);
+  assert.equal(values[11 * size + 11], peak);
 });
