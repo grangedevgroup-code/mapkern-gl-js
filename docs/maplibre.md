@@ -30,6 +30,8 @@ Layers, sources and filters use the version 8 style format, with the same proper
 
 `queryRenderedFeatures()` returns its results right away, for vector tiles and GeoJSON alike, and each feature carries the layer it came from. `querySourceFeatures()` works the same way.
 
+Custom layers (`type: "custom"`) get `onAdd(map, gl)`, `prerender` and `render(gl, matrix)` like in MapLibre and Mapbox, so three.js and deck.gl layers drawn with the map's WebGL context work. The matrix takes `MercatorCoordinate` units to clip space, and it also carries `modelViewProjectionMatrix`, `projectionMatrix`, `fov`, `nearZ` and `farZ` for code written against MapLibre 5. Mapkern restores its own WebGL state after each custom layer.
+
 `addProtocol()` accepts handlers in both styles, the promise one from MapLibre 4 and later and the older callback one, and they can return an `ArrayBuffer`, a `Blob`, an image, a string or a JSON object. Handlers you register win over Mapkern's own, so a `pmtiles` protocol from the pmtiles package keeps working.
 
 Markers, popups and the standard controls take MapLibre's options. Their elements carry both the `.maplibregl-*` and `.mapboxgl-*` class names, and so do the map, canvas and control corners, so your CSS overrides still apply. Controls you write yourself get the MapLibre-style map in `onAdd`.
@@ -37,8 +39,6 @@ Markers, popups and the standard controls take MapLibre's options. Their element
 ## What works differently
 
 Mapkern draws Web Mercator only. `setProjection({ type: "globe" })` keeps a flat map and says so once in the console, and `GlobeControl` adds nothing.
-
-Custom layers (`type: "custom"`) are accepted but not drawn yet.
 
 Anything in a style that Mapkern can't draw is left out, and the reason is written to the console once, starting with "Mapkern left out". Mapbox-hosted data behind `mapbox://` addresses can't be read.
 

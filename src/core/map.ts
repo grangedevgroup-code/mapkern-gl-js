@@ -28,7 +28,7 @@ import { compile } from "../style/expression.ts";
 import type { FeatureTarget, StateLookup } from "../style/feature-state.ts";
 import { FeatureStates } from "../style/feature-state.ts";
 import { importStyle, isStyleV8 } from "../style/import.ts";
-import type { StyleLayer } from "../style/layer.ts";
+import type { CustomLayer, StyleLayer } from "../style/layer.ts";
 import type { StyleUpdate } from "../style/style.ts";
 import { assertValid, Style } from "../style/style.ts";
 import type { LayerSpec, SkySpec, SourceSpec, StyleSpec, StyleSpecV8, SunSpec, TerrainSpec } from "../style/types.ts";
@@ -1868,16 +1868,45 @@ export class MapkernMap extends Emitter<MapEvents> {
     return this.style?.sources.get(id) as Source | undefined;
   }
 
-  addLayer(layer: LayerSpec, beforeId?: string): this {
+  addLayer(layer: LayerSpec | CustomLayer, beforeId?: string): this {
+    if (isCustomLayer(layer)) {
+      const spec: LayerSpec = {
+        id: layer.id,
+        type: "custom",
+        ...(layer.renderingMode ? { renderingMode: layer.renderingMode } : {}),
+      };
+      const added = this.requireStyle().addLayer(spec, beforeId);
+      added.custom = layer;
+      layer.onAdd?.(this, this.glContext.gl);
+      this.styleChanged();
+      this.triggerRepaint();
+      return this;
+    }
     this.requireStyle().addLayer(layer, beforeId);
     this.styleChanged();
     return this;
   }
 
   removeLayer(id: string): this {
+    const custom = this.style?.getLayer(id)?.custom;
     this.requireStyle().removeLayer(id);
+    custom?.onRemove?.(this, this.glContext.gl);
     this.styleChanged();
+    this.triggerRepaint();
     return this;
+  }
+
+  private dropCustomLayers(): void {
+    for (const layer of this.style?.layers ?? []) {
+      const custom = layer.custom;
+      if (!custom) continue;
+      layer.custom = null;
+      try {
+        custom.onRemove?.(this, this.glContext.gl);
+      } catch (error) {
+        reportLater(error);
+      }
+    }
   }
 
   moveLayer(id: string, beforeId?: string): this {
@@ -2180,6 +2209,7 @@ export class MapkernMap extends Emitter<MapEvents> {
         return;
       }
       let update: StyleUpdate | null = null;
+      this.dropCustomLayers();
       try {
         update = current.apply(spec);
       } catch {
@@ -2219,6 +2249,7 @@ export class MapkernMap extends Emitter<MapEvents> {
       return;
     }
     const first = this.style === null;
+    this.dropCustomLayers();
     this.style?.destroy();
     this.style = style;
     this.featureStates = new FeatureStates();
@@ -3042,4 +3073,19 @@ function openDiskCache(option: MapOptions["diskCache"]): ResponseStore | null {
   const size = typeof option === "object" && option !== null ? option.size : undefined;
   const mb = checkNumber(size, "diskCache.size", DISK_CACHE_MB);
   return mb > 0 ? sharedDiskCache(mb * 1024 * 1024) : null;
+}
+
+function isCustomLayer(layer: unknown): layer is CustomLayer {
+  return (
+    typeof layer === "object" &&
+    layer !== null &&
+    (layer as { type?: unknown }).type === "custom" &&
+    typeof (layer as { render?: unknown }).render === "function"
+  );
+}
+
+function reportLater(error: unknown): void {
+  setTimeout(() => {
+    throw error;
+  }, 0);
 }

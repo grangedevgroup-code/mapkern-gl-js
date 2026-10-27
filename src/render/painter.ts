@@ -1,4 +1,5 @@
 import type { Transform } from "../camera/transform.ts";
+import * as mat4 from "../geo/mat4.ts";
 import { EARTH_CIRCUMFERENCE } from "../geo/mercator.ts";
 import type { DemSource } from "../sources/dem.ts";
 import { ImageSource, overlayWraps } from "../sources/image.ts";
@@ -9,7 +10,7 @@ import { isVectorTileSource } from "../sources/vector.ts";
 import type { RGBA } from "../style/color.ts";
 import { premultiply } from "../style/color.ts";
 import type { StateLookup } from "../style/feature-state.ts";
-import type { StyleLayer } from "../style/layer.ts";
+import type { CustomLayerInput, StyleLayer } from "../style/layer.ts";
 import type { SkySpec } from "../style/types.ts";
 import { terrainMesh } from "../terrain/mesh.ts";
 import type { Terrain, TerrainSlot } from "../terrain/terrain.ts";
@@ -89,6 +90,35 @@ interface TerrainGeometry {
 }
 
 const POINT_MARGIN = 0.125;
+const MERCATOR_Z = (2 * Math.PI * 6371008.8) / EARTH_CIRCUMFERENCE;
+
+function customInput(t: Transform): Float64Array & CustomLayerInput {
+  const ws = t.worldSize;
+  const matrix = mat4.scale(new Float64Array(16), t.pixelMatrix, ws, ws, ws * MERCATOR_Z) as Float64Array &
+    Record<string, unknown>;
+  const projection = Float64Array.from(t.projMatrix);
+  const fov = (t.fov * Math.PI) / 180;
+  const extra: Record<string, unknown> = {
+    matrix,
+    modelViewProjectionMatrix: matrix,
+    projection,
+    projectionMatrix: projection,
+    fov,
+    nearZ: t.near,
+    farZ: t.far,
+    defaultProjectionData: {
+      mainMatrix: matrix,
+      fallbackMatrix: matrix,
+      tileMercatorCoords: [0, 0, 1, 1],
+      clippingPlane: [1, 1, 1, 1],
+      projectionTransition: 0,
+    },
+  };
+  for (const [key, value] of Object.entries(extra)) {
+    Object.defineProperty(matrix, key, { value, enumerable: false });
+  }
+  return matrix as unknown as Float64Array & CustomLayerInput;
+}
 const DRAPED: ReadonlySet<string> = new Set(["background", "raster", "hillshade", "fill", "line", "circle", "heatmap"]);
 const SCREEN_SIZED: ReadonlySet<string> = new Set(["hillshade", "line", "circle", "heatmap"]);
 const RESTING_ZOOM_STEP = 0.05;
@@ -164,6 +194,7 @@ export class Painter {
     return this.labels.images;
   }
   private readonly pickBuffer: PickBuffer;
+  private readonly customFailures = new Set<number>();
 
   constructor(gl: GL) {
     this.gl = gl;
@@ -229,6 +260,7 @@ export class Painter {
     const terrain = frame.terrain ?? null;
     if (terrain) this.renderDrapes(frame, terrain);
     else if (this.drapes.count > 0) this.drapes.destroy();
+    this.prerenderCustom(frame);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     g.setViewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
     const zoom = frame.view.zoom;
@@ -248,7 +280,8 @@ export class Painter {
     if (terrain) {
       this.drawTerrain(frame, terrain);
       for (const layer of layers) {
-        if (layer.type === "extrusion" && layer.isVisible(zoom)) this.drawLayer(frame, layer);
+        if ((layer.type === "extrusion" || layer.type === "custom") && layer.isVisible(zoom))
+          this.drawLayer(frame, layer);
       }
     } else {
       for (let i = start; i < layers.length; i++) {
@@ -324,9 +357,71 @@ export class Painter {
         if (manager) this.vector.draw(frame, layer, manager, this.stats);
         break;
       }
+      case "custom":
+        this.drawCustom(frame, layer);
+        break;
       default:
         break;
     }
+  }
+
+  private prerenderCustom(frame: FrameInput): void {
+    const zoom = frame.view.zoom;
+    let input: (Float64Array & CustomLayerInput) | null = null;
+    for (const layer of frame.layers) {
+      const custom = layer.custom;
+      if (!custom?.prerender || !layer.isVisible(zoom)) continue;
+      input ??= customInput(frame.transform);
+      this.runCustom(frame, () => custom.prerender?.(this.gl.gl, input!), layer);
+    }
+  }
+
+  private drawCustom(frame: FrameInput, layer: StyleLayer): void {
+    const custom = layer.custom;
+    if (!custom) return;
+    const g = this.gl;
+    const input = customInput(frame.transform);
+    g.setStencil(false);
+    g.setBlend("premultiplied");
+    if (custom.renderingMode === "3d") g.setDepth(true, true);
+    else g.setDepth(false, false);
+    this.runCustom(frame, () => custom.render(g.gl, input), layer);
+    this.stats.drawCalls++;
+  }
+
+  private runCustom(frame: FrameInput, run: () => void, layer: StyleLayer): void {
+    const g = this.gl;
+    const gl = g.gl;
+    try {
+      run();
+    } catch (error) {
+      if (!this.customFailures.has(layer.uid)) {
+        this.customFailures.add(layer.uid);
+        setTimeout(() => {
+          throw error;
+        }, 0);
+      }
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, frame.framebuffer ?? null);
+    gl.bindVertexArray(null);
+    gl.useProgram(null);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+    gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE);
+    gl.colorMask(true, true, true, true);
+    gl.depthFunc(gl.LEQUAL);
+    gl.frontFace(gl.CCW);
+    gl.cullFace(gl.BACK);
+    gl.blendEquation(gl.FUNC_ADD);
+    gl.stencilMask(0xff);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    g.resetState();
+    const target = frame.target;
+    if (target) g.setViewport(0, 0, target[0], target[1]);
+    else g.setViewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
   }
 
   private renderDrapes(frame: FrameInput, terrain: Terrain): void {

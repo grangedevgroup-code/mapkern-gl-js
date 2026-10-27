@@ -191,6 +191,89 @@ async function idle(page: Page): Promise<void> {
 
 const specs: Spec[] = [
   {
+    name: "custom layers draw with the map's matrix and leave the GL state clean",
+    async run({ page, base, shot }) {
+      await page.goto(`${base}/test/browser/harness-maplibre.html`);
+      await page.waitFor("window.ready");
+      const state = await page.evaluate<{
+        added: boolean;
+        renders: number;
+        tip: [number, number];
+        dot: [number, number];
+      }>(`(async () => {
+        const map = new maplibregl.Map({
+          container: "map",
+          preserveDrawingBuffer: true,
+          fadeDuration: 0,
+          center: [0, 0],
+          zoom: 4,
+          pitch: 30,
+          attributionControl: false,
+          style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#ffffff" } }] },
+        });
+        window.map = map;
+        await map.once("load");
+        const a = maplibregl.MercatorCoordinate.fromLngLat([-4, -3]);
+        const b = maplibregl.MercatorCoordinate.fromLngLat([4, -3]);
+        const c = maplibregl.MercatorCoordinate.fromLngLat([0, 4]);
+        let added = false;
+        let renders = 0;
+        map.addLayer({
+          id: "triangle",
+          type: "custom",
+          renderingMode: "2d",
+          onAdd(m, gl) {
+            added = m === map;
+            const vs = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(vs, "uniform mat4 u_matrix; attribute vec2 a_pos; void main() { gl_Position = u_matrix * vec4(a_pos, 0.0, 1.0); }");
+            gl.compileShader(vs);
+            const fs = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(fs, "void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }");
+            gl.compileShader(fs);
+            this.program = gl.createProgram();
+            gl.attachShader(this.program, vs);
+            gl.attachShader(this.program, fs);
+            gl.linkProgram(this.program);
+            this.buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([a.x, a.y, b.x, b.y, c.x, c.y]), gl.STATIC_DRAW);
+          },
+          render(gl, matrix) {
+            renders++;
+            gl.useProgram(this.program);
+            gl.uniformMatrix4fv(gl.getUniformLocation(this.program, "u_matrix"), false, new Float32Array(matrix));
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+            const at = gl.getAttribLocation(this.program, "a_pos");
+            gl.enableVertexAttribArray(at);
+            gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
+            gl.enable(gl.SCISSOR_TEST);
+            gl.scissor(0, 0, 4000, 4000);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+          },
+        });
+        map.addSource("p", { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [10, 0] } } });
+        map.addLayer({ id: "dot", type: "circle", source: "p", paint: { "circle-radius": 9, "circle-color": "#0000ff" } });
+        await new Promise((resolve) => { map.once("idle", resolve); map.triggerRepaint(); });
+        const tip = map.project([0, 0]);
+        const dot = map.project([10, 0]);
+        return { added, renders, tip: [tip.x, tip.y], dot: [dot.x, dot.y] };
+      })()`);
+      await shot("custom-layer");
+      if (!state.added || state.renders === 0)
+        fail(`the custom layer should be added and rendered: ${JSON.stringify(state)}`);
+      const inside = await pixel(page, Math.round(state.tip[0]), Math.round(state.tip[1]));
+      if (!near(inside, [255, 0, 0, 255], 8)) fail(`the triangle should cover its MercatorCoordinate spot: ${inside}`);
+      const dot = await pixel(page, Math.round(state.dot[0]), Math.round(state.dot[1]));
+      if (!near(dot, [0, 0, 255, 255], 12)) fail(`a layer drawn after the custom layer should still render: ${dot}`);
+      const style = await page.evaluate<string[]>("window.map.getStyle().layers.map((l) => l.id)");
+      if (style.includes("triangle")) fail(`custom layers are not part of getStyle(): ${style}`);
+      await page.evaluate("void window.map.removeLayer('triangle')");
+      await idle(page);
+      const after = await pixel(page, Math.round(state.tip[0]), Math.round(state.tip[1]));
+      if (!near(after, [255, 255, 255, 255], 8)) fail(`removing the layer should clear the triangle: ${after}`);
+    },
+  },
+  {
     name: "MapLibre code runs unchanged on the maplibre entry",
     async run({ page, base, shot }) {
       await page.goto(`${base}/test/browser/harness-maplibre.html`);

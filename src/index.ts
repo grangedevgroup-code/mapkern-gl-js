@@ -61,6 +61,7 @@ export type { VectorSource } from "./sources/vector.ts";
 export type { FeatureTarget } from "./style/feature-state.ts";
 export type { ImportedStyle } from "./style/import.ts";
 export { importStyle } from "./style/import.ts";
+export type { CustomLayer, CustomLayerInput } from "./style/layer.ts";
 export type * from "./style/types.ts";
 export type { StyleIssue } from "./style/validate.ts";
 export { validateStyle } from "./style/validate.ts";

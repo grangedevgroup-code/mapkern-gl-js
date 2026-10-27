@@ -35,6 +35,7 @@ const TYPES: Record<string, LayerType> = {
 };
 
 const PROPERTIES: Record<LayerType, Record<string, Target>> = {
+  custom: {},
   background: { "background-color": paint("color"), "background-opacity": paint("opacity") },
   fill: {
     "fill-antialias": paint("antialias"),

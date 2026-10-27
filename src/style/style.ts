@@ -146,7 +146,11 @@ export class Style {
   serialize(): StyleSpec {
     const sources: Record<string, SourceSpec> = {};
     for (const [id, source] of this.sources) sources[id] = cloneSpec(source.spec);
-    return { ...deepClone(this.meta), sources, layers: this.layers.map((l) => l.serialize()) };
+    return {
+      ...deepClone(this.meta),
+      sources,
+      layers: this.layers.filter((l) => l.type !== "custom").map((l) => l.serialize()),
+    };
   }
 
   destroy(): void {

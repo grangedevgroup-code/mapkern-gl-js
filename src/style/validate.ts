@@ -60,6 +60,7 @@ const LAYER_KEYS = new Set([
   "paint",
   "layout",
   "sortKey",
+  "renderingMode",
 ]);
 const STYLE_KEYS = new Set([
   "version",
@@ -332,7 +333,10 @@ export function validateLayer(layer: unknown, path: string, sources: Record<stri
   for (const key of Object.keys(layer)) {
     if (!LAYER_KEYS.has(key)) issues.push({ path: `${path}.${key}`, message: `unknown layer property "${key}"` });
   }
-  if (type !== "background") {
+  if (type === "custom") {
+    if (layer.renderingMode !== undefined && layer.renderingMode !== "2d" && layer.renderingMode !== "3d")
+      issues.push({ path: `${path}.renderingMode`, message: 'renderingMode must be "2d" or "3d"' });
+  } else if (type !== "background") {
     if (typeof layer.source !== "string") {
       issues.push({ path: `${path}.source`, message: `${type} layer needs a source` });
     } else {

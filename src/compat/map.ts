@@ -1096,7 +1096,26 @@ export class CompatMap {
     }
     if (isCustomLayer(layer)) {
       shadow.insert(layer as unknown as ShadowLayer, beforeId);
-      this.noteSkipped([`custom layers aren't drawn yet (${layer.id})`]);
+      const custom = layer;
+      try {
+        this.native.addLayer(
+          {
+            id: custom.id,
+            type: "custom",
+            ...(custom.renderingMode ? { renderingMode: custom.renderingMode } : {}),
+            onAdd: (_map: unknown, gl: WebGL2RenderingContext) => custom.onAdd?.(this, gl),
+            onRemove: (_map: unknown, gl: WebGL2RenderingContext) => custom.onRemove?.(this, gl),
+            ...(custom.prerender
+              ? { prerender: (gl: WebGL2RenderingContext, input: unknown) => custom.prerender?.(gl, input) }
+              : {}),
+            render: (gl: WebGL2RenderingContext, input: unknown) => custom.render(gl, input),
+          },
+          this.nativeBefore(shadow.indexOf(custom.id)),
+        );
+      } catch (error) {
+        shadow.remove(custom.id);
+        this.error(error);
+      }
       return this;
     }
     let spec = layer as ShadowLayer;
@@ -1116,7 +1135,6 @@ export class CompatMap {
       this.error(new Error(`Cannot remove non-existing layer "${id}".`));
       return this;
     }
-    if (isCustomLayer(layer)) return this;
     if (this.nativeHasLayer(id)) this.native.removeLayer(id);
     return this;
   }
@@ -1712,7 +1730,8 @@ export class CompatMap {
     const index = shadow.indexOf(id);
     const spec = shadow.layers[index];
     const present = this.nativeHasLayer(id);
-    if (!spec || isCustomLayer(spec)) {
+    if (spec && isCustomLayer(spec)) return;
+    if (!spec) {
       if (present) this.native.removeLayer(id);
       return;
     }

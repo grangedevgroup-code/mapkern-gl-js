@@ -113,6 +113,7 @@ const DEFAULT_HEAT = [
 ];
 
 export const PAINT: Record<LayerType, Record<string, PropertyDef>> = {
+  custom: {},
   background: { color: p("color", "#000000", false), opacity: p("number", 1, false) },
   raster: {
     opacity: p("number", 1, false),
@@ -194,6 +195,7 @@ export const PAINT: Record<LayerType, Record<string, PropertyDef>> = {
 };
 
 export const LAYOUT: Record<LayerType, Record<string, PropertyDef>> = {
+  custom: {},
   background: {},
   raster: {},
   fill: {},
@@ -252,11 +254,30 @@ export const LAYOUT: Record<LayerType, Record<string, PropertyDef>> = {
 
 let nextUid = 1;
 
+export interface CustomLayerInput {
+  readonly matrix: Float64Array;
+  readonly projection: Float64Array;
+  readonly fov: number;
+  readonly nearZ: number;
+  readonly farZ: number;
+}
+
+export interface CustomLayer {
+  readonly id: string;
+  readonly type: "custom";
+  readonly renderingMode?: "2d" | "3d";
+  onAdd?(map: unknown, gl: WebGL2RenderingContext): void;
+  onRemove?(map: unknown, gl: WebGL2RenderingContext): void;
+  prerender?(gl: WebGL2RenderingContext, matrix: Float64Array & CustomLayerInput): void;
+  render(gl: WebGL2RenderingContext, matrix: Float64Array & CustomLayerInput): void;
+}
+
 export class StyleLayer {
   readonly uid = nextUid++;
   readonly id: string;
   readonly type: LayerType;
   spec: LayerSpec;
+  custom: CustomLayer | null = null;
   source: string | undefined;
   sourceLayer: string | undefined;
   minZoom: number;
