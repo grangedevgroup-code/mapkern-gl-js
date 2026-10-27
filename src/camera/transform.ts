@@ -62,7 +62,7 @@ export class Transform {
   maxPitch = 60;
   renderWorldCopies = true;
   keepInWorld = true;
-  readonly fov = DEFAULT_FOV;
+  private fovDeg = DEFAULT_FOV;
 
   readonly projMatrix: Mat4 = mat4.create();
   readonly viewMatrix: Mat4 = mat4.create();
