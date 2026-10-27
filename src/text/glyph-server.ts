@@ -73,9 +73,6 @@ export function decodeGlyphs(bytes: Uint8Array): Map<number, ServerGlyph> {
       if (glyph.id >= 0) raw.push(glyph);
     }
   }
-  const space = raw.find((g) => g.id === 32);
-  const capital = raw.find((g) => g.id === 72);
-  const ascender = space ? -space.top : capital ? capital.height - capital.top : 24;
   const out = new Map<number, ServerGlyph>();
   for (const g of raw) {
     const size = (g.width + SERVER_BORDER * 2) * (g.height + SERVER_BORDER * 2);
