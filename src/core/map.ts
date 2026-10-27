@@ -1655,15 +1655,15 @@ export class MapkernMap extends Emitter<MapEvents> {
       states: this.stateScope,
     };
     const ground = this.terrain ? this.groundQuery(box) : null;
-    const picked = await this.painter.pick(
+    return {
       frame,
       box,
       accept,
-      ground
+      ground: ground
         ? { frame: { ...frame, transform: ground.transform, view: ground.transform, terrain: null }, box: ground.box }
         : undefined,
-    );
-    return resolveFeatures(picked, style.sources, this.stateOf);
+      sources: style.sources,
+    };
   }
 
   async querySourceFeatures(
