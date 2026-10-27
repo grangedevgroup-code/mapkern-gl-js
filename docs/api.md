@@ -46,7 +46,7 @@ const map = new mapkern.Map({
 | `maxParallelRequests` | 24 | |
 | `requestTimeout` | 30000 | In ms. A timed-out request is retried |
 | `prefetch` | `true` | Load tiles ahead of camera animations and a ring just outside the view, so a pan shows them at once. They load after everything on screen and never cause a redraw of their own |
-| `transformRequest` | | `(url, kind) => ({ url, headers, credentials })`, for adding API keys or headers |
+| `transformRequest` | | `(url, kind) => ({ url, headers, credentials })`, for adding API keys or headers. `kind` is `"style"`, `"source"`, `"tile"`, `"glyphs"`, `"sprite"` or `"image"`, and `setTransformRequest()` swaps the function later |
 | `attributionControl` | `true` | `false` hides it; `{ custom: "..." }` adds your own credit |
 | `logoControl` | `true` | The faint Mapkern logo in the bottom-left corner. `false` leaves it out, and `.mapkern-logo` styles it |
 | `workerCount` | cores minus one, up to 4 | |
