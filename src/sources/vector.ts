@@ -19,9 +19,9 @@ import type {
   VectorTileResult,
 } from "../worker/vector-task.ts";
 import type { MapSource, SourceContext } from "./source.ts";
-import { tileEvents } from "./source.ts";
+import { sourceFailure, tileEvents } from "./source.ts";
 import type { TileSet } from "./tilejson.ts";
-import { archiveSpec, lngLatBounds, resolveTileSet, tileUrl } from "./tilejson.ts";
+import { archiveSpec, lngLatBounds, resolveTileSet, TileSetTarget, tileUrl, withTiles, withUrl } from "./tilejson.ts";
 
 export interface GpuGeometry {
   vao: WebGLVertexArrayObject;
