@@ -22,6 +22,7 @@ import { RasterSource } from "../sources/raster.ts";
 import type { MapSource, SourceContext } from "../sources/source.ts";
 import { VectorSource } from "../sources/vector.ts";
 import { parseColor } from "../style/color.ts";
+import { layerUpdate } from "../style/diff.ts";
 import type { Compiled } from "../style/expression.ts";
 import { compile } from "../style/expression.ts";
 import type { FeatureTarget, StateLookup } from "../style/feature-state.ts";
@@ -31,7 +32,7 @@ import type { StyleLayer } from "../style/layer.ts";
 import type { StyleUpdate } from "../style/style.ts";
 import { assertValid, Style } from "../style/style.ts";
 import type { LayerSpec, SkySpec, SourceSpec, StyleSpec, StyleSpecV8, SunSpec, TerrainSpec } from "../style/types.ts";
-import { sunTime, validateSky, validateSun } from "../style/validate.ts";
+import { formatIssues, sunTime, validateLayer, validateSky, validateSun } from "../style/validate.ts";
 import { highestClearZoom, metersToWorld, Terrain } from "../terrain/terrain.ts";
 import type { ResponseStore } from "../tiles/cache.ts";
 import { sharedDiskCache } from "../tiles/cache.ts";
@@ -460,6 +461,7 @@ export class MapkernMap extends Emitter<MapEvents> {
       style: () => this.style,
       enableSyncQueries: () => this.enableSyncQueries(),
       queryRenderedFeaturesSync: (geometry, options) => this.queryRenderedSync(geometry, options),
+      restyleLayer: (spec) => this.restyleLayer(spec),
     });
     if (typeof options !== "object" || options === null) {
       throw new MapkernError("invalid-option", "new Map(options) needs an options object");
@@ -1616,6 +1618,26 @@ export class MapkernMap extends Emitter<MapEvents> {
     if (!query) return [];
     const picked = this.painter.pickSync(query.frame, query.box, query.accept, query.ground);
     return resolveFeaturesSync(picked, query.sources, this.stateOf);
+  }
+
+  private restyleLayer(spec: LayerSpec): void {
+    const style = this.requireStyle();
+    const current = style.getLayer(spec.id);
+    if (!current) throw new MapkernError("invalid-option", `There is no layer with id "${spec.id}"`);
+    const update = layerUpdate(current.spec, spec);
+    if (update) {
+      const sources: Record<string, SourceSpec> = {};
+      for (const [id, source] of style.sources) sources[id] = source.spec;
+      const issues = validateLayer(spec, `layer ${spec.id}`, sources);
+      if (issues.length > 0) throw new MapkernError("invalid-style", formatIssues(issues), { issues });
+      current.restyle(spec, update, style.meta.transition);
+    } else {
+      const before = style.layers[style.layers.indexOf(current) + 1]?.id;
+      style.removeLayer(spec.id);
+      style.addLayer(spec, before);
+    }
+    this.styleChanged();
+    this.triggerRepaint();
   }
 
   private enableSyncQueries(): void {
