@@ -470,6 +470,7 @@ export class MapkernMap extends Emitter<MapEvents> {
     registerMbtilesProtocol();
     this.transform = new Transform();
     this.transform.renderWorldCopies = options.renderWorldCopies ?? true;
+    if (options.fov !== undefined) this.transform.setFov(checkNumber(options.fov, "fov", this.transform.fov));
     this.transform.setPitchRange(
       checkNumber(options.minPitch, "minPitch", 0),
       checkNumber(options.maxPitch, "maxPitch", 60),
