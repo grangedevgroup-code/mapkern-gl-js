@@ -305,6 +305,7 @@ export class VectorSource implements MapSource, VectorTileSource {
       },
       tileEvents(this.id, this.ctx),
     );
+    if (previous) this.ctx.content(this.id);
   }
 
   setLayers(layers: readonly StyleLayer[]): void {
