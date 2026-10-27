@@ -38,7 +38,7 @@ Markers, popups and the standard controls take MapLibre's options. Their element
 
 Mapkern draws Web Mercator only. `setProjection({ type: "globe" })` keeps a flat map and says so once in the console, and `GlobeControl` adds nothing.
 
-Custom layers (`type: "custom"`) are accepted but not drawn yet. Overlays such as deck.gl's `MapboxOverlay` in its default overlaid mode work, because they draw on their own canvas.
+Custom layers (`type: "custom"`) are accepted but not drawn yet.
 
 Anything in a style that Mapkern can't draw is left out, and the reason is written to the console once, starting with "Mapkern left out". Mapbox-hosted data behind `mapbox://` addresses can't be read.
 
