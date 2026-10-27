@@ -120,6 +120,7 @@ The API may still change before 1.0.
 - [Styles](docs/style.md): sources, layers, properties and expressions
 - [API](docs/api.md): map options, methods and events
 - [Tiles](docs/tiles.md): building tiles and what's in them
+- [Switching from MapLibre or Mapbox](docs/maplibre.md): running existing map code on Mapkern
 
 ## Working on Mapkern
 
