@@ -2,7 +2,7 @@ import { MapkernError } from "../core/errors.ts";
 import type { ElevationGrid } from "../formats/elevation.ts";
 import { gridBounds, readElevationFile, sampleGrid } from "../formats/elevation.ts";
 import type { ProtocolRequest, ProtocolResult } from "../tiles/protocols.ts";
-import { addProtocol } from "../tiles/protocols.ts";
+import { addBuiltinProtocol } from "../tiles/protocols.ts";
 import { encodeRawElevation } from "../worker/dem-task.ts";
 
 interface ElevationSet {
@@ -97,7 +97,7 @@ export async function openElevationFile(input: Blob | ArrayLike<Blob> | Iterable
   if (grids.length === 0) throw new MapkernError("invalid-option", "openElevationFile needs at least one file");
   if (!registered) {
     registered = true;
-    addProtocol("elevation", handleElevation);
+    addBuiltinProtocol("elevation", handleElevation);
   }
   const key = `file-${++opened}`;
   sets.set(key, elevationSet(grids));

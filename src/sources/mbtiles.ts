@@ -1,7 +1,7 @@
 import type { ByteRanges, SchemaRow, SqlValue } from "../formats/sqlite.ts";
 import { SqliteError, SqliteReader } from "../formats/sqlite.ts";
 import type { ProtocolRequest, ProtocolResult } from "../tiles/protocols.ts";
-import { addProtocol } from "../tiles/protocols.ts";
+import { addBuiltinProtocol } from "../tiles/protocols.ts";
 import { HttpRangeSource } from "./pmtiles.ts";
 
 interface TableInfo {
@@ -301,5 +301,5 @@ let registered = false;
 export function registerMbtilesProtocol(): void {
   if (registered) return;
   registered = true;
-  addProtocol("mbtiles", handleMbtiles);
+  addBuiltinProtocol("mbtiles", handleMbtiles);
 }

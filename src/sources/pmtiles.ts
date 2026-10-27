@@ -11,7 +11,7 @@ import {
 } from "../formats/pmtiles.ts";
 import { FetchFailure } from "../tiles/fetch.ts";
 import type { ProtocolRequest, ProtocolResult } from "../tiles/protocols.ts";
-import { addProtocol } from "../tiles/protocols.ts";
+import { addBuiltinProtocol } from "../tiles/protocols.ts";
 
 export interface RangeSource {
   readonly key: string;
@@ -308,5 +308,5 @@ let registered = false;
 export function registerPmtilesProtocol(): void {
   if (registered) return;
   registered = true;
-  addProtocol("pmtiles", handlePmtiles);
+  addBuiltinProtocol("pmtiles", handlePmtiles);
 }
