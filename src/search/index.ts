@@ -83,13 +83,17 @@ const PLACE_REACH: Record<string, number> = table({
   neighbourhood: 1000,
 });
 const POSTING_LIMIT = 200_000;
-const CANDIDATE_LIMIT = 30_000;
+const PREFIX_LIMIT = 2_000;
+const NEAR_RADIUS = 50_000;
+const CANDIDATE_LIMIT = 4_000;
 const PREFIX_BLOCKS = 4;
-const TYPO_BLOCKS = 16;
+const TYPO_BLOCKS = 4;
 const OSM_TYPES = ["node", "way", "relation"];
 
 interface Match {
+  info: TermInfo;
   ids: Uint32Array;
+  head: Uint32Array;
   quality: number;
   direct: boolean;
 }
@@ -103,7 +107,8 @@ interface Candidate {
 interface Ranked {
   id: number;
   score: number;
-  distance: number | undefined;
+  text: number;
+  missing: number;
 }
 
 export class SearchIndex implements Geocoder {
@@ -126,35 +131,68 @@ export class SearchIndex implements Geocoder {
     if (tokens.length === 0) return [];
     const limit = Math.max(1, options.limit ?? 8);
     const prefixLast = (options.autocomplete ?? true) && !/\s$/.test(query);
-    const matches = await Promise.all(tokens.map((t, i) => this.match(t, prefixLast && i === tokens.length - 1)));
+    const matches = await Promise.all(
+      tokens.map((t, i) => this.match(t, prefixLast && i === tokens.length - 1, tokens.length > 1)),
+    );
     const wanted = options.kinds ?? (prefixLast && tokens.length === 1 && tokens[0]!.length === 1 ? ["place"] : null);
     const kinds = wanted ? new Set(wanted.map((k) => SEARCH_KINDS.indexOf(k))) : null;
+    if (tokens.length === 1 && options.near) {
+      const ranges = this.rangesNear(options.near[0], options.near[1], NEAR_RADIUS);
+      for (const m of matches[0]!) {
+        if (m.ids.length >= m.info.count) continue;
+        const near = await this.file.postingsWithin(m.info, ranges);
+        m.ids = Uint32Array.from(new Set([...m.ids, ...near])).sort();
+      }
+    }
     let candidates: Candidate[] = [];
     for (const allowMissing of tokens.length >= 3 ? [0, 1] : [0]) {
       candidates = this.combine(matches, allowMissing, options.near);
       if (candidates.length > 0) break;
     }
     if (candidates.length === 0) return [];
-    const summaries = await this.file.summaries(candidates.map((c) => c.id));
+    const known = new Map<number, number>();
+    for (const list of matches) {
+      for (const m of list) {
+        const ids = m.info.inline ?? m.info.head;
+        for (let k = 0; k < ids.length; k++) known.set(ids[k]!, m.info.ranks[k]!);
+      }
+    }
+    const nearby = options.near ? this.rangesNear(options.near[0], options.near[1], NEAR_RADIUS) : null;
+    const look = candidates
+      .filter((c) => kinds || options.bbox || !known.has(c.id) || (nearby && inRanges(nearby, c.id)))
+      .map((c) => c.id);
+    const summaries = look.length ? await this.file.summaries(look) : new Map<number, Uint8Array>();
+    const looked = new Set(look);
     const ranked: Ranked[] = [];
     for (const c of candidates) {
-      const s = summary(summaries, this.file.meta.summaryChunk, c.id);
-      if (kinds && !kinds.has(s.kind)) continue;
-      if (options.bbox) {
-        const [w, south, e, n] = options.bbox;
-        if (s.lon < w - 0.01 || s.lon > e + 0.01 || s.lat < south - 0.01 || s.lat > n + 0.01) continue;
+      let rank = known.get(c.id) ?? 0;
+      let near = options.near ? 0 : 0.5;
+      if (looked.has(c.id)) {
+        const s = summary(summaries, this.file.meta.summaryChunk, c.id);
+        if (kinds && !kinds.has(s.kind)) continue;
+        if (options.bbox) {
+          const [w, south, e, n] = options.bbox;
+          if (s.lon < w - 0.01 || s.lon > e + 0.01 || s.lat < south - 0.01 || s.lat > n + 0.01) continue;
+        }
+        rank = s.rank;
+        if (options.near)
+          near = 1 / (1 + metres(options.near[0], options.near[1], s.lon, s.lat) / (5000 * spread(rank)));
       }
-      const distance = options.near ? metres(options.near[0], options.near[1], s.lon, s.lat) : undefined;
-      const near = distance === undefined ? 0.5 : 1 / (1 + distance / (5000 * spread(s.rank)));
       const text = c.text / tokens.length;
-      ranked.push({ id: c.id, score: text * 0.6 + (s.rank / 255) * 0.2 + near * 0.2 - c.missing * 0.1, distance });
+      ranked.push({
+        id: c.id,
+        text,
+        missing: c.missing,
+        score: text * 0.6 + (rank / 255) * 0.35 + near * 0.2 - c.missing * 0.1,
+      });
     }
     ranked.sort((a, b) => b.score - a.score);
-    const top = ranked.slice(0, Math.max(limit * 6, 30));
+    const top = ranked.slice(0, Math.max(limit * 3, 24));
     const records = await Promise.all(top.map((r) => this.file.entry(r.id)));
-    const scored: { r: Ranked; e: EntryRecord }[] = [];
+    const scored: { r: Ranked; e: EntryRecord; distance: number | undefined }[] = [];
     top.forEach((r, i) => {
       const e = records[i]!;
+      if (kinds && !kinds.has(e.kind)) return;
       if (options.bbox) {
         const [w, s, east, n] = options.bbox;
         if (e.lon < w || e.lon > east || e.lat < s || e.lat > n) return;
@@ -165,12 +203,14 @@ export class SearchIndex implements Geocoder {
       );
       const cover = !inName ? 0.5 : names.length ? Math.min(1, tokens.length / names.length) : 1;
       const distance = options.near ? metres(options.near[0], options.near[1], e.lon, e.lat) : undefined;
-      scored.push({ r: { id: r.id, score: r.score + cover * 0.15, distance }, e });
+      const near = distance === undefined ? 0.5 : 1 / (1 + distance / (5000 * spread(e.rank)));
+      const score = r.text * 0.6 + (e.rank / 255) * 0.35 + near * 0.2 - r.missing * 0.1 + cover * 0.1;
+      scored.push({ r: { ...r, score }, e, distance });
     });
     scored.sort((a, b) => b.r.score - a.r.score);
     const out: SearchResult[] = [];
-    for (const { r, e } of scored) {
-      const result = await this.result(r.id, e, r.score, r.distance);
+    for (const { r, e, distance } of scored) {
+      const result = await this.result(r.id, e, r.score, distance);
       if (
         out.some(
           (o) => o.kind === result.kind && o.name === result.name && o.context === result.context && close(o, result),
@@ -243,14 +283,15 @@ export class SearchIndex implements Geocoder {
     return out.slice(0, limit);
   }
 
-  private async match(token: string, prefix: boolean): Promise<Match[]> {
+  private async match(token: string, prefix: boolean, contexts: boolean): Promise<Match[]> {
     const file = this.file;
     const out: Match[] = [];
     const seen = new Set<string>();
-    const add = async (info: TermInfo | null, quality: number, direct: boolean) => {
+    const add = async (info: TermInfo | null, quality: number, direct: boolean, limit = POSTING_LIMIT) => {
       if (!info || seen.has(info.term)) return;
       seen.add(info.term);
-      out.push({ ids: await file.postings(info, POSTING_LIMIT), quality, direct });
+      const ids = await file.postings(info, contexts ? limit : Math.min(limit, PREFIX_LIMIT));
+      out.push({ info, ids, head: info.head, quality, direct });
     };
     if (prefix && token.length === 1) {
       await add(await file.term(PREFIX_TOP + token), 0.9, true);
@@ -261,14 +302,20 @@ export class SearchIndex implements Geocoder {
       if (token.length <= 3) await add(await file.term(PREFIX_TOP + token), 0.9, true);
       else {
         const { infos } = await file.range(token, PREFIX_BLOCKS);
-        for (const info of infos) await add(info, 0.85 + 0.1 * (token.length / info.term.length), true);
+        for (const info of infos)
+          await add(
+            info,
+            0.85 + 0.1 * (token.length / info.term.length),
+            true,
+            info.term === token ? POSTING_LIMIT : PREFIX_LIMIT,
+          );
       }
       for (const short of expandPrefix(token)) await add(await file.term(short), 0.9, true);
     }
     await add(await file.term(CODE_WORD + token), 1.15, true);
-    await add(await file.term(OTHER_NAME + token), 0.85, true);
+    await add(await file.term(OTHER_NAME + token), 0.9, true);
     if (prefix && token.length >= 4)
-      for (const info of (await file.range(OTHER_NAME + token, 2)).infos) await add(info, 0.8, true);
+      for (const info of (await file.range(OTHER_NAME + token, 2)).infos) await add(info, 0.8, true, PREFIX_LIMIT);
     if (!out.some((m) => m.direct) && token.length >= 4 && !isNumber(token)) {
       const limit = token.length >= 8 ? 2 : 1;
       const infos: TermInfo[] = [];
@@ -276,14 +323,15 @@ export class SearchIndex implements Geocoder {
       for (const info of infos) {
         const t = info.term;
         const edits = withinEdits(token, t, limit, prefix ? Math.min(t.length, token.length) : t.length);
-        if (edits > 0) await add(info, edits === 1 ? 0.75 : 0.6, true);
+        if (edits > 0) await add(info, edits === 1 ? 0.75 : 0.6, true, PREFIX_LIMIT);
       }
     }
     await add(await file.term(CATEGORY_WORD + token), 0.8, true);
-    await add(await file.term(CONTEXT_WORD + token), 0.7, false);
+    if (contexts) await add(await file.term(CONTEXT_WORD + token), 0.7, false);
     if (prefix && token.length >= 3) {
-      for (const info of (await file.range(CONTEXT_WORD + token, 1)).infos) await add(info, 0.6, false);
-      for (const info of (await file.range(CATEGORY_WORD + token, 1)).infos) await add(info, 0.7, true);
+      if (contexts)
+        for (const info of (await file.range(CONTEXT_WORD + token, 1)).infos) await add(info, 0.6, false, PREFIX_LIMIT);
+      for (const info of (await file.range(CATEGORY_WORD + token, 1)).infos) await add(info, 0.7, true, PREFIX_LIMIT);
     }
     return out;
   }
@@ -301,7 +349,7 @@ export class SearchIndex implements Geocoder {
     lists.sort((a, b) => b.quality - a.quality);
     for (const m of lists) for (const id of m.ids) pool.add(id);
     let ids = [...pool];
-    if (ids.length > CANDIDATE_LIMIT) ids = this.narrow(ids, near);
+    if (ids.length > CANDIDATE_LIMIT) ids = this.narrow(lists, ids, near);
     const out: Candidate[] = [];
     for (const id of ids) {
       let text = 0;
@@ -326,14 +374,20 @@ export class SearchIndex implements Geocoder {
     return out;
   }
 
-  private narrow(ids: number[], near: [number, number] | undefined): number[] {
-    if (!near) return ids.slice(0, CANDIDATE_LIMIT);
-    for (const radius of [5000, 25000, 100000, 400000]) {
-      const ranges = this.rangesNear(near[0], near[1], radius);
-      const kept = ids.filter((id) => inRanges(ranges, id));
-      if (kept.length >= 200 || radius === 400000) return kept.slice(0, CANDIDATE_LIMIT);
+  private narrow(lists: Match[], ids: number[], near: [number, number] | undefined): number[] {
+    const kept = new Set<number>();
+    for (const m of lists) for (const id of m.head) kept.add(id);
+    if (near) {
+      for (const radius of [5000, 25000, 100000, 400000]) {
+        const ranges = this.rangesNear(near[0], near[1], radius);
+        const close = ids.filter((id) => inRanges(ranges, id));
+        if (close.length >= 200 || radius === 400000) {
+          for (const id of close.slice(0, CANDIDATE_LIMIT)) kept.add(id);
+          break;
+        }
+      }
     }
-    return ids.slice(0, CANDIDATE_LIMIT);
+    return [...kept];
   }
 
   private blocksNear(lon: number, lat: number, radius: number): number[] {
@@ -526,5 +580,16 @@ function metres(lon1: number, lat1: number, lon2: number, lat2: number): number 
 }
 
 function close(a: SearchResult, b: SearchResult): boolean {
-  return metres(a.center[0], a.center[1], b.center[0], b.center[1]) < 1500;
+  const reach = a.kind === "place" ? 30000 : 1500;
+  return metres(a.center[0], a.center[1], b.center[0], b.center[1]) < reach;
+}
+
+function typoStarts(token: string): string[] {
+  const head = token.slice(0, 5);
+  const starts = new Set<string>([head.slice(0, 4)]);
+  for (let i = 1; i < head.length; i++) starts.add((head.slice(0, i) + head.slice(i + 1)).slice(0, 4));
+  for (let i = 1; i + 1 < head.length; i++)
+    starts.add((head.slice(0, i) + head[i + 1] + head[i] + head.slice(i + 2)).slice(0, 4));
+  starts.add(head.slice(0, 2));
+  return [...starts].filter((s) => s.length >= 2);
 }
