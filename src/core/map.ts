@@ -36,7 +36,7 @@ import type { ResponseStore } from "../tiles/cache.ts";
 import { sharedDiskCache } from "../tiles/cache.ts";
 import type { TransformRequest } from "../tiles/fetch.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
-import type { TileStats } from "../tiles/manager.ts";
+import type { TileManager, TileStats } from "../tiles/manager.ts";
 import { RequestScheduler } from "../tiles/scheduler.ts";
 import type { Control, ControlPosition } from "../ui/controls.ts";
 import { AttributionControl } from "../ui/controls.ts";
