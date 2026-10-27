@@ -82,7 +82,7 @@ export function decodeGlyphs(bytes: Uint8Array): Map<number, ServerGlyph> {
       width: g.width,
       height: g.height,
       left: g.left,
-      top: g.top + ascender,
+      top: g.top + SERVER_ASCENDER,
       advance: g.advance,
     });
   }
