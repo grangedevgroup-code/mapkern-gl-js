@@ -1,3 +1,4 @@
+import { gunzipSync } from "../formats/inflate.ts";
 import type { VectorFeature, VectorLayer } from "../formats/mvt.ts";
 import { classifyRings, decodeTile, featureIdValue } from "../formats/mvt.ts";
 import type { Geometry, Position } from "../geo/geojson.ts";
@@ -231,7 +232,7 @@ function decodedLayersSync(raw: ArrayBuffer): Map<string, VectorLayer> {
     syncDecoded.set(raw, cached);
     return cached;
   }
-  let bytes = new Uint8Array(raw);
+  let bytes: Uint8Array = new Uint8Array(raw);
   if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) bytes = gunzipSync(bytes);
   const layers = decodeTile(bytes);
   syncDecoded.set(raw, layers);
@@ -274,7 +275,10 @@ async function decodeRaw(raw: ArrayBuffer): Promise<Map<string, VectorLayer>> {
   return decodeTile(bytes);
 }
 
-function tileGeometry(feature: VectorFeature, tile: Tile<VectorTile>): Geometry | null {
+function tileGeometry(
+  feature: Pick<VectorFeature, "type" | "extent" | "geometry">,
+  tile: Tile<VectorTile>,
+): Geometry | null {
   const n = 2 ** tile.z;
   const extent = feature.extent;
   const ring = (part: Int32Array): Position[] => {
