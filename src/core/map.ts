@@ -70,6 +70,7 @@ export interface MapOptions {
   zoom?: number;
   bearing?: number;
   pitch?: number;
+  fov?: number;
   minZoom?: number;
   maxZoom?: number;
   minPitch?: number;
