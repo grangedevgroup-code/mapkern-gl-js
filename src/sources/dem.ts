@@ -121,6 +121,7 @@ export class DemSource implements MapSource {
       },
       tileEvents(this.id, this.ctx),
     );
+    if (previous) this.ctx.content(this.id);
   }
 
   elevationTexture(data: DemTile): WebGLTexture | null {
