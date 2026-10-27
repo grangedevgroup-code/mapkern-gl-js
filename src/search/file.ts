@@ -30,6 +30,9 @@ export async function inflate(data: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
+const SPAN_GAP = 16 * 1024;
+const SPAN_MAX = 4 * 1024 * 1024;
+
 class Cache {
   private readonly items = new Map<string, { value: unknown; size: number }>();
   private size = 0;
@@ -148,34 +151,32 @@ export class SearchFile {
   }
 
   async range(prefix: string, maxBlocks: number): Promise<{ infos: TermInfo[]; complete: boolean }> {
-    const out: TermInfo[] = [];
-    let b = Math.max(0, this.blockFor(prefix));
-    let read = 0;
-    for (; b < this.termFirst.length; b++) {
+    const wanted: number[] = [];
+    let complete = true;
+    for (let b = Math.max(0, this.blockFor(prefix)); b < this.termFirst.length; b++) {
       if (b > 0 && this.termFirst[b]! > prefix && !this.termFirst[b]!.startsWith(prefix)) break;
-      if (read++ >= maxBlocks) return { infos: out, complete: false };
-      const block = await this.termBlock(b);
-      for (let i = 0; i < block.terms.length; i++) if (block.terms[i]!.startsWith(prefix)) out.push(block.infos[i]!);
+      if (wanted.length >= maxBlocks) {
+        complete = false;
+        break;
+      }
+      wanted.push(b);
     }
-    return { infos: out, complete: true };
+    const blocks = await this.batch(
+      wanted.map((b) => ({ key: `t${b}`, at: this.termAt[b]!, length: this.termLength[b]! })),
+      parseTermBlock,
+    );
+    const out: TermInfo[] = [];
+    for (const block of blocks)
+      for (let i = 0; i < block.terms.length; i++) if (block.terms[i]!.startsWith(prefix)) out.push(block.infos[i]!);
+    return { infos: out, complete };
   }
 
   async postings(info: TermInfo, limit = Number.POSITIVE_INFINITY): Promise<Uint32Array> {
     if (info.inline) return info.inline;
     if (info.count > limit) return info.head;
-    const parts = await Promise.all(
-      info.chunks.map((c) =>
-        this.load(`p${c.at}`, async () => {
-          const r = new Reader(await this.bytes(c.at, c.length));
-          const ids: number[] = [];
-          let id = 0;
-          while (!r.done) {
-            id += r.varint();
-            ids.push(id);
-          }
-          return Uint32Array.from(ids);
-        }),
-      ),
+    const parts = await this.batch(
+      info.chunks.map((c) => ({ key: `p${c.at}`, at: c.at, length: c.length })),
+      parsePostings,
     );
     const out = new Uint32Array(info.count);
     let at = 0;
@@ -211,23 +212,23 @@ export class SearchFile {
     const chunks = new Set<number>();
     const size = this.meta.summaryChunk;
     for (let i = 0; i < ids.length; i++) chunks.add(Math.floor(ids[i]! / size));
-    const out = new Map<number, Uint8Array>();
-    await Promise.all(
-      [...chunks].map(async (c) => {
-        out.set(c, await this.load(`s${c}`, () => this.bytes(this.summaryAt[c]!, this.summaryLength[c]!)));
-      }),
+    const list = [...chunks];
+    const loaded = await this.batch(
+      list.map((c) => ({ key: `s${c}`, at: this.summaryAt[c]!, length: this.summaryLength[c]! })),
+      (bytes) => bytes,
     );
-    return out;
+    return new Map(list.map((c, i) => [c, loaded[i]!]));
   }
 
   async entryBlock(b: number): Promise<EntryRecord[]> {
-    return this.load(`e${b}`, async () => {
-      const r = new Reader(await this.bytes(this.entryAt[b]!, this.entryLength[b]!));
-      const prev = { lon: 0, lat: 0 };
-      const out: EntryRecord[] = [];
-      while (!r.done) out.push(readEntry(r, prev));
-      return out;
-    });
+    return (await this.entryBlocks([b]))[0]!;
+  }
+
+  entryBlocks(list: number[]): Promise<EntryRecord[][]> {
+    return this.batch(
+      list.map((b) => ({ key: `e${b}`, at: this.entryAt[b]!, length: this.entryLength[b]! })),
+      parseEntries,
+    );
   }
 
   async entry(id: number): Promise<EntryRecord> {
@@ -265,50 +266,49 @@ export class SearchFile {
   }
 
   private termBlock(b: number): Promise<TermBlock> {
-    return this.load(`t${b}`, async () => {
-      const r = new Reader(await this.bytes(this.termAt[b]!, this.termLength[b]!));
-      const n = r.varint();
-      const terms: string[] = [];
-      let prev = new Uint8Array(0);
-      for (let i = 0; i < n; i++) {
-        const shared = r.varint();
-        const suffix = r.raw(r.varint());
-        const bytes = new Uint8Array(shared + suffix.length);
-        bytes.set(prev.subarray(0, shared));
-        bytes.set(suffix, shared);
-        terms.push(decoder.decode(bytes));
-        prev = bytes;
+    return this.load(`t${b}`, async () => parseTermBlock(await this.bytes(this.termAt[b]!, this.termLength[b]!)));
+  }
+
+  private batch<T>(
+    items: { key: string; at: number; length: number }[],
+    parse: (bytes: Uint8Array) => T,
+  ): Promise<T[]> {
+    const missing = items
+      .filter((it) => this.cache.get(it.key) === undefined && !this.pending.has(it.key))
+      .sort((a, b) => a.at - b.at);
+    const groups: (typeof missing)[] = [];
+    for (const it of missing) {
+      const group = groups[groups.length - 1];
+      const last = group?.[group.length - 1];
+      if (group && last && it.at - (last.at + last.length) <= SPAN_GAP && it.at + it.length - group[0]!.at <= SPAN_MAX)
+        group.push(it);
+      else groups.push([it]);
+    }
+    for (const group of groups) {
+      const start = group[0]!.at;
+      const end = group[group.length - 1]!.at + group[group.length - 1]!.length;
+      const span = this.source.read(start, end - start, this.signal).then(({ data }) => {
+        if (data.length < end - start) throw new SearchIndexError("the search index is truncated");
+        return data;
+      });
+      for (const it of group) {
+        const job = span
+          .then(async (data) => parse(await inflate(data.subarray(it.at - start, it.at - start + it.length))))
+          .then(
+            (value) => {
+              this.pending.delete(it.key);
+              this.cache.set(it.key, value, sizeOf(value));
+              return value;
+            },
+            (error: unknown) => {
+              this.pending.delete(it.key);
+              throw error;
+            },
+          );
+        this.pending.set(it.key, job);
       }
-      const infos: TermInfo[] = [];
-      for (let i = 0; i < n; i++) {
-        const count = r.varint();
-        const headLength = r.varint();
-        if (headLength === 0) {
-          const ids = new Uint32Array(count);
-          let id = 0;
-          for (let k = 0; k < count; k++) {
-            id += r.varint();
-            ids[k] = id;
-          }
-          const ranks = r.raw(count).slice();
-          infos.push({ term: terms[i]!, count, head: ids, ranks, inline: ids, chunks: [] });
-          continue;
-        }
-        const head = new Uint32Array(headLength);
-        let id = 0;
-        for (let k = 0; k < headLength; k++) {
-          id += r.varint();
-          head[k] = id;
-        }
-        const ranks = r.raw(headLength).slice();
-        const chunks: TermInfo["chunks"] = [];
-        const c = r.varint();
-        for (let k = 0; k < c; k++)
-          chunks.push({ first: r.varint(), last: r.varint(), at: r.varint(), length: r.varint() });
-        infos.push({ term: terms[i]!, count, head, ranks, inline: null, chunks });
-      }
-      return { terms, infos };
-    });
+    }
+    return Promise.all(items.map((it) => this.load(it.key, async () => parse(await this.bytes(it.at, it.length)))));
   }
 
   private async bytes(at: number, length: number): Promise<Uint8Array> {
@@ -336,6 +336,70 @@ export class SearchFile {
     this.pending.set(key, job);
     return job;
   }
+}
+
+function parseTermBlock(bytes: Uint8Array): TermBlock {
+  const r = new Reader(bytes);
+  const n = r.varint();
+  const terms: string[] = [];
+  let prev = new Uint8Array(0);
+  for (let i = 0; i < n; i++) {
+    const shared = r.varint();
+    const suffix = r.raw(r.varint());
+    const bytes = new Uint8Array(shared + suffix.length);
+    bytes.set(prev.subarray(0, shared));
+    bytes.set(suffix, shared);
+    terms.push(decoder.decode(bytes));
+    prev = bytes;
+  }
+  const infos: TermInfo[] = [];
+  for (let i = 0; i < n; i++) {
+    const count = r.varint();
+    const headLength = r.varint();
+    if (headLength === 0) {
+      const ids = new Uint32Array(count);
+      let id = 0;
+      for (let k = 0; k < count; k++) {
+        id += r.varint();
+        ids[k] = id;
+      }
+      const ranks = r.raw(count).slice();
+      infos.push({ term: terms[i]!, count, head: ids, ranks, inline: ids, chunks: [] });
+      continue;
+    }
+    const head = new Uint32Array(headLength);
+    let id = 0;
+    for (let k = 0; k < headLength; k++) {
+      id += r.varint();
+      head[k] = id;
+    }
+    const ranks = r.raw(headLength).slice();
+    const chunks: TermInfo["chunks"] = [];
+    const c = r.varint();
+    for (let k = 0; k < c; k++)
+      chunks.push({ first: r.varint(), last: r.varint(), at: r.varint(), length: r.varint() });
+    infos.push({ term: terms[i]!, count, head, ranks, inline: null, chunks });
+  }
+  return { terms, infos };
+}
+
+function parseEntries(bytes: Uint8Array): EntryRecord[] {
+  const r = new Reader(bytes);
+  const prev = { lon: 0, lat: 0 };
+  const out: EntryRecord[] = [];
+  while (!r.done) out.push(readEntry(r, prev));
+  return out;
+}
+
+function parsePostings(bytes: Uint8Array): Uint32Array {
+  const r = new Reader(bytes);
+  const ids: number[] = [];
+  let id = 0;
+  while (!r.done) {
+    id += r.varint();
+    ids.push(id);
+  }
+  return Uint32Array.from(ids);
 }
 
 function offsets(bytes: Uint8Array): [Float64Array, Uint32Array] {
