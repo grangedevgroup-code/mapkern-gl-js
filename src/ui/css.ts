@@ -136,6 +136,29 @@ export const CSS = `
 .mapkern-search > button {
   border-radius: 8px;
 }
+.mapkern-control button[hidden] {
+  display: none;
+}
+.mapkern-search.mapkern-search-picked > .mapkern-search-button {
+  border-radius: 8px 8px 0 0;
+}
+.mapkern-search.mapkern-search-picked > .mapkern-search-dismiss {
+  border-radius: 0 0 8px 8px;
+}
+.mapkern-search-field {
+  position: relative;
+}
+.mapkern-control .mapkern-search-reset {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  border-radius: 0 8px 8px 0;
+}
+.mapkern-search-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
 .mapkern-search-panel {
   position: absolute;
   right: calc(100% + 8px);
@@ -169,7 +192,7 @@ export const CSS = `
   width: 100%;
   height: 32px;
   margin: 0;
-  padding: 0 12px;
+  padding: 0 36px 0 12px;
   border: 0;
   color: inherit;
   font: inherit;
@@ -244,6 +267,11 @@ export const CSS = `
   }
   .mapkern-control .mapkern-terrain-button {
     font-size: 14px;
+  }
+  .mapkern-search-input {
+    height: 44px;
+    padding-right: 48px;
+    font-size: 16px;
   }
   .mapkern-scale {
     font-size: 12px;

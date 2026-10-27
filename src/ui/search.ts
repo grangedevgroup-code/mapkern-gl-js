@@ -49,6 +49,8 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
   private element: HTMLElement | null = null;
   private input: HTMLInputElement | null = null;
   private toggle: HTMLButtonElement | null = null;
+  private reset: HTMLButtonElement | null = null;
+  private dismiss: HTMLButtonElement | null = null;
   private list: HTMLElement | null = null;
   private results: SearchResult[] = [];
   private active = -1;
@@ -87,9 +89,23 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
     list.id = `${this.id}-list`;
     list.className = "mapkern-search-results";
     list.setAttribute("role", "listbox");
+    const reset = doc.createElement("button");
+    reset.type = "button";
+    reset.className = "mapkern-search-reset";
+    reset.title = map.text("clearSearch");
+    reset.setAttribute("aria-label", map.text("clearSearch"));
+    reset.appendChild(cross(doc));
+    reset.addEventListener("pointerdown", (e) => e.preventDefault());
+    reset.addEventListener("click", () => {
+      this.clear();
+      this.input?.focus();
+    });
+    const field = doc.createElement("div");
+    field.className = "mapkern-search-field";
+    field.append(input, reset);
     const panel = doc.createElement("div");
     panel.className = "mapkern-search-panel";
-    panel.append(input, list);
+    panel.append(field, list);
     const toggle = doc.createElement("button");
     toggle.type = "button";
     toggle.className = "mapkern-search-button";
@@ -98,12 +114,22 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
     toggle.setAttribute("aria-expanded", "false");
     toggle.appendChild(magnifier(doc));
     toggle.addEventListener("click", () => this.open(!el.classList.contains("mapkern-expanded")));
-    el.append(panel, toggle);
+    const dismiss = doc.createElement("button");
+    dismiss.type = "button";
+    dismiss.className = "mapkern-search-dismiss";
+    dismiss.title = map.text("clearSearch");
+    dismiss.setAttribute("aria-label", map.text("clearSearch"));
+    dismiss.appendChild(cross(doc));
+    dismiss.addEventListener("click", () => this.clear());
+    el.append(panel, toggle, dismiss);
     this.element = el;
     this.toggle = toggle;
+    this.reset = reset;
+    this.dismiss = dismiss;
     this.input = input;
     this.list = list;
     doc.addEventListener("pointerdown", this.outside, true);
+    this.sync();
     return el;
   }
 
@@ -132,6 +158,8 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
     this.element = null;
     this.input = null;
     this.toggle = null;
+    this.reset = null;
+    this.dismiss = null;
     this.list = null;
     this.map = null;
   }
@@ -182,6 +210,8 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
         this.marker.setLngLat(result.center).addTo(map);
       }
     }
+    this.element?.classList.add("mapkern-search-picked");
+    this.sync();
     this.emit("result", { type: "result", result });
     return this;
   }
@@ -191,8 +221,16 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
     if (this.input) this.input.value = "";
     this.show([]);
     this.marker?.remove();
+    this.element?.classList.remove("mapkern-search-picked");
+    this.sync();
     this.emit("clear", { type: "clear" });
     return this;
+  }
+
+  private sync(): void {
+    const picked = this.element?.classList.contains("mapkern-search-picked") ?? false;
+    if (this.reset) this.reset.hidden = !picked && !this.input?.value;
+    if (this.dismiss) this.dismiss.hidden = !picked;
   }
 
   private show(results: SearchResult[], notice: "noResults" | "searchFailed" | null = null): void {
@@ -201,6 +239,7 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
     const list = this.list;
     const input = this.input;
     if (!list || !input) return;
+    this.sync();
     const doc = list.ownerDocument;
     list.replaceChildren();
     if (results.length === 0 && notice && this.map) {
@@ -248,7 +287,9 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
   }
 
   private readonly onInput = () => {
-    void this.query(this.input?.value ?? "");
+    const text = this.input?.value ?? "";
+    if (!text && this.element?.classList.contains("mapkern-search-picked")) this.clear();
+    else void this.query(text);
   };
 
   private readonly onKey = (e: KeyboardEvent) => {
@@ -265,6 +306,7 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
         this.select(result);
       }
     } else if (e.key === "Escape") {
+      e.preventDefault();
       if (this.results.length) this.show([]);
       else this.open(false);
     }
@@ -277,6 +319,16 @@ export class SearchControl extends Emitter<SearchEvents> implements Control {
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+
+function cross(doc: Document): SVGSVGElement {
+  const svg = doc.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const path = doc.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", "M6.5 6.5L17.5 17.5M17.5 6.5L6.5 17.5");
+  svg.appendChild(path);
+  return svg;
+}
 
 function magnifier(doc: Document): SVGSVGElement {
   const svg = doc.createElementNS(SVG_NS, "svg");

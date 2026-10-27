@@ -4964,6 +4964,14 @@ const specs: Spec[] = [
         failed: string;
         near: number[] | null;
         stale: string[];
+        clearing: {
+          dismissShown: boolean;
+          afterDismiss: { pins: number; input: string; hidden: boolean; resetHidden: boolean };
+          resetShown: boolean;
+          afterEmpty: { pins: number; dismiss: boolean };
+          afterReset: { input: string; list: boolean; focused: boolean; hidden: boolean };
+          cleared: number;
+        };
       }>(`(async () => {
         const places = [
           { id: 0, kind: "place", name: "Olympia", label: "Olympia, Washington", context: "Washington", category: "city", center: [-122.9, 47.04], zoom: 11, score: 1 },
@@ -5004,7 +5012,36 @@ const specs: Spec[] = [
         const zoom = map.getZoom();
         const pins = document.querySelectorAll(".mapkern-marker").length;
         const chosen = input.value;
+        const first = picked;
         const closed = !document.querySelector(".mapkern-search").classList.contains("mapkern-expanded");
+        let cleared = 0;
+        control.on("clear", () => cleared++);
+        const dismiss = document.querySelector(".mapkern-search-dismiss");
+        const reset = document.querySelector(".mapkern-search-reset");
+        const dismissShown = !dismiss.hidden && dismiss.offsetWidth > 0;
+        dismiss.click();
+        const afterDismiss = {
+          pins: document.querySelectorAll(".mapkern-marker").length,
+          input: input.value,
+          hidden: dismiss.hidden && dismiss.offsetWidth === 0,
+          resetHidden: reset.hidden,
+        };
+        control.open();
+        await type("oly");
+        const resetShown = !reset.hidden && reset.offsetWidth > 0;
+        key("Enter");
+        control.open();
+        await type("");
+        const afterEmpty = { pins: document.querySelectorAll(".mapkern-marker").length, dismiss: dismiss.hidden };
+        await type("oly");
+        reset.click();
+        const afterReset = {
+          input: input.value,
+          list: document.querySelector(".mapkern-search").classList.contains("mapkern-open"),
+          focused: document.activeElement === input,
+          hidden: reset.hidden,
+        };
+        const clearing = { dismissShown, afterDismiss, resetShown, afterEmpty, afterReset, cleared };
         await type("nothing here");
         const empty = document.querySelector(".mapkern-search-results")?.textContent ?? "";
         await type("broken");
@@ -5014,7 +5051,7 @@ const specs: Spec[] = [
         slow();
         await pending;
         const stale = [...document.querySelectorAll(".mapkern-search-results [role=option] .mapkern-search-name")].map((e) => e.textContent);
-        return { opened, closed, options, context, expanded, center, zoom, input: chosen, pins, picked, empty, failed, near, stale };
+        return { opened, closed, options, context, expanded, center, zoom, input: chosen, pins, picked: first, empty, failed, near, stale, clearing };
       })()`);
       await shot("search");
       if (JSON.stringify(state.options) !== '["Olympia","Olympia Avenue"]')
@@ -5035,6 +5072,21 @@ const specs: Spec[] = [
         fail(`search should prefer places near the view: ${JSON.stringify(state)}`);
       if (JSON.stringify(state.stale) !== '["Olympia","Olympia Avenue"]')
         fail(`a slow answer to an older query must not replace newer results: ${JSON.stringify(state)}`);
+      const c = state.clearing;
+      if (!c.dismissShown) fail(`a pinned result should show a clear button: ${JSON.stringify(c)}`);
+      if (
+        c.afterDismiss.pins !== 0 ||
+        c.afterDismiss.input !== "" ||
+        !c.afterDismiss.hidden ||
+        !c.afterDismiss.resetHidden
+      )
+        fail(`the clear button should remove the pin and empty the box: ${JSON.stringify(c)}`);
+      if (!c.resetShown) fail(`typed text should show a clear button in the box: ${JSON.stringify(c)}`);
+      if (c.afterEmpty.pins !== 0 || !c.afterEmpty.dismiss)
+        fail(`emptying the box should remove the pin: ${JSON.stringify(c)}`);
+      if (c.afterReset.input !== "" || c.afterReset.list || !c.afterReset.focused || !c.afterReset.hidden)
+        fail(`the box's clear button should empty it and keep focus: ${JSON.stringify(c)}`);
+      if (c.cleared !== 3) fail(`each clear should fire one clear event: ${JSON.stringify(c)}`);
     },
   },
 ];

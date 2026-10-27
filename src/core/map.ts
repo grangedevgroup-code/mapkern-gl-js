@@ -133,7 +133,8 @@ export type UiText =
   | "search"
   | "searchPlaceholder"
   | "noResults"
-  | "searchFailed";
+  | "searchFailed"
+  | "clearSearch";
 
 const NEAR_SAMPLES = 8;
 const PREFETCH_MARGIN = 1.4;
@@ -162,6 +163,7 @@ const DEFAULT_TEXT: Record<UiText, string> = {
   searchPlaceholder: "Search places and addresses",
   noResults: "Nothing found",
   searchFailed: "Search is not available",
+  clearSearch: "Clear search",
 };
 
 export interface ScreenPosition {
