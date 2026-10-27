@@ -1421,7 +1421,7 @@ export class CompatMap {
 
   hasControl(control: IControl | Control): boolean {
     if (this.hosted.has(control as IControl)) return true;
-    return (this.native as unknown as { controls: { control: unknown }[] }).controls.some((c) => c.control === control);
+    return this.native.hasControl(control as Control);
   }
 
   setTransformRequest(transform: CompatMapOptions["transformRequest"] | null): this {

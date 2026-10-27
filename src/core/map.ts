@@ -59,7 +59,13 @@ import { registerInternals } from "./internal.ts";
 import type { LayerEventType, PointerInput, PointerType } from "./layer-events.ts";
 import { LAYER_EVENT_TYPES, LayerEvents } from "./layer-events.ts";
 import type { QueriedFeature, SourceQueriedFeature, StateReader } from "./query.ts";
-import { queryVectorSource, resolveFeatures, resolveFeaturesSync } from "./query.ts";
+import {
+  queryGeoJSONSourceSync,
+  queryVectorSource,
+  queryVectorSourceSync,
+  resolveFeatures,
+  resolveFeaturesSync,
+} from "./query.ts";
 
 export interface SetStyleOptions {
   diff?: boolean;
@@ -462,6 +468,7 @@ export class MapkernMap extends Emitter<MapEvents> {
       enableSyncQueries: () => this.enableSyncQueries(),
       queryRenderedFeaturesSync: (geometry, options) => this.queryRenderedSync(geometry, options),
       restyleLayer: (spec) => this.restyleLayer(spec),
+      querySourceFeaturesSync: (sourceId, sourceLayer) => this.querySourceSync(sourceId, sourceLayer),
     });
     if (typeof options !== "object" || options === null) {
       throw new MapkernError("invalid-option", "new Map(options) needs an options object");
@@ -1220,6 +1227,10 @@ export class MapkernMap extends Emitter<MapEvents> {
     return this;
   }
 
+  isEasing(): boolean {
+    return this.motion !== null;
+  }
+
   isMoving(): boolean {
     return this.moving || this.motion !== null || this.gestureDepth > 0;
   }
@@ -1620,6 +1631,14 @@ export class MapkernMap extends Emitter<MapEvents> {
     return resolveFeaturesSync(picked, query.sources, this.stateOf);
   }
 
+  private querySourceSync(sourceId: string, sourceLayer: string | undefined): SourceQueriedFeature[] {
+    const source = this.style?.sources.get(sourceId);
+    if (!source || this.removed) return [];
+    if (source.type === "vector") return queryVectorSourceSync(source as VectorSource, sourceLayer, this.stateOf);
+    if (source.type === "geojson") return queryGeoJSONSourceSync(source as GeoJSONSource, this.stateOf);
+    return [];
+  }
+
   private restyleLayer(spec: LayerSpec): void {
     const style = this.requireStyle();
     const current = style.getLayer(spec.id);
@@ -1982,6 +2001,10 @@ export class MapkernMap extends Emitter<MapEvents> {
     else corner.appendChild(element);
     this.controls.push({ control, element });
     return this;
+  }
+
+  hasControl(control: Control): boolean {
+    return this.controls.some((c) => c.control === control);
   }
 
   removeControl(control: Control): this {

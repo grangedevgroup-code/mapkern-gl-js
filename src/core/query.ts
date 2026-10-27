@@ -39,6 +39,51 @@ export async function queryVectorSource(
   filter: Compiled<boolean> | null,
   stateOf: StateReader,
 ): Promise<SourceQueriedFeature[]> {
+  const decoded = new Map<ArrayBuffer, Map<string, VectorLayer>>();
+  for (const piece of source.manager?.pieces ?? []) {
+    const raw = piece.tile.data?.raw;
+    if (raw && !decoded.has(raw)) decoded.set(raw, await decodedLayers(raw));
+  }
+  return collectVectorSource(source, sourceLayer, filter, stateOf, (raw) => decoded.get(raw));
+}
+
+export function queryVectorSourceSync(
+  source: VectorSource,
+  sourceLayer: string | undefined,
+  stateOf: StateReader,
+): SourceQueriedFeature[] {
+  return collectVectorSource(source, sourceLayer, null, stateOf, decodedLayersSync);
+}
+
+export function queryGeoJSONSourceSync(source: GeoJSONSource, stateOf: StateReader): SourceQueriedFeature[] {
+  const out: SourceQueriedFeature[] = [];
+  const seen = new Set<number>();
+  for (const piece of source.manager?.pieces ?? []) {
+    const tile = piece.tile;
+    for (const entry of tile.data?.table?.values() ?? []) {
+      if (seen.has(entry.index)) continue;
+      seen.add(entry.index);
+      out.push({
+        type: "Feature",
+        id: entry.id,
+        properties: { ...entry.properties },
+        geometry: tileGeometry({ type: entry.type, extent: entry.extent, geometry: () => entry.parts }, tile),
+        source: source.id,
+        sourceLayer: undefined,
+        state: stateOf(source.id, undefined, entry.id),
+      });
+    }
+  }
+  return out;
+}
+
+function collectVectorSource(
+  source: VectorSource,
+  sourceLayer: string | undefined,
+  filter: Compiled<boolean> | null,
+  stateOf: StateReader,
+  decode: (raw: ArrayBuffer) => Map<string, VectorLayer> | undefined,
+): SourceQueriedFeature[] {
   const manager = source.manager;
   if (!manager) return [];
   const out: SourceQueriedFeature[] = [];
@@ -49,7 +94,8 @@ export async function queryVectorSource(
     seen.add(tile.key);
     const raw = tile.data?.raw;
     if (!raw) continue;
-    const layers = await decodedLayers(raw);
+    const layers = decode(raw);
+    if (!layers) continue;
     const names = sourceLayer !== undefined ? [sourceLayer] : [...layers.keys()];
     for (const name of names) {
       const layer = layers.get(name);
