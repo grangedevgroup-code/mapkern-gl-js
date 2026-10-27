@@ -60,6 +60,7 @@ import { queryVectorSource, resolveFeatures } from "./query.ts";
 
 export interface SetStyleOptions {
   diff?: boolean;
+  transformStyle?: (previous: StyleSpec | null, next: StyleSpec | StyleSpecV8) => StyleSpec | StyleSpecV8;
 }
 
 export interface MapOptions {
