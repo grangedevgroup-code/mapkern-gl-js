@@ -131,27 +131,7 @@ export async function resolveFeatures(
     if (source?.type !== "vector") continue;
     const raw = hit.tile.data?.raw;
     if (!raw) continue;
-    const tileLayers = await decodedLayers(raw);
-    const name = hit.layer.sourceLayer;
-    const layer = name ? tileLayers.get(name) : tileLayers.values().next().value;
-    if (!layer || index >= layer.length) continue;
-    const feature = layer.feature(index);
-    const properties: Record<string, unknown> = { ...feature.properties() };
-    const promote = promotedKey((source.spec as { promoteId?: unknown }).promoteId, layer.name);
-    const id = promote ? featureIdValue(properties[promote]) : feature.id;
-    const key = id !== undefined ? `${hit.layer.id}|id:${id}` : `${hit.layer.id}|${hit.tile.key}|${index}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out[slot] = {
-      type: "Feature",
-      id,
-      properties,
-      geometry: tileGeometry(feature, hit.tile),
-      layer: hit.layer.id,
-      source: sourceId,
-      sourceLayer: name,
-      state: stateOf(sourceId, name, id),
-    };
+    out[slot] = vectorHit(hit, index, source, await decodedLayers(raw), seen, stateOf);
   }
   for (const [source, wanted] of geojson) {
     const found = new Map((await source.features(wanted.map((w) => w.index))).map((f) => [f.index, f]));
