@@ -1389,7 +1389,7 @@ export class MapkernMap extends Emitter<MapEvents> {
           } catch (error) {
             throw new MapkernError("invalid-style", `Style at ${style} is not valid JSON`, {}, error);
           }
-          this.applyStyle(spec as StyleSpec, diff, absoluteUrl(params.url));
+          this.applyStyle(this.transformedStyle(spec as StyleSpec, options), diff, absoluteUrl(params.url));
         })
         .catch((error: unknown) => {
           if (controller.signal.aborted || this.removed) return;
@@ -1400,9 +1400,31 @@ export class MapkernMap extends Emitter<MapEvents> {
           );
         });
     } else {
-      this.applyStyle(style, diff);
+      let spec: StyleSpec | StyleSpecV8;
+      try {
+        spec = this.transformedStyle(style, options);
+      } catch (error) {
+        this.fail(error as MapkernError);
+        return this;
+      }
+      this.applyStyle(spec, diff);
     }
     return this;
+  }
+
+  private transformedStyle(style: StyleSpec | StyleSpecV8, options: SetStyleOptions): StyleSpec | StyleSpecV8 {
+    const transform = options.transformStyle;
+    if (!transform) return style;
+    let next: unknown;
+    try {
+      next = transform(this.getStyle(), style);
+    } catch (error) {
+      throw new MapkernError("invalid-style", `transformStyle failed: ${errorMessage(error)}`, {}, error);
+    }
+    if (typeof next !== "object" || next === null) {
+      throw new MapkernError("invalid-style", "transformStyle must return a style object");
+    }
+    return next as StyleSpec | StyleSpecV8;
   }
 
   getStyle(): StyleSpec | null {
