@@ -2250,11 +2250,14 @@ export class MapkernMap extends Emitter<MapEvents> {
   }
 
   private sourceContext(): SourceContext {
+    const options = this.options;
     return {
       gl: this.glContext,
       scheduler: this.scheduler,
       workers: () => this.workerPool(),
-      transformRequest: this.options.transformRequest,
+      get transformRequest() {
+        return options.transformRequest;
+      },
       requestTimeoutMs: this.requestTimeout(),
       diskCache: this.diskCache,
       cacheBytes: Math.max(16, checkNumber(this.options.tileCacheSize, "tileCacheSize", 192)) * 1024 * 1024,
