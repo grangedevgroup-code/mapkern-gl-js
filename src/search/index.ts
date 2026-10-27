@@ -265,19 +265,20 @@ export class SearchIndex implements Geocoder {
       }
       for (const short of expandPrefix(token)) await add(await file.term(short), 0.9, true);
     }
+    await add(await file.term(CODE_WORD + token), 1.15, true);
+    await add(await file.term(OTHER_NAME + token), 0.85, true);
+    if (prefix && token.length >= 4)
+      for (const info of (await file.range(OTHER_NAME + token, 2)).infos) await add(info, 0.8, true);
     if (!out.some((m) => m.direct) && token.length >= 4 && !isNumber(token)) {
       const limit = token.length >= 8 ? 2 : 1;
-      const { infos } = await file.range(token.slice(0, 2), TYPO_BLOCKS);
+      const infos: TermInfo[] = [];
+      for (const start of typoStarts(token)) infos.push(...(await file.range(start, TYPO_BLOCKS)).infos);
       for (const info of infos) {
         const t = info.term;
         const edits = withinEdits(token, t, limit, prefix ? Math.min(t.length, token.length) : t.length);
         if (edits > 0) await add(info, edits === 1 ? 0.75 : 0.6, true);
       }
     }
-    await add(await file.term(CODE_WORD + token), 1.15, true);
-    await add(await file.term(OTHER_NAME + token), 0.85, true);
-    if (prefix && token.length >= 4)
-      for (const info of (await file.range(OTHER_NAME + token, 2)).infos) await add(info, 0.8, true);
     await add(await file.term(CATEGORY_WORD + token), 0.8, true);
     await add(await file.term(CONTEXT_WORD + token), 0.7, false);
     if (prefix && token.length >= 3) {
@@ -296,7 +297,9 @@ export class SearchIndex implements Geocoder {
       .sort((a, b) => sizes[a]! - sizes[b]!);
     if (order.length === 0 || order.length < matches.length - allowMissing) return [];
     const pool = new Set<number>();
-    for (const i of order.slice(0, allowMissing + 1)) for (const m of matches[i]!) for (const id of m.ids) pool.add(id);
+    const lists = order.slice(0, allowMissing + 1).flatMap((i) => matches[i]!);
+    lists.sort((a, b) => b.quality - a.quality);
+    for (const m of lists) for (const id of m.ids) pool.add(id);
     let ids = [...pool];
     if (ids.length > CANDIDATE_LIMIT) ids = this.narrow(ids, near);
     const out: Candidate[] = [];
