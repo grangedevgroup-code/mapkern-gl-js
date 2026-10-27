@@ -44,13 +44,13 @@ export class DemSource implements MapSource {
   manager: TileManager<DemTile> | null = null;
   tileSet: TileSet | null = null;
   private readonly ctx: SourceContext;
-  private readonly unpack: Unpack;
+  private unpack: Unpack;
 
   constructor(id: string, spec: DemSourceSpec, ctx: SourceContext) {
     this.id = id;
     this.spec = spec;
     this.ctx = ctx;
-    this.unpack = unpackFor(spec.encoding);
+    this.unpack = unpackFor(spec.encoding ?? spec.defaultEncoding);
   }
 
   get loaded(): boolean {
@@ -104,6 +104,8 @@ export class DemSource implements MapSource {
   private start(set: TileSet): void {
     const previous = this.manager;
     this.tileSet = set;
+    const named = set.raw.encoding === "terrarium" || set.raw.encoding === "mapbox" ? set.raw.encoding : undefined;
+    this.unpack = unpackFor(this.spec.encoding ?? named ?? this.spec.defaultEncoding);
     this.ctx.scheduler.setGroupLimit(this.id, 12);
     previous?.destroy();
     this.manager = new TileManager<DemTile>(

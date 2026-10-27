@@ -30,6 +30,7 @@ const SOURCE_KEYS: Record<string, Set<string>> = {
     "attribution",
     "tileSize",
     "encoding",
+    "defaultEncoding",
   ]),
   geojson: new Set([
     "type",
@@ -284,11 +285,13 @@ export function validateSource(id: string, source: unknown): StyleIssue[] {
     ) {
       issues.push({ path: `${path}.bounds`, message: "bounds must be [west, south, east, north]" });
     }
-    if (type === "dem" && source.encoding !== undefined && !isEncoding(source.encoding)) {
-      issues.push({
-        path: `${path}.encoding`,
-        message: "encoding must be terrarium, mapbox or { red, green, blue, offset }",
-      });
+    for (const key of ["encoding", "defaultEncoding"] as const) {
+      if (type === "dem" && source[key] !== undefined && !isEncoding(source[key])) {
+        issues.push({
+          path: `${path}.${key}`,
+          message: `${key} must be terrarium, mapbox or { red, green, blue, offset }`,
+        });
+      }
     }
   }
   if (source.promoteId !== undefined && !isPromoteId(source.promoteId, type === "vector")) {

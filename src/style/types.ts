@@ -32,6 +32,7 @@ export interface DemSourceSpec extends TileSourceBase {
   type: "dem";
   tileSize?: number;
   encoding?: DemEncoding;
+  defaultEncoding?: DemEncoding;
 }
 
 export type GeoJSONData = GeoJSON | string | Blob;

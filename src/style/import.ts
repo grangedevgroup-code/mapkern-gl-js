@@ -420,6 +420,7 @@ function convertSource(id: string, raw: unknown, base: string | undefined, skipp
       const out = tiled("dem", raw, base);
       out.tileSize = numberOr(raw.tileSize, 512);
       if (raw.encoding === "terrarium") out.encoding = "terrarium";
+      else if (raw.encoding === "mapbox") out.encoding = "mapbox";
       else if (raw.encoding === "custom") {
         out.encoding = {
           red: numberOr(raw.redFactor, 1),
@@ -427,7 +428,7 @@ function convertSource(id: string, raw: unknown, base: string | undefined, skipp
           blue: numberOr(raw.blueFactor, 1),
           offset: numberOr(raw.baseShift, 0),
         };
-      } else out.encoding = "mapbox";
+      } else out.defaultEncoding = "mapbox";
       return out as unknown as SourceSpec;
     }
     case "geojson": {

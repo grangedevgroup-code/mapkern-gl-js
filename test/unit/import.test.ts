@@ -231,7 +231,8 @@ test("sources keep v8 defaults and addresses stay usable", () => {
     attribution: "Me",
   });
   assert.equal((style.sources.r as { tileSize?: number }).tileSize, 512);
-  assert.equal((style.sources.d as { encoding?: unknown }).encoding, "mapbox");
+  assert.equal((style.sources.d as { encoding?: unknown }).encoding, undefined);
+  assert.equal((style.sources.d as { defaultEncoding?: unknown }).defaultEncoding, "mapbox");
   assert.equal((style.sources.t as { encoding?: unknown; tileSize?: number }).encoding, "terrarium");
   assert.deepEqual((style.sources.c as { encoding?: unknown }).encoding, {
     red: 0.1,
