@@ -196,6 +196,7 @@ export function vectorTile(decoded: VectorTileResult, signature: string, raw: Ar
 export function vectorTileLoader(gl: GL, load: TileLoader<VectorTile>["load"]): TileLoader<VectorTile> {
   return {
     load,
+    emptyIsFinal: true,
     needsUpload: (data) => !data.uploaded,
     upload: (data) => {
       for (const bucket of data.buckets.values()) {
