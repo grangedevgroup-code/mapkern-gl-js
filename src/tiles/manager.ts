@@ -12,6 +12,7 @@ export interface TileLoader<D> {
   upload(data: D): void;
   release(data: D): void;
   byteSize(data: D): number;
+  readonly emptyIsFinal?: boolean;
 }
 
 export interface Tiling {
@@ -217,6 +218,7 @@ export class TileManager<D> {
     for (const slot of inBounds) {
       const tile = this.tiles.get(tileKey(slot.z, slot.x, slot.y));
       if (tile?.state !== "empty" && tile?.state !== "failed") continue;
+      if (tile.state === "empty" && this.loader.emptyIsFinal) continue;
       for (let z = slot.z - 1; z >= this.tiling.minZoom; z--) {
         const p = parentTile(slot, slot.z - z);
         const parent = this.want(p.z, p.x, p.y, -5000 + climb++, now);
@@ -404,6 +406,10 @@ export class TileManager<D> {
         } else {
           pieces.push(this.piece(tile, slot.wrap, FULL, 1, slot.z));
         }
+        continue;
+      }
+      if (tile?.state === "empty" && this.loader.emptyIsFinal) {
+        this.noDataArea += area;
         continue;
       }
       const covered = this.fallback(pieces, slot, slot.wrap, slot.z, 0);
