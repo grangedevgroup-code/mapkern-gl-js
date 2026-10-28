@@ -68,7 +68,7 @@ type Mode =
   | { kind: "press"; pointer: number; rotate: boolean; hold: Hold; quick: boolean }
   | { kind: "quick"; pointer: number; startY: number; zoom0: number; anchor: Point3 | null; x: number; y: number }
   | { kind: "box"; pointer: number; startX: number; startY: number; box: HTMLElement | null; hold: Hold }
-  | { kind: "pan"; pointer: number; anchor: Point3 }
+  | { kind: "pan"; pointer: number; anchor: Point3; fling: boolean }
   | { kind: "rotate"; pointer: number; lastX: number; lastY: number; moved: boolean }
   | {
       kind: "touch2";
@@ -358,7 +358,7 @@ export class InputHandlers {
           this.cancel();
           return;
         }
-        this.mode = { kind: "pan", pointer: e.pointerId, anchor };
+        this.mode = { kind: "pan", pointer: e.pointerId, anchor, fling: true };
         this.host.gesture(true);
         this.host.drag("start", e);
       }
@@ -429,7 +429,7 @@ export class InputHandlers {
     }
     if (mode.kind === "pan" && mode.pointer === e.pointerId) {
       this.mode = { kind: "idle" };
-      if (!cancelled) this.startInertia(mode.anchor, x, y, e.timeStamp);
+      if (!cancelled && mode.fling) this.startInertia(mode.anchor, x, y, e.timeStamp);
       this.host.gesture(false);
       this.host.drag("end", e);
       return;
@@ -462,7 +462,7 @@ export class InputHandlers {
       if (rest && this.options.dragPan && !this.options.cooperative) {
         const anchor = this.host.anchor(rest.x, rest.y);
         if (anchor) {
-          this.mode = { kind: "pan", pointer: rest.id, anchor };
+          this.mode = { kind: "pan", pointer: rest.id, anchor, fling: false };
           this.samples = [{ t: e.timeStamp, x: rest.x, y: rest.y }];
           this.host.gesture(true);
           return;
