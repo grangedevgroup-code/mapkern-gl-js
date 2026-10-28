@@ -402,6 +402,7 @@ export class Painter {
         }, 0);
       }
     }
+    g.resetState();
     gl.bindFramebuffer(gl.FRAMEBUFFER, frame.framebuffer ?? null);
     gl.bindVertexArray(null);
     gl.useProgram(null);
@@ -418,7 +419,6 @@ export class Painter {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
-    g.resetState();
     const target = frame.target;
     if (target) g.setViewport(0, 0, target[0], target[1]);
     else g.setViewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
