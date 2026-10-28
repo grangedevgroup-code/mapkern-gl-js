@@ -1,4 +1,5 @@
 import { MapkernError } from "../core/errors.ts";
+import { installStateCache, type StateCache } from "./state-cache.ts";
 
 export interface Program {
   readonly name: string;
@@ -40,9 +41,11 @@ export class GL {
   private cullFace: boolean | null = null;
   private viewport: [number, number, number, number] = [0, 0, 0, 0];
   private lost = false;
+  private readonly stateCache: StateCache;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
+    this.stateCache = installStateCache(gl);
     this.maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
     this.anisotropic = gl.getExtension("EXT_texture_filter_anisotropic");
     this.maxAnisotropy = this.anisotropic
@@ -74,6 +77,7 @@ export class GL {
   }
 
   resetState(): void {
+    this.stateCache.forget();
     this.currentProgram = null;
     this.blend = null;
     this.depthTest = null;
