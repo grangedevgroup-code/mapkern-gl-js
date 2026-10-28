@@ -57,7 +57,7 @@ export function installStateCache(gl: WebGL2RenderingContext): StateCache {
   };
 
   for (const name of SCALAR_UNIFORMS) {
-    const raw = gl[name].bind(gl) as (location: WebGLUniformLocation | null, ...values: number[]) => void;
+    const raw = gl[name].bind(gl) as unknown as (location: WebGLUniformLocation | null, ...values: number[]) => void;
     target[name] = ((location: WebGLUniformLocation | null, ...values: number[]) => {
       if (location === null) return;
       if (remember(location, values)) raw(location, ...values);
@@ -65,7 +65,7 @@ export function installStateCache(gl: WebGL2RenderingContext): StateCache {
   }
 
   for (const name of VECTOR_UNIFORMS) {
-    const raw = gl[name].bind(gl) as (
+    const raw = gl[name].bind(gl) as unknown as (
       location: WebGLUniformLocation | null,
       data: ArrayLike<number>,
       ...rest: number[]
@@ -82,7 +82,7 @@ export function installStateCache(gl: WebGL2RenderingContext): StateCache {
   }
 
   for (const name of MATRIX_UNIFORMS) {
-    const raw = gl[name].bind(gl) as (
+    const raw = gl[name].bind(gl) as unknown as (
       location: WebGLUniformLocation | null,
       transpose: boolean,
       data: ArrayLike<number>,
