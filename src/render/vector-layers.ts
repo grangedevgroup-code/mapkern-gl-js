@@ -238,7 +238,7 @@ export class VectorPainter {
     const stride = bucket.paint.stride;
     if (stride === 0 && this.boundStride === 0) return;
     this.boundStride = stride;
-    g.bindTexture(1, bucket.paint.texture);
+    g.bindTexture(1, bucket.paint.texture ?? zeroTexture(g));
     gl.uniform1f(
       program.uniforms.get("u_zoom_t") ?? null,
       Math.min(1, Math.max(0, zoom - (Number.isNaN(bucket.paint.base) ? Math.floor(zoom) : bucket.paint.base))),
@@ -369,7 +369,7 @@ export class VectorPainter {
     const found = terrain.demFor(tile.z, tile.x, tile.y);
     const data = found?.tile.data ?? null;
     const texture = data ? terrain.source.elevationTexture(data) : null;
-    g.bindTexture(2, texture ?? flatDem(g));
+    g.bindTexture(2, texture ?? zeroTexture(g));
     gl.activeTexture(gl.TEXTURE0);
     const r = found?.rect ?? { x0: 0, y0: 0, x1: 1, y1: 1 };
     const n = 2 ** tile.z;
@@ -607,13 +607,13 @@ export class VectorPainter {
   }
 }
 
-const NO_DEM = new WeakMap<GL, WebGLTexture>();
+const ZERO_TEXTURE = new WeakMap<GL, WebGLTexture>();
 
-function flatDem(gl: GL): WebGLTexture {
-  let texture = NO_DEM.get(gl);
+function zeroTexture(gl: GL): WebGLTexture {
+  let texture = ZERO_TEXTURE.get(gl);
   if (!texture) {
     texture = gl.createDataTexture(1, 1, "r32f", Float32Array.of(0), false);
-    NO_DEM.set(gl, texture);
+    ZERO_TEXTURE.set(gl, texture);
   }
   return texture;
 }
