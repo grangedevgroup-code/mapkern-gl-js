@@ -510,3 +510,49 @@ test("a slow tile holds back finished ones only briefly", async () => {
   assert.ok(drawn.includes("new"), "the finished tile is shown after the wait");
   assert.ok(drawn.includes("old"), "the slow tiles keep their old data");
 });
+
+class FinalEmptyLoader extends FakeLoader {
+  readonly emptyIsFinal = true;
+}
+
+function setupWith(loader: FakeLoader, zoom: number) {
+  const transform = new Transform();
+  transform.resize(800, 600);
+  transform.setCenter(10, 20);
+  transform.setZoom(zoom);
+  const manager = new TileManager(
+    "test",
+    { tileSize: 512, minZoom: 0, maxZoom: 14, roundZoom: false, bounds: null },
+    loader,
+    new RequestScheduler(64),
+    options,
+    { changed() {}, failure() {}, wakeAt() {} },
+  );
+  return { transform, manager };
+}
+
+async function zoomOutToEmpty(loader: FakeLoader) {
+  const { transform, manager } = setupWith(loader, 4);
+  manager.update(transform, 0);
+  await flush();
+  await resolveAll(loader);
+  manager.update(transform, 1);
+  transform.setZoom(3);
+  manager.update(transform, 2);
+  await flush();
+  for (const p of loader.take((c) => c.z <= 3)) p.resolve(null);
+  await flush();
+  manager.update(transform, 3);
+  return manager;
+}
+
+test("an empty tile from a source whose empty means no data hides the finer tiles left from zooming out", async () => {
+  const manager = await zoomOutToEmpty(new FinalEmptyLoader());
+  assert.equal(manager.pieces.length, 0);
+  assert.ok(manager.stats.noData > 0.99);
+});
+
+test("an empty tile from a source whose empty means missing still shows the finer tiles it has", async () => {
+  const manager = await zoomOutToEmpty(new FakeLoader());
+  assert.ok(manager.pieces.some((p) => p.tile.z === 4));
+});
