@@ -195,6 +195,9 @@ export class Painter {
   private openMask: WebGLTexture | null = null;
   private flatDem: WebGLTexture | null = null;
   private terrainGeometry: TerrainGeometry | null = null;
+  private capGeometry: TerrainGeometry | null = null;
+  private blankDrape: WebGLTexture | null = null;
+  private blankColor = "";
   private readonly drapes: DrapeCache;
   private readonly hash = new Hash();
   private drapesBehind = false;
