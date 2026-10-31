@@ -567,6 +567,23 @@ export class Transform {
     out[2] = h + (gz - h) * g;
   }
 
+  globeDirection(lng: number, lat: number): [number, number, number] {
+    this.update();
+    const a = (lat * Math.PI) / 180;
+    const o = (lng * Math.PI) / 180;
+    const ux = Math.cos(a) * Math.cos(o);
+    const uy = Math.cos(a) * Math.sin(o);
+    const uz = Math.sin(a);
+    const c = this.axisC;
+    const e = this.axisE;
+    const n = this.axisN;
+    return [
+      ux * e[0]! + uy * e[1]! + uz * e[2]!,
+      -(ux * n[0]! + uy * n[1]! + uz * n[2]!),
+      ux * c[0]! + uy * c[1]! + uz * c[2]!,
+    ];
+  }
+
   globeHidden(lx: number, ly: number, lz: number): boolean {
     const g = this.globeAmount;
     if (g <= 0) return false;
