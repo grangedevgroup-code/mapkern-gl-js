@@ -505,7 +505,8 @@ export class MapkernMap extends Emitter<MapEvents> {
       checkNumber(options.minZoom, "minZoom", MIN_ZOOM),
       checkNumber(options.maxZoom, "maxZoom", 22),
     );
-    const world = worldView(container);
+    const world =
+      this.transform.projection === "globe" ? globeView(container, this.transform.fov) : worldView(container);
     this.transform.setZoom(checkNumber(options.zoom, "zoom", world.zoom));
     this.transform.setBearing(checkNumber(options.bearing, "bearing", 0));
     this.transform.setPitch(checkNumber(options.pitch, "pitch", 0));
@@ -3105,6 +3106,18 @@ function worldView(container: HTMLElement): { zoom: number; center: [number, num
   const height = container.clientHeight;
   const zoom = width > 0 && height > 0 ? Math.log2(Math.min(width / 512, height / (512 * (bottom - top)))) : 0;
   return { zoom, center: [0, latFromMercatorY((top + bottom) / 2)] };
+}
+
+function globeView(container: HTMLElement, fov: number): { zoom: number; center: [number, number] } {
+  const { center } = worldView(container);
+  const width = container.clientWidth;
+  const height = container.clientHeight;
+  if (!(width > 0 && height > 0)) return { zoom: 0, center };
+  const d = height / 2 / Math.tan((fov * Math.PI) / 360);
+  const r = 0.42 * Math.min(width, height);
+  const radius = (r * r + r * Math.sqrt(r * r + d * d)) / d;
+  const stretch = Math.cosh(Math.PI * (1 - 2 * mercatorY(center[1])));
+  return { zoom: Math.log2((2 * Math.PI * radius) / (512 * stretch)), center };
 }
 
 function absoluteUrl(url: string): string | undefined {
