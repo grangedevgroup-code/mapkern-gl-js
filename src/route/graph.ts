@@ -284,7 +284,7 @@ export class RouteGraph {
     const cx = Math.floor((lng - grid.minX) / CELL);
     const cy = Math.floor((lat - grid.minY) / CELL);
     const kx = Math.cos(lat * RAD);
-    let best: Snap | null = null;
+    let best = null as Snap | null;
     const seen = new Set<number>();
     const maxRing = Math.ceil(maxMeters / (CELL * 111320 * Math.max(0.2, kx))) + 1;
     for (let ring = 0; ring <= maxRing; ring++) {
