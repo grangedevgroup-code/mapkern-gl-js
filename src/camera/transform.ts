@@ -850,7 +850,9 @@ export class Transform {
     return [lngFromMercatorX(w[0]), latFromMercatorY(w[1])];
   }
 
-  setLocationAtPoint(world: readonly number[], px: number, py: number, z?: number): void {
+  setLocationAtPoint(world: readonly number[], px: number, py: number, z?: number, keepSize = false): number {
+    this.update();
+    if (this.globeAmount > 0) return this.rotateGlobeTo(world, px, py, z, keepSize);
     for (let i = 0; i < 4; i++) {
       const now = this.unprojectClamped(px, py, z === undefined ? undefined : z * this.worldSize);
       const dx = world[0]! - now[0];
