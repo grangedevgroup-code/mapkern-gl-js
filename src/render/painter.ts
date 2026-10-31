@@ -27,7 +27,7 @@ import type { SunLook } from "./night.ts";
 import { NightPainter, nightInView, nightShader } from "./night.ts";
 import type { PendingRead } from "./pick.ts";
 import { PickBuffer } from "./pick.ts";
-import { atmosphereShader } from "./shaders/globe.ts";
+import { atmosphereShader, poleShader } from "./shaders/globe.ts";
 import { hillshadeShader } from "./shaders/hillshade.ts";
 import { overlayShader, rasterShader, solidShader } from "./shaders/raster.ts";
 import { globeSurfaceShader, terrainShader } from "./shaders/terrain.ts";
@@ -100,6 +100,13 @@ export interface Surface {
 
 const SPACE: RGBA = [0.035, 0.045, 0.085, 1];
 const GLOBE_LAND: RGBA = [0.86, 0.88, 0.9, 1];
+const POLE_SAMPLES = 16;
+
+function spread<T>(list: readonly T[], count: number): T[] {
+  const out: T[] = [];
+  for (let i = 0; i < count; i++) out.push(list[Math.floor(((i + 0.5) * list.length) / count)]!);
+  return out;
+}
 
 function over(top: RGBA, bottom: RGBA): RGBA {
   const k = 1 - top[3];
@@ -203,6 +210,7 @@ export class Painter {
   private terrainGeometry: TerrainGeometry | null = null;
   private capGeometry: TerrainGeometry | null = null;
   private blankDrape: WebGLTexture | null = null;
+  private poleTarget: { texture: WebGLTexture; framebuffer: WebGLFramebuffer } | null = null;
   private readonly drapes: DrapeCache;
   private readonly hash = new Hash();
   private drapesBehind = false;
@@ -247,6 +255,7 @@ export class Painter {
     this.terrainGeometry = null;
     this.capGeometry = null;
     this.blankDrape = null;
+    this.poleTarget = null;
     for (const shader of [
       solidShader,
       rasterShader,
@@ -658,6 +667,7 @@ export class Painter {
     const caps = this.capMesh();
     const empty = this.emptyDrape();
     if (!caps || !empty) return;
+    const poles = this.averagePoles(frame, terrain, empty);
     const program = g.program(globeSurfaceShader);
     g.use(program);
     g.setBlend("premultiplied");
@@ -666,6 +676,8 @@ export class Painter {
     gl.uniform1i(uniform(program, "u_drape"), 0);
     gl.uniform1i(uniform(program, "u_dem"), 1);
     gl.uniform1i(uniform(program, "u_gradient"), 2);
+    gl.uniform1i(uniform(program, "u_pole"), 3);
+    g.bindTexture(3, poles);
     const ws = t.worldSize;
     gl.uniform1f(uniform(program, "u_world"), ws);
     gl.uniform1f(uniform(program, "u_exaggeration"), terrain.exaggeration);
@@ -690,26 +702,17 @@ export class Painter {
     const uSkirt = uniform(program, "u_skirt");
     const uDrapeRect = uniform(program, "u_drape_rect");
     const uTile = uniform(program, "u_tile");
+    const uCap = uniform(program, "u_cap");
+    const uDrapeSize = uniform(program, "u_drape_size");
     for (const slot of terrain.slots) {
-      let entry = this.drapes.lookup(slot.key);
-      let rect: readonly [number, number, number, number] = [0, 0, 1, 1];
-      let texture: WebGLTexture = empty;
-      if (entry && !Number.isNaN(entry.signature)) {
-        texture = entry.texture;
-      } else {
-        const fallback = this.drapeFallback(slot);
-        if (fallback) {
-          entry = fallback.entry;
-          rect = fallback.rect;
-          texture = entry.texture;
-        }
-      }
+      const { texture, rect, size } = this.slotDrape(slot, empty);
       gl.uniform4f(uDrapeRect, rect[0], rect[1], rect[2], rect[3]);
       const data = slot.dem?.data ?? null;
       const dem = data ? (terrain.source?.elevationTexture(data) ?? null) : null;
       g.bindTexture(0, texture);
       g.bindTexture(1, dem ?? this.flatDem);
       g.bindTexture(2, data?.gradientTexture ?? this.flatDem);
+      gl.uniform1f(uDrapeSize, size);
       const n = 2 ** slot.z;
       let rx = slot.wrap + slot.x / n - cx;
       rx -= Math.round(rx);
@@ -724,11 +727,13 @@ export class Painter {
       gl.uniform2f(uRows, slot.y / n, (slot.y + 1) / n);
       const range = data ? data.grid.max - data.grid.min : 0;
       gl.uniform1f(uSkirt, Math.max(30, range * 0.2) * Math.max(1, terrain.exaggeration));
+      gl.uniform1f(uCap, 0);
       gl.bindVertexArray(mesh.vao);
       gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
       this.stats.drawCalls++;
       this.stats.pieces++;
       if (slot.y === 0 || slot.y === n - 1) {
+        gl.uniform1f(uCap, 1);
         gl.bindVertexArray(caps.vao);
         const half = caps.count / 2;
         if (slot.y === 0) gl.drawElements(gl.TRIANGLES, half, gl.UNSIGNED_SHORT, 0);
@@ -736,10 +741,88 @@ export class Painter {
         this.stats.drawCalls++;
       }
     }
+    g.bindTexture(3, null);
     g.bindTexture(2, null);
     g.bindTexture(1, null);
     gl.activeTexture(gl.TEXTURE0);
     g.setDepth(false, false);
+  }
+
+  private slotDrape(
+    slot: TerrainSlot,
+    empty: WebGLTexture,
+  ): { texture: WebGLTexture; rect: readonly [number, number, number, number]; size: number } {
+    const entry = this.drapes.lookup(slot.key);
+    if (entry && !Number.isNaN(entry.signature))
+      return { texture: entry.texture, rect: [0, 0, 1, 1], size: entry.size };
+    const fallback = this.drapeFallback(slot);
+    if (fallback) return { texture: fallback.entry.texture, rect: fallback.rect, size: fallback.entry.size };
+    return { texture: empty, rect: [0, 0, 1, 1], size: 1 };
+  }
+
+  private averagePoles(frame: FrameInput, terrain: Surface, empty: WebGLTexture): WebGLTexture | null {
+    const g = this.gl;
+    const gl = g.gl;
+    let target = this.poleTarget;
+    if (!target) {
+      const texture = gl.createTexture();
+      const framebuffer = gl.createFramebuffer();
+      if (!texture || !framebuffer) return null;
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, 2, 1);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      target = { texture, framebuffer };
+      this.poleTarget = target;
+    }
+    const north: TerrainSlot[] = [];
+    const south: TerrainSlot[] = [];
+    for (const slot of terrain.slots) {
+      const n = 2 ** slot.z;
+      if (slot.y === 0) north.push(slot);
+      if (slot.y === n - 1) south.push(slot);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+    g.setViewport(0, 0, 2, 1);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    if (north.length > 0 || south.length > 0) {
+      const program = g.program(poleShader);
+      g.use(program);
+      g.setBlend("additive");
+      g.setDepth(false, false);
+      gl.uniform1i(uniform(program, "u_drape"), 0);
+      const uTarget = uniform(program, "u_target");
+      const uRect = uniform(program, "u_drape_rect");
+      const uRow = uniform(program, "u_row");
+      const uLod = uniform(program, "u_lod");
+      const uWeight = uniform(program, "u_weight");
+      gl.bindVertexArray(this.quadVao);
+      for (const [list, x, row] of [
+        [north, -0.5, 1 / 16],
+        [south, 0.5, 15 / 16],
+      ] as const) {
+        const picked = list.length <= POLE_SAMPLES ? list : spread(list, POLE_SAMPLES);
+        gl.uniform1f(uTarget, x);
+        gl.uniform1f(uRow, row);
+        gl.uniform1f(uWeight, 1 / Math.max(1, picked.length));
+        for (const slot of picked) {
+          const { texture, rect, size } = this.slotDrape(slot, empty);
+          g.bindTexture(0, texture);
+          gl.uniform4f(uRect, rect[0], rect[1], rect[2], rect[3]);
+          gl.uniform1f(uLod, Math.max(0, Math.log2(size) - 3));
+          gl.drawArrays(gl.POINTS, 0, 1);
+          this.stats.drawCalls++;
+        }
+      }
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, frame.framebuffer ?? null);
+    const size = frame.target;
+    if (size) g.setViewport(0, 0, size[0], size[1]);
+    else g.setViewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    return target.texture;
   }
 
   private drawAtmosphere(frame: FrameInput, background: RGBA): void {
@@ -954,6 +1037,11 @@ export class Painter {
     this.capGeometry = null;
     this.gl.deleteTexture(this.blankDrape);
     this.blankDrape = null;
+    if (this.poleTarget) {
+      this.gl.deleteTexture(this.poleTarget.texture);
+      this.gl.gl.deleteFramebuffer(this.poleTarget.framebuffer);
+    }
+    this.poleTarget = null;
     this.quadBuffer = null;
     this.quadVao = null;
     this.openMask = null;
