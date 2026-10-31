@@ -1,3 +1,4 @@
+import { globeChunk } from "./globe.ts";
 import { demChunk } from "./terrain.ts";
 
 export const paintChunk = `
@@ -458,6 +459,10 @@ ${paintChunk}
 uniform float u_extent;
 ${demChunk}
 #endif
+#ifdef GLOBE
+uniform vec3 u_tile;
+${globeChunk}
+#endif
 out vec2 v_pos;
 out vec4 v_color;
 #ifdef PICK
@@ -475,11 +480,22 @@ void main() {
   float shade = a_normal.z > 0.5 ? 1.0 : (0.66 + 0.3 * lambert) * (top ? 1.0 : 0.86);
   v_color = vec4(color.rgb * shade * color.a, color.a) * u_opacity;
   v_pos = a_pos;
+#ifdef GLOBE
+  float meters = top ? height : base;
+#ifdef TERRAIN
+  if (u_has_dem > 0.5) {
+    vec2 ground = clamp(a_pos / u_extent, 0.0, 1.0);
+    meters += demElevation(u_dem_rect.xy + ground * u_dem_rect.zw) * u_exaggeration;
+  }
+#endif
+  gl_Position = u_matrix * vec4(surfacePoint(u_tile.xy + a_pos * u_tile.z, meters, 0.0), 1.0);
+#else
   float z = (top ? height : base) * u_pixels_per_meter;
 #ifdef TERRAIN
   z += groundPixels(clamp(a_pos / u_extent, 0.0, 1.0));
 #endif
   gl_Position = u_matrix * vec4(a_pos, z, 1.0);
+#endif
 }
 `,
   fragment: `
