@@ -925,8 +925,223 @@ export class Transform {
     return convexHull(pts);
   }
 
+  private globeFootprint(): [number, number][] {
+    const w = this.width;
+    const h = this.height;
+    const steps = 8;
+    const pts: [number, number][] = [];
+    let missed = 0;
+    const add = (sx: number, sy: number) => {
+      const hit = this.unproject(sx, sy);
+      if (!hit) missed++;
+      const p = hit ?? this.unprojectClamped(sx, sy);
+      pts.push([p[0] + Math.round(this.cx - p[0]), p[1]]);
+    };
+    for (let i = 0; i < steps; i++) {
+      const f = i / steps;
+      add(w * f, 0);
+      add(w, h * f);
+      add(w * (1 - f), h);
+      add(0, h * (1 - f));
+    }
+    const pole = [0, 0, 0];
+    for (const y of [0, 1]) {
+      unitFromMercator(this.cx, y, pole);
+      const p = scratchScreen;
+      const wv = this.projectGlobe(this.cx, y, 0, p);
+      if (wv > 0 && p[0]! >= 0 && p[0]! <= w && p[1]! >= 0 && p[1]! <= h) {
+        pts.push([this.cx - 0.5, y], [this.cx + 0.5, y]);
+      }
+    }
+    if (missed === pts.length || (missed > 0 && pts.length > 0 && this.globeAmount >= 1 && this.globeSpan() > 0.45)) {
+      return [
+        [this.cx - 0.5, 0],
+        [this.cx + 0.5, 0],
+        [this.cx + 0.5, 1],
+        [this.cx - 0.5, 1],
+      ];
+    }
+    return convexHull(pts);
+  }
+
+  private globeSpan(): number {
+    const cam = this.globeCam;
+    const distance = Math.hypot(cam[0], cam[1], cam[2] + this.radius);
+    return Math.acos(Math.min(1, this.radius / distance)) / Math.PI;
+  }
+
+  tileArea(z: number, x: number, y: number, wrap: number): number {
+    this.update();
+    const n = 2 ** z;
+    const x0 = wrap + x / n;
+    const y0 = y / n;
+    if (this.globeAmount <= 0) {
+      const a = this.project(x0, y0);
+      const b = this.project(x0 + 1 / n, y0);
+      const c = this.project(x0 + 1 / n, y0 + 1 / n);
+      const d = this.project(x0, y0 + 1 / n);
+      if (a.w <= 0 || b.w <= 0 || c.w <= 0 || d.w <= 0) return 0;
+      const s = a.x * b.y - b.x * a.y + (b.x * c.y - c.x * b.y) + (c.x * d.y - d.x * c.y) + (d.x * a.y - a.x * d.y);
+      return Math.abs(s) / 2;
+    }
+    const k = z < 3 ? 8 : 2;
+    const sx = new Float64Array((k + 1) * (k + 1));
+    const sy = new Float64Array((k + 1) * (k + 1));
+    const ok = new Uint8Array((k + 1) * (k + 1));
+    const p = scratchScreen;
+    for (let j = 0; j <= k; j++) {
+      for (let i = 0; i <= k; i++) {
+        const idx = j * (k + 1) + i;
+        ok[idx] = this.projectGlobe(x0 + i / (k * n), y0 + j / (k * n), 0, p) > 0 ? 1 : 0;
+        sx[idx] = p[0]!;
+        sy[idx] = p[1]!;
+      }
+    }
+    let area = 0;
+    for (let j = 0; j < k; j++) {
+      for (let i = 0; i < k; i++) {
+        const a = j * (k + 1) + i;
+        const b = a + 1;
+        const c = b + k + 1;
+        const d = a + k + 1;
+        if (!ok[a] || !ok[b] || !ok[c] || !ok[d]) continue;
+        const s =
+          sx[a]! * sy[b]! -
+          sx[b]! * sy[a]! +
+          (sx[b]! * sy[c]! - sx[c]! * sy[b]!) +
+          (sx[c]! * sy[d]! - sx[d]! * sy[c]!) +
+          (sx[d]! * sy[a]! - sx[a]! * sy[d]!);
+        area += Math.abs(s) / 2;
+      }
+    }
+    return area;
+  }
+
+  private globeCovering(options: CoverOptions): CoveringTile[] {
+    const ws = this.worldSize;
+    const g = this.globeAmount;
+    const R = this.radius;
+    const cam = this.globeCam;
+    const fwd = this.forward;
+    const d = this.cameraDistance;
+    const c = this.axisC;
+    const e = this.axisE;
+    const nAxis = this.axisN;
+    const up = cam[2] + R;
+    const gx = up * c[0]! + cam[0] * e[0]! - cam[1] * nAxis[0]!;
+    const gy = up * c[1]! + cam[0] * e[1]! - cam[1] * nAxis[1]!;
+    const gz = up * c[2]! + cam[0] * e[2]! - cam[1] * nAxis[2]!;
+    const camDistance = Math.hypot(gx, gy, gz);
+    const camLat = Math.asin(Math.max(-1, Math.min(1, gz / camDistance)));
+    const camLng = Math.atan2(gy, gx);
+    const horizon = g >= 1 ? R / camDistance : -2;
+    const zoomOffset = Math.log2(TILE_SIZE / options.tileSize);
+    const centerTileZoom = this.z + zoomOffset;
+    const maxZoom = Math.min(options.maxZoom, MAX_TILE_ZOOM);
+    const minZoom = Math.min(options.minZoom, maxZoom);
+    const limit = options.maxTiles ?? 2000;
+    const centerCos = 1 / Math.cosh(Math.PI * (1 - 2 * this.cy));
+    const planes = frustumPlanes(this.globeMatrix);
+    const nearest = [0, 0];
+    const local = [0, 0, 0];
+    const xs = new Float64Array(9);
+    const ys = new Float64Array(9);
+    const zs = new Float64Array(9);
+    const out: CoveringTile[] = [];
+    const stack: TileSlot[] = [{ z: 0, x: 0, y: 0, wrap: 0 }];
+    while (stack.length > 0) {
+      const t = stack.pop()!;
+      const n = 2 ** t.z;
+      const x0 = t.x / n;
+      const y0 = t.y / n;
+      const lat1 = Math.atan(Math.sinh(Math.PI * (1 - 2 * y0)));
+      const lat0 = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y0 + 1 / n))));
+      const lng0 = 2 * Math.PI * x0 - Math.PI;
+      const lng1 = lng0 + (2 * Math.PI) / n;
+      const best = nearestInBox(lat0, lat1, lng0, lng1, camLat, camLng, nearest);
+      if (t.z >= 1 && best < horizon - 1e-6) continue;
+      let k = 0;
+      for (let j = 0; j <= 2; j++) {
+        for (let i = 0; i <= 2; i++) {
+          this.surfaceLocal(x0 + i / (2 * n), y0 + j / (2 * n), 0, local);
+          xs[k] = local[0]!;
+          ys[k] = local[1]!;
+          zs[k] = local[2]!;
+          k++;
+        }
+      }
+      if (t.z >= 2) {
+        const bulge = (g * R * (1 - Math.cos(Math.PI / n)) + 1) * 1.5;
+        let outside = false;
+        for (const p of planes) {
+          let all = true;
+          for (let s = 0; s < 9; s++) {
+            if (p[0]! * xs[s]! + p[1]! * ys[s]! + p[2]! * zs[s]! + p[3]! > -bulge) {
+              all = false;
+              break;
+            }
+          }
+          if (all) {
+            outside = true;
+            break;
+          }
+        }
+        if (outside) continue;
+      }
+      let depth = Number.POSITIVE_INFINITY;
+      for (let s = 0; s < 9; s++) {
+        const dz = (xs[s]! - cam[0]) * fwd[0] + (ys[s]! - cam[1]) * fwd[1] + (zs[s]! - cam[2]) * fwd[2];
+        if (dz < depth) depth = dz;
+      }
+      const nx = (nearest[1]! + Math.PI) / (2 * Math.PI);
+      const ny = (1 - Math.asinh(Math.tan(nearest[0]!)) / Math.PI) / 2;
+      this.surfaceLocal(nx, Math.max(0, Math.min(1, ny)), 0, local);
+      const nd = (local[0]! - cam[0]) * fwd[0] + (local[1]! - cam[1]) * fwd[1] + (local[2]! - cam[2]) * fwd[2];
+      if (nd < depth) depth = nd;
+      depth = Math.max(this.nearZ, depth);
+      const equator = lat0 <= 0 && lat1 >= 0 ? 1 : Math.cos(Math.min(Math.abs(lat0), Math.abs(lat1)));
+      const wanted = centerTileZoom + Math.min(0, Math.log2(d / depth)) + g * Math.log2(equator / centerCos);
+      const target = Math.max(
+        minZoom,
+        Math.min(maxZoom, options.round ? Math.round(wanted) : Math.floor(wanted + 1e-9)),
+      );
+      if (t.z >= target) {
+        const mid = 4;
+        out.push({
+          z: t.z,
+          x: t.x,
+          y: t.y,
+          wrap: 0,
+          distance: Math.hypot(xs[mid]! - cam[0], ys[mid]! - cam[1], zs[mid]! - cam[2]),
+        });
+        continue;
+      }
+      const z = t.z + 1;
+      const x = t.x * 2;
+      const y = t.y * 2;
+      stack.push(
+        { z, x, y, wrap: 0 },
+        { z, x: x + 1, y, wrap: 0 },
+        { z, x, y: y + 1, wrap: 0 },
+        { z, x: x + 1, y: y + 1, wrap: 0 },
+      );
+    }
+    out.sort((a, b) => a.distance - b.distance);
+    if (out.length > limit) out.length = limit;
+    return out;
+  }
+
   coveringTiles(options: CoverOptions): CoveringTile[] {
     this.update();
+    if (this.globeAmount > 0) {
+      const key = `${options.tileSize}/${options.minZoom}/${options.maxZoom}/${options.round}/${options.maxTiles ?? 0}`;
+      let cached = this.coverCache.get(key);
+      if (!cached) {
+        cached = this.globeCovering(options);
+        this.coverCache.set(key, cached);
+      }
+      return cached.slice();
+    }
     const poly = this.footprint();
     if (poly.length < 3) return [];
     const ws = this.worldSize;
