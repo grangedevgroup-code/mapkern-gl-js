@@ -83,6 +83,7 @@ export class Transform {
   private readonly axisE: number[] = [0, 1, 0];
   private readonly axisN: number[] = [0, 0, 1];
   private coverCache = new Map<string, CoveringTile[]>();
+  private areaCache = new Map<number, number>();
   private cx = 0.5;
   private cy = 0.5;
   private z = 0;
@@ -484,6 +485,7 @@ export class Transform {
     this.forward[2] = -camHeight / d;
     this.globeAmount = this.mode === "globe" ? globeness(this.z) : 0;
     this.coverCache.clear();
+    this.areaCache.clear();
     if (this.globeAmount > 0) {
       const m = Math.PI * (1 - 2 * this.cy);
       this.radius = (ws * Math.cosh(m)) / (2 * Math.PI);
@@ -982,7 +984,10 @@ export class Transform {
       const s = a.x * b.y - b.x * a.y + (b.x * c.y - c.x * b.y) + (c.x * d.y - d.x * c.y) + (d.x * a.y - a.x * d.y);
       return Math.abs(s) / 2;
     }
-    const k = z < 2 ? 32 : z < 4 ? 8 : 2;
+    const key = ((z * 4194304 + x) * 4194304 + y) * 8 + (wrap & 7);
+    const known = this.areaCache.get(key);
+    if (known !== undefined) return known;
+    const k = z < 2 ? 16 : z < 4 ? 6 : 2;
     const sx = new Float64Array((k + 1) * (k + 1));
     const sy = new Float64Array((k + 1) * (k + 1));
     const ok = new Uint8Array((k + 1) * (k + 1));
@@ -1012,6 +1017,7 @@ export class Transform {
         area += Math.abs(s) / 2;
       }
     }
+    this.areaCache.set(key, area);
     return area;
   }
 
@@ -1032,8 +1038,10 @@ export class Transform {
     const camLat = Math.asin(Math.max(-1, Math.min(1, gz / camDistance)));
     const camLng = Math.atan2(gy, gx);
     const rho = R / g;
-    const reach = Math.acos(Math.min(1, rho / Math.hypot(cam[0], cam[1], cam[2] + rho))) / g;
-    const horizon = g >= 1 ? R / camDistance : Math.cos(Math.min(Math.PI, reach * 1.1 + 0.002));
+    const curved = Math.acos(Math.min(1, rho / Math.hypot(cam[0], cam[1], cam[2] + rho))) / g;
+    const flat = (Math.max(0, cam[2]) * Math.tan(MAX_GROUND_ANGLE) + Math.hypot(cam[0], cam[1])) / R;
+    const reach = Math.min(curved, flat, Math.PI / 2);
+    const horizon = g >= 1 ? R / camDistance : Math.cos(reach * 1.1 + 0.002);
     const zoomOffset = Math.log2(TILE_SIZE / options.tileSize);
     const centerTileZoom = this.z + zoomOffset;
     const maxZoom = Math.min(options.maxZoom, MAX_TILE_ZOOM);
