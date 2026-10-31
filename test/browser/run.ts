@@ -5096,6 +5096,129 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "the globe shows the whole world in space with no blank tiles",
+    async run({ page, base, shot }) {
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { center: [20, 10], zoom: 1, projection: "globe" });
+      await shot("globe");
+      const center = await pixel(page, 400, 300);
+      if (![0, 1, 2, 3, 4].some((z) => isZoomColor(center, z)))
+        fail(`the middle of the globe should show a tile, got ${center.join(",")}`);
+      const corner = await pixel(page, 5, 5);
+      if (corner[0] + corner[1] + corner[2] > 120) fail(`the corner should be dark space, got ${corner.join(",")}`);
+      const state = await page.evaluate<{
+        globe: boolean;
+        projection: string;
+        blank: number;
+        near: { visible: boolean };
+        far: { visible: boolean };
+      }>(`({
+        globe: window.map.isGlobe(),
+        projection: window.map.getProjection(),
+        blank: window.map.getDiagnostics().blankRatio,
+        near: window.map.screenPosition([20, 10]),
+        far: window.map.screenPosition([-160, -10]),
+      })`);
+      if (!state.globe || state.projection !== "globe") fail(`expected the globe, got ${JSON.stringify(state)}`);
+      if (state.blank > 0) fail(`no area should wait for tiles once idle, blank ratio ${state.blank}`);
+      if (!state.near.visible || state.far.visible)
+        fail(`the front should be visible and the far side hidden: ${JSON.stringify(state)}`);
+      const frames = await page.evaluate<number>(`(async () => {
+        const before = window.map.getDiagnostics().frames;
+        await new Promise((r) => setTimeout(r, 500));
+        return window.map.getDiagnostics().frames - before;
+      })()`);
+      if (frames > 0) fail(`an idle globe should not redraw, drew ${frames} frames in 500 ms`);
+    },
+  },
+  {
+    name: "dragging the globe keeps the grabbed point under the pointer",
+    async run({ page, base }) {
+      await createMap(page, rasterStyle(base, "/fixture/raster"), {
+        center: [10, 40],
+        zoom: 2.5,
+        pitch: 30,
+        projection: "globe",
+      });
+      const grabbed = await page.evaluate<[number, number]>("window.map.unproject([450, 330])");
+      const radius = await page.evaluate<number>("window.map.getZoom()");
+      await page.mouse("mouseMoved", 450, 330);
+      await page.mouse("mousePressed", 450, 330, { buttons: 1 });
+      for (let i = 1; i <= 10; i++) {
+        await page.mouse("mouseMoved", 450 - i * 12, 330 + i * 8, { buttons: 1 });
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      await new Promise((r) => setTimeout(r, 250));
+      await page.mouse("mouseReleased", 330, 410, { buttons: 0 });
+      await idle(page);
+      const p = await page.evaluate<{ x: number; y: number }>(`window.map.project(${JSON.stringify(grabbed)})`);
+      if (Math.hypot(p.x - 330, p.y - 410) > 2)
+        fail(`the grabbed point ended at ${p.x.toFixed(1)},${p.y.toFixed(1)} instead of under the pointer at 330,410`);
+      const zoom = await page.evaluate<number>("window.map.getZoom()");
+      if (zoom === radius) fail("panning south on the globe should adjust the zoom so the globe keeps its size");
+    },
+  },
+  {
+    name: "from zoom 12 the globe draws exactly the flat map",
+    async run({ page, base }) {
+      const sample = async (projection: string) => {
+        await createMap(page, rasterStyle(base, "/fixture/raster"), {
+          center: [8.5, 47.3],
+          zoom: 12.4,
+          pitch: 40,
+          bearing: 25,
+          projection,
+        });
+        const out: RGBA[] = [];
+        for (const [x, y] of [
+          [100, 100],
+          [400, 300],
+          [700, 120],
+          [650, 520],
+          [60, 560],
+        ] as const)
+          out.push(await pixel(page, x, y));
+        await page.evaluate("window.map.remove()");
+        return out;
+      };
+      const globe = await sample("globe");
+      const flat = await sample("mercator");
+      for (let i = 0; i < globe.length; i++) {
+        if (!near(globe[i]!, flat[i]!, 0)) fail(`pixel ${i} differs: globe ${globe[i]} flat ${flat[i]}`);
+      }
+    },
+  },
+  {
+    name: "setProjection switches between the globe and the flat map",
+    async run({ page, base }) {
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { zoom: 2 });
+      const result = await page.evaluate<{
+        events: string[];
+        before: string;
+        after: string;
+        back: string;
+        bad: string;
+      }>(
+        `(() => {
+          const events = [];
+          window.map.on("projection", (e) => events.push(e.projection));
+          const before = window.map.getProjection();
+          window.map.setProjection("globe");
+          const after = window.map.getProjection();
+          window.map.setProjection("globe");
+          window.map.setProjection("mercator");
+          const back = window.map.getProjection();
+          let bad = "";
+          try { window.map.setProjection("polar"); } catch (e) { bad = e.code; }
+          return { events, before, after, back, bad };
+        })()`,
+      );
+      if (result.before !== "mercator" || result.after !== "globe" || result.back !== "mercator")
+        fail(`unexpected projections ${JSON.stringify(result)}`);
+      if (result.events.join(",") !== "globe,mercator") fail(`expected one event per change: ${result.events}`);
+      if (result.bad !== "invalid-option") fail(`an unknown projection should be rejected: ${result.bad}`);
+    },
+  },
+  {
     name: "terrain without elevation data stays flat and quiet",
     async run({ page, base }) {
       await createMap(page, terrainStyle(base), { center: [100, 0], zoom: 6, pitch: 45 });
