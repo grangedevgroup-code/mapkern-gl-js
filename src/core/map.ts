@@ -3,6 +3,7 @@ import { easeInOutCubic, easeMotion, easeOutCubic, flyMotion, readState, samePad
 import type { Padding, WorldBounds } from "../camera/transform.ts";
 import { MIN_ZOOM, Transform } from "../camera/transform.ts";
 import { featureKey } from "../formats/mvt.ts";
+import type { Projection } from "../geo/globe.ts";
 import type { LngLat, LngLatLike } from "../geo/mercator.ts";
 import { latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY, toLngLat, wrapLongitude } from "../geo/mercator.ts";
 import { sunAltitude, sunAzimuth, sunPosition } from "../geo/sun.ts";
@@ -11,7 +12,7 @@ import type { InputOptions, TouchType } from "../input/handlers.ts";
 import { InputHandlers } from "../input/handlers.ts";
 import { GL } from "../render/gl.ts";
 import type { SunLook } from "../render/night.ts";
-import type { FrameInput, PickBox } from "../render/painter.ts";
+import type { FrameInput, PickBox, Surface } from "../render/painter.ts";
 import { Painter } from "../render/painter.ts";
 import { DemSource } from "../sources/dem.ts";
 import { GeoJSONSource } from "../sources/geojson.ts";
@@ -85,6 +86,7 @@ export interface MapOptions {
   minPitch?: number;
   maxPitch?: number;
   renderWorldCopies?: boolean;
+  projection?: Projection;
   maxBounds?: BoundsLike;
   bounds?: BoundsLike;
   hash?: boolean | string;
@@ -306,6 +308,7 @@ export interface SourceDataEvent extends MapEvent {
 export interface MapEvents {
   load: MapEvent;
   styleload: MapStyleEvent;
+  projection: MapEvent & { projection: Projection };
   idle: MapEvent;
   render: MapEvent;
   resize: MapEvent;
@@ -487,6 +490,7 @@ export class MapkernMap extends Emitter<MapEvents> {
     registerMbtilesProtocol();
     this.transform = new Transform();
     this.transform.renderWorldCopies = options.renderWorldCopies ?? true;
+    if (options.projection !== undefined) this.transform.setProjection(checkProjection(options.projection));
     if (options.fov !== undefined) this.transform.setFov(checkNumber(options.fov, "fov", this.transform.fov));
     this.transform.setPitchRange(
       checkNumber(options.minPitch, "minPitch", 0),
@@ -981,6 +985,23 @@ export class MapkernMap extends Emitter<MapEvents> {
     return this;
   }
 
+  setProjection(projection: Projection): this {
+    const next = checkProjection(projection);
+    if (next === this.transform.projection) return this;
+    this.transform.setProjection(next);
+    this.cameraChanged();
+    this.emit("projection", { ...this.event("projection"), projection: next });
+    return this;
+  }
+
+  getProjection(): Projection {
+    return this.transform.projection;
+  }
+
+  isGlobe(): boolean {
+    return this.transform.globeness > 0;
+  }
+
   getTerrain(): TerrainSpec | null {
     const terrain = this.style?.meta.terrain;
     return terrain ? { ...terrain } : null;
@@ -1266,7 +1287,7 @@ export class MapkernMap extends Emitter<MapEvents> {
     const p = t.project(x, y, z * ws);
     const visible = p.w > 0 && p.w <= t.far;
     let occluded = false;
-    if (visible && this.terrain) {
+    if (visible && this.terrain && t.globeness <= 0) {
       const c = t.cameraPosition;
       occluded = this.terrain.hidden([c[0] / ws, c[1] / ws, c[2] / ws], x, y, z);
     }
@@ -1288,7 +1309,7 @@ export class MapkernMap extends Emitter<MapEvents> {
   private pickWorld(px: number, py: number): [number, number, number] | null {
     const t = this.transform;
     const terrain = this.terrain;
-    if (terrain) {
+    if (terrain && t.globeness <= 0) {
       const ws = t.worldSize;
       const { origin, dir } = t.screenRay(px, py);
       const o = [origin[0] / ws, origin[1] / ws, origin[2] / ws];
@@ -1298,6 +1319,19 @@ export class MapkernMap extends Emitter<MapEvents> {
     }
     const w = t.unproject(px, py);
     return w ? [w[0], w[1], t.centerElevationPixels / t.worldSize] : null;
+  }
+
+  private globeSurface(): Surface | null {
+    const t = this.transform;
+    if (this.terrain || t.globeness <= 0) return null;
+    const cover = t.coveringTiles({
+      tileSize: 512,
+      minZoom: 0,
+      maxZoom: Math.min(22, Math.ceil(t.maxZoom)),
+      round: true,
+    });
+    const slots = cover.map((c) => ({ ...c, key: `${c.z}/${c.x}/${c.y}/${c.wrap}`, dem: null, rect: FULL_RECT }));
+    return { slots, exaggeration: 0, relief: 0, source: null };
   }
 
   private updateTerrain(style: Style, progress: number | null): void {
@@ -2620,6 +2654,7 @@ export class MapkernMap extends Emitter<MapEvents> {
         transform: this.transform,
         view: this.transform,
         terrain: this.terrain,
+        surface: this.globeSurface(),
         pixelRatio: this.pixelRatioValue,
         layers: style.layers,
         sources: style.sources,
@@ -2953,6 +2988,13 @@ function layerList(layers: unknown): string[] {
 function checkListener<E>(listener: unknown): Listener<E> {
   if (typeof listener !== "function") throw new MapkernError("invalid-option", "The listener must be a function");
   return listener as Listener<E>;
+}
+
+const FULL_RECT = { x0: 0, y0: 0, x1: 1, y1: 1 };
+
+function checkProjection(value: unknown): Projection {
+  if (value === "globe" || value === "mercator") return value;
+  throw new MapkernError("invalid-option", 'projection must be "globe" or "mercator"', { option: "projection" });
 }
 
 function checkNumber(value: unknown, name: string, fallback: number): number {
