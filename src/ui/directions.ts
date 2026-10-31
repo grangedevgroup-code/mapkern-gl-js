@@ -1,6 +1,6 @@
 import { MapkernError } from "../core/errors.ts";
 import { Emitter } from "../core/events.ts";
-import type { MapkernMap } from "../core/map.ts";
+import type { MapkernMap, MapPointerEvent } from "../core/map.ts";
 import type { RouteManeuver, RouteStep } from "../route/guidance.ts";
 import type { Route, RouteProfile } from "../route/router.ts";
 import type { Directions } from "../route/service.ts";
@@ -241,10 +241,10 @@ export class DirectionsControl extends Emitter<DirectionsEvents> implements Cont
       ],
       {
         padding: {
-          top: pad,
+          top: !wide && this.isOpen() && panel ? panel.offsetHeight + pad : pad,
           bottom: pad,
           right: pad,
-          left: wide && this.isOpen() ? panel.offsetWidth + pad + 16 : pad,
+          left: wide && this.isOpen() && panel ? panel.offsetWidth + pad + 16 : pad,
         },
         maxZoom: 17,
       },
@@ -293,10 +293,9 @@ export class DirectionsControl extends Emitter<DirectionsEvents> implements Cont
     if (this.current) this.drawLine(this.current);
   };
 
-  private readonly onMapClick = (event: { lngLat: { lng: number; lat: number } | [number, number] }) => {
-    if (!this.isOpen()) return;
-    const ll = event.lngLat;
-    const center: [number, number] = Array.isArray(ll) ? [ll[0], ll[1]] : [ll.lng, ll.lat];
+  private readonly onMapClick = (event: MapPointerEvent) => {
+    if (!this.isOpen() || !event.lngLat) return;
+    const center: [number, number] = [event.lngLat[0], event.lngLat[1]];
     const end = this.focus;
     const label = `${center[1].toFixed(5)}, ${center[0].toFixed(5)}`;
     this.set(end, { center, label });
