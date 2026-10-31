@@ -1366,6 +1366,8 @@ export class MapkernMap extends Emitter<MapEvents> {
     let target = terrain.elevationAt(cx, cy);
     if (progress !== null && this.elevationTo !== null) {
       target = this.elevationFrom + (this.elevationTo - this.elevationFrom) * progress;
+    } else if (this.elevationIntent === "camera") {
+      target = this.aimElevation(terrain) ?? target;
     }
     if (target !== null) {
       const before = t.elevation;
