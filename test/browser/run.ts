@@ -4536,10 +4536,11 @@ const specs: Spec[] = [
       })()`);
       await shot("viewer");
       if (
-        JSON.stringify(layout.order) !== '["mapkern-search","mapkern-navigation","mapkern-terrain","mapkern-basemaps"]'
+        JSON.stringify(layout.order) !==
+        '["mapkern-directions","mapkern-search","mapkern-navigation","mapkern-terrain","mapkern-basemaps"]'
       )
         fail(
-          `bottom-right should hold search, zoom and compass, the 2D/3D/globe button, then the basemap button: ${JSON.stringify(layout)}`,
+          `bottom-right should hold directions, search, zoom and compass, the 2D/3D/globe button, then the basemap button: ${JSON.stringify(layout)}`,
         );
       const stackLeft = layout.stack[0] ?? 0;
       const scaleRight = layout.scale?.[2] ?? Number.POSITIVE_INFINITY;
