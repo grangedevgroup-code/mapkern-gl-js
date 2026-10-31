@@ -230,3 +230,21 @@ test("ground frame matches finite differences of project", () => {
   const b = t.project(cx + 0.001 - e, cy);
   close(out[2]!, (a.x - b.x) / (2 * e), Math.abs(out[2]!) * 1e-3);
 });
+
+test("dragging over a pole stops at the pole without spinning or turning", () => {
+  for (const zoom of [1.5, 3, 6]) {
+    const t = globe(zoom, 0, 0, 20, 60);
+    let lastLat = t.center[1];
+    for (let i = 0; i < 400; i++) {
+      const grabbed = t.unproject(400, 250);
+      if (!grabbed) break;
+      t.setLocationAtPoint(grabbed, 400, 290, undefined, true);
+      const [lng, lat] = t.center;
+      assert.ok(Math.abs(lng - 20) < 1e-6, `zoom ${zoom} step ${i}: longitude jumped to ${lng}`);
+      assert.ok(lat >= lastLat - 1e-9 && lat <= 85.0512, `zoom ${zoom} step ${i}: latitude ${lat} after ${lastLat}`);
+      assert.equal(t.bearing, 0);
+      lastLat = lat;
+    }
+    assert.ok(lastLat > 84, `zoom ${zoom} should reach the polar region, got ${lastLat}`);
+  }
+});
