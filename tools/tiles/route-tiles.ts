@@ -166,7 +166,10 @@ export function buildRouteTiles(data: RouteData, options: TiledBuildOptions = {}
   }
   for (const list of owned.values()) list.sort((x, y) => local[data.edgeFrom[x]!]! - local[data.edgeFrom[y]!]!);
   const ownedIndex = new Int32Array(m.edges);
-  for (const list of owned.values()) list.forEach((e, i) => (ownedIndex[e] = i));
+  for (const list of owned.values())
+    list.forEach((e, i) => {
+      ownedIndex[e] = i;
+    });
   const restrictionsByTile = new Map<number, number[]>();
   for (let r = 0; r < m.restrictions; r++) push(restrictionsByTile, nodeTile[data.resVia[r]!]!, r);
   const ids = [...byTile.keys()].sort((a, b) => a - b);
@@ -177,7 +180,9 @@ export function buildRouteTiles(data: RouteData, options: TiledBuildOptions = {}
     const edgeList = [...(owned.get(id) ?? []), ...(foreign.get(id) ?? [])];
     const ownedCount = owned.get(id)?.length ?? 0;
     const position = new Map<number, number>();
-    edgeList.forEach((e, i) => position.set(e, i));
+    edgeList.forEach((e, i) => {
+      position.set(e, i);
+    });
     const c = newColumns();
     const strings = new Map<string, number>();
     const string = (s: string) => {
@@ -214,7 +219,9 @@ export function buildRouteTiles(data: RouteData, options: TiledBuildOptions = {}
     }
     const sorted = [...others].sort((a, b) => a - b);
     const slot = new Map<number, number>([[id, 0]]);
-    sorted.forEach((k, i) => slot.set(k, i + 1));
+    sorted.forEach((k, i) => {
+      slot.set(k, i + 1);
+    });
     c.neighbors.uint(sorted.length);
     let prevKey = 0;
     for (const k of sorted) {
@@ -356,7 +363,9 @@ export function buildRouteTiles(data: RouteData, options: TiledBuildOptions = {}
   for (const id of overviewIds) {
     const list = overviewEdges.get(id)!.sort((x, y) => x - y);
     const position = new Map<number, number>();
-    list.forEach((e, i) => position.set(e, i));
+    list.forEach((e, i) => {
+      position.set(e, i);
+    });
     const restrictions = (overviewRestrictions.get(id) ?? []).filter(
       (r) => position.has(data.resFrom[r]!) && position.has(data.resTo[r]!),
     );
@@ -369,7 +378,9 @@ export function buildRouteTiles(data: RouteData, options: TiledBuildOptions = {}
     for (const r of restrictions) keys.add(nodeTile[data.resVia[r]!]!);
     const sorted = [...keys].sort((a, b) => a - b);
     const slot = new Map<number, number>();
-    sorted.forEach((k, i) => slot.set(k, i));
+    sorted.forEach((k, i) => {
+      slot.set(k, i);
+    });
     c.neighbors.uint(sorted.length);
     let prevKey = 0;
     for (const k of sorted) {
