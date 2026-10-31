@@ -4,6 +4,7 @@ import {
   AttributionControl as NativeAttributionControl,
   FullscreenControl as NativeFullscreenControl,
   GeolocateControl as NativeGeolocateControl,
+  GlobeControl as NativeGlobeControl,
   NavigationControl as NativeNavigationControl,
   ScaleControl as NativeScaleControl,
   TerrainControl as NativeTerrainControl,
@@ -180,7 +181,7 @@ export function isNativeControl(control: unknown): control is Control {
     control instanceof NativeGeolocateControl ||
     control instanceof NativeTerrainControl ||
     control instanceof NativeLogoControl ||
-    control instanceof GlobeControl
+    control instanceof NativeGlobeControl
   );
 }
 
@@ -553,20 +554,6 @@ export class GeolocateControl extends NativeGeolocateControl {
   }
 }
 
-let globeWarned = false;
-
-export class GlobeControl implements Control {
-  readonly defaultPosition: ControlPosition = "top-right";
-
-  onAdd(map: MapkernMap): HTMLElement {
-    if (!globeWarned) {
-      globeWarned = true;
-      console.warn("Mapkern draws Web Mercator only, so the globe control is left out");
-    }
-    const el = map.getContainer().ownerDocument.createElement("div");
-    el.hidden = true;
-    return el;
-  }
-
-  onRemove(): void {}
+export class GlobeControl extends NativeGlobeControl {
+  override readonly defaultPosition: ControlPosition = "top-right";
 }
