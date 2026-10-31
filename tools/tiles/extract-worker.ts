@@ -2,6 +2,7 @@ import { closeSync, openSync } from "node:fs";
 import { parentPort, workerData } from "node:worker_threads";
 import type { BlobRef, BlockKinds, RelationMember, Tags } from "./osm-pbf.ts";
 import { readBlob, visitBlock } from "./osm-pbf.ts";
+import { isRestriction, isRouteWay, routeTags } from "./route-schema.ts";
 import { isRelevantPoint, isRelevantRelation, isRelevantWay, keepTags } from "./schema.ts";
 import {
   isSearchPoint,
@@ -60,13 +61,15 @@ export type Result =
   | { kind: "missing"; index: number; kinds: BlockKinds; ids: Float64Array; lon: Int32Array; lat: Int32Array }
   | { kind: "error"; index: number; message: string };
 
-export type Profile = "tiles" | "search" | "places";
+export type Profile = "tiles" | "search" | "places" | "route";
 
 const options = workerData as { path: string; profile?: Profile };
 const fd = openSync(options.path, "r");
 const world = options.profile === "places";
-const schema =
-  options.profile === "search"
+const routing = options.profile === "route";
+const schema = routing
+  ? { point: () => false, way: isRouteWay, relation: isRestriction, keep: routeTags }
+  : options.profile === "search"
     ? { point: isSearchPoint, way: isSearchWay, relation: isSearchRelation, keep: searchTags }
     : world
       ? { point: isWorldFeature, way: isWorldFeature, relation: isWorldRelation, keep: searchTags }
@@ -125,6 +128,10 @@ function run(task: Task): Result {
             if (!schema.relation(tags)) return;
             const kept = schema.keep(tags);
             if (!kept) return;
+            if (routing) {
+              const via = m.find((x) => x.type === 0 && x.role === "via");
+              if (via) kept["@via"] = String(via.ref);
+            }
             relations.push({ id, tags: kept, members: m.filter((x) => x.type === 1) });
           },
         },
