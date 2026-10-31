@@ -665,8 +665,11 @@ export class MapkernMap extends Emitter<MapEvents> {
     };
 
     if (options.attributionControl !== false) {
-      const custom = typeof options.attributionControl === "object" ? options.attributionControl.custom : undefined;
-      this.addControl(new AttributionControl(custom === undefined ? {} : { custom }));
+      const given = typeof options.attributionControl === "object" ? options.attributionControl : {};
+      const settings: AttributionOptions = {};
+      if (given.custom !== undefined) settings.custom = given.custom;
+      if (given.compact !== undefined) settings.compact = given.compact;
+      this.addControl(new AttributionControl(settings));
     }
     if (options.logoControl === true) this.addControl(new LogoControl());
 
