@@ -556,3 +556,61 @@ test("an empty tile from a source whose empty means missing still shows the fine
   const manager = await zoomOutToEmpty(new FakeLoader());
   assert.ok(manager.pieces.some((p) => p.tile.z === 4));
 });
+
+test("on the globe detailed tiles wait for each other and appear together", async () => {
+  const { transform, loader, manager } = setup(4);
+  transform.setProjection("globe");
+  manager.update(transform, 0);
+  await flush();
+  await resolveAll(loader, (c) => c.z <= 2);
+  manager.update(transform, 1);
+  await flush();
+  await resolveAll(loader, (c) => c.z <= 2);
+  manager.update(transform, 2);
+  const detail = loader.take((c) => c.z > 2);
+  assert.ok(detail.length > 3);
+  for (const p of detail.slice(0, 3)) p.resolve("detail");
+  await flush();
+  manager.update(transform, 3);
+  assert.equal(manager.pieces.filter((p) => p.tile.z > 2).length, 0);
+  assert.equal(manager.stats.blankPending, 0);
+  for (const p of detail.slice(3)) p.resolve("detail");
+  await flush();
+  manager.update(transform, 4);
+  const pieces = manager.pieces;
+  assert.ok(pieces.length > 0 && pieces.every((p) => p.tile.z > 2 && p.opacity === 1));
+  assertDisjoint(pieces);
+});
+
+test("on the globe a slow tile holds the others back only for a moment", async () => {
+  const { transform, loader, manager } = setup(4);
+  transform.setProjection("globe");
+  manager.update(transform, 0);
+  await flush();
+  await resolveAll(loader, (c) => c.z <= 2);
+  manager.update(transform, 1);
+  await flush();
+  await resolveAll(loader, (c) => c.z <= 2);
+  manager.update(transform, 2);
+  const detail = loader.take((c) => c.z > 2);
+  for (const p of detail.slice(1)) p.resolve("detail");
+  await flush();
+  manager.update(transform, 10);
+  assert.equal(manager.pieces.filter((p) => p.tile.z > 2).length, 0);
+  manager.update(transform, 2000);
+  assert.ok(manager.pieces.filter((p) => p.tile.z > 2).length >= detail.length - 1);
+  assert.equal(manager.stats.blankPending, 0);
+});
+
+test("on the flat map tiles still appear as they arrive", async () => {
+  const { transform, loader, manager } = setup(4);
+  manager.update(transform, 0);
+  await flush();
+  await resolveAll(loader, (c) => c.z === 2);
+  manager.update(transform, 1);
+  const detail = loader.take((c) => c.z === 4);
+  for (const p of detail.slice(0, 2)) p.resolve("detail");
+  await flush();
+  manager.update(transform, 2);
+  assert.equal(manager.pieces.filter((p) => p.tile.z === 4).length, 2);
+});
