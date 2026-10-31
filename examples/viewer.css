@@ -25,7 +25,7 @@ html.mapkern-viewer #map {
   max-width: calc(100% - 3 * var(--mapkern-margin) - var(--mapkern-viewer-button));
 }
 
-.mapkern-bottom-left > .mapkern-attribution {
+.mapkern-bottom-left > .mapkern-attribution:not(.mapkern-attribution-compact) {
   border-radius: 6px;
 }
 
