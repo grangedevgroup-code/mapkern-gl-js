@@ -1,7 +1,7 @@
 import type { Transform } from "../camera/transform.ts";
 import * as mat4 from "../geo/mat4.ts";
 import { EARTH_CIRCUMFERENCE } from "../geo/mercator.ts";
-import type { DemSource } from "../sources/dem.ts";
+import type { DemSource, DemTile } from "../sources/dem.ts";
 import { ImageSource, overlayWraps } from "../sources/image.ts";
 import type { RasterSource } from "../sources/raster.ts";
 import type { MapSource } from "../sources/source.ts";
