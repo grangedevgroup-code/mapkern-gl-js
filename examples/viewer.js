@@ -85,6 +85,8 @@ export function createViewer(options = {}) {
     terrain = TERRAIN,
     search = SEARCH,
     view,
+    projection = "globe",
+    globeControl = true,
     overlay,
     page = true,
     remember = page,
@@ -94,11 +96,13 @@ export function createViewer(options = {}) {
   const stored = memory(remember);
   const remembered = stored.get("basemap");
   const selected = choose(basemaps, basemaps.some((b) => b.name === remembered) ? remembered : basemap);
+  const storedProjection = stored.get("projection");
   const map = new mapkern.Map({
     container,
     hash: page,
     maxPitch: 85,
     style: basemaps[selected].style,
+    projection: storedProjection === "globe" || storedProjection === "mercator" ? storedProjection : projection,
     ...mapOptions,
     attributionControl: false,
   });
@@ -108,7 +112,9 @@ export function createViewer(options = {}) {
   }
   const picker = basemaps.length > 1 ? new mapkern.BasemapControl({ basemaps, selected }) : null;
   const terrainControl = terrain ? new mapkern.TerrainControl({ source: terrain }) : null;
+  const globe = globeControl ? new mapkern.GlobeControl() : null;
   if (picker) map.addControl(picker, "bottom-right");
+  if (globe) map.addControl(globe, "bottom-right");
   if (terrainControl) map.addControl(terrainControl, "bottom-right");
   map.addControl(new mapkern.NavigationControl(), "bottom-right");
   map.addControl(new mapkern.ScaleControl(), "bottom-right");
@@ -118,6 +124,7 @@ export function createViewer(options = {}) {
   if (searchControl) map.addControl(searchControl, "bottom-right");
   picker?.on("change", (event) => stored.set("basemap", event.basemap.name));
   terrainControl?.on("viewchange", (event) => stored.set("view", event.view));
+  map.on("projection", (event) => stored.set("projection", event.projection));
   const start = stored.get("view") ?? view;
   if (terrainControl && (start === "terrain" || start === "tilted")) terrainControl.setView(start);
   if (overlay) {
@@ -129,6 +136,7 @@ export function createViewer(options = {}) {
     map,
     basemaps: picker,
     terrain: terrainControl,
+    globe,
     search: searchControl,
     panel: (...children) => addPanel(map, children),
   };
