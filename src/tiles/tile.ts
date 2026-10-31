@@ -46,6 +46,7 @@ export class Tile<D> implements TileCoord {
   retained = false;
   lastUsed = 0;
   readyAt = Number.NEGATIVE_INFINITY;
+  shown = false;
   requestedAt = 0;
   bytes = 0;
   generation = 0;
