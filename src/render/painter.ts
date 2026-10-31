@@ -42,6 +42,7 @@ export interface FrameInput {
   readonly target?: readonly [number, number];
   readonly framebuffer?: WebGLFramebuffer | null;
   readonly terrain?: Terrain | null;
+  readonly surface?: Surface | null;
   readonly accept?: (piece: RenderPiece<unknown>) => boolean;
   readonly acceptNear?: (piece: RenderPiece<unknown>) => boolean;
   readonly region?: readonly [number, number, number, number];
