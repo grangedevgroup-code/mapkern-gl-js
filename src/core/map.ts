@@ -128,6 +128,7 @@ export type UiText =
   | "zoomIn"
   | "zoomOut"
   | "resetNorth"
+  | "credits"
   | "map"
   | "marker"
   | "popup"
