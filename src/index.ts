@@ -36,6 +36,7 @@ export type {
 export { DEFAULT_STYLE, MapkernMap as Map } from "./core/map.ts";
 export type { QueriedFeature, SourceQueriedFeature } from "./core/query.ts";
 export type { Feature, FeatureCollection, GeoJSON, Geometry } from "./geo/geojson.ts";
+export type { Projection } from "./geo/globe.ts";
 export type { LngLat, LngLatLike, LngLatObject } from "./geo/mercator.ts";
 export { distanceMeters, lngLatToWorld, metersPerPixel, worldToLngLat } from "./geo/mercator.ts";
 export type { SunPosition } from "./geo/sun.ts";
