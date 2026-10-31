@@ -99,7 +99,7 @@ export interface Surface {
 }
 
 const SPACE: RGBA = [0.035, 0.045, 0.085, 1];
-const GLOBE_LAND: RGBA = [0.86, 0.88, 0.9, 1];
+const GLOBE_LAND: RGBA = [0.11, 0.19, 0.27, 1];
 const POLE_SAMPLES = 16;
 
 function spread<T>(list: readonly T[], count: number): T[] {
