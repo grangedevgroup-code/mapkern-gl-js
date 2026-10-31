@@ -1,3 +1,4 @@
+import * as mat4 from "../geo/mat4.ts";
 import { latFromMercatorY, metersPerPixel } from "../geo/mercator.ts";
 import type { GpuGeometry, VectorBucket, VectorTile } from "../sources/vector.ts";
 import { dataDrivenPaint } from "../sources/vector.ts";
@@ -75,6 +76,18 @@ const EXTRUSION_TERRAIN_PICK: ProgramSource = { ...extrusionShader, defines: ["P
 
 const EXTRUSION_WHOLE: ProgramSource = { ...extrusionShader, defines: ["WHOLE"] };
 const EXTRUSION_TERRAIN_WHOLE: ProgramSource = { ...extrusionShader, defines: ["TERRAIN", "WHOLE"] };
+const EXTRUSION_GLOBE: Record<string, ProgramSource> = {};
+for (const terrain of [false, true]) {
+  for (const whole of [false, true]) {
+    for (const pick of [false, true]) {
+      const defines = ["GLOBE"];
+      if (terrain) defines.push("TERRAIN");
+      if (whole) defines.push("WHOLE");
+      if (pick) defines.push("PICK");
+      EXTRUSION_GLOBE[`${terrain}/${whole}/${pick}`] = { ...extrusionShader, defines };
+    }
+  }
+}
 
 export const WARM_VARIANTS: readonly ProgramSource[] = [EXTRUSION_TERRAIN, EXTRUSION_TERRAIN_WHOLE];
 
@@ -312,6 +325,26 @@ export class VectorPainter {
     }
   }
 
+  private globeTile(
+    program: Program,
+    matrix: Float64Array,
+    piece: RenderPiece<VectorTile>,
+    extent: number,
+    cx: number,
+    cy: number,
+    pick: PickPass | undefined,
+  ): void {
+    const gl = this.gl.gl;
+    const tile = piece.tile;
+    mat4.toFloat32(matrix, this.matrix);
+    if (pick) multiplyInto(this.matrix, pick.clip);
+    gl.uniformMatrix4fv(program.uniforms.get("u_matrix") ?? null, false, this.matrix);
+    const n = 2 ** tile.z;
+    let rx = piece.wrap + tile.x / n - cx;
+    rx -= Math.round(rx);
+    gl.uniform3f(program.uniforms.get("u_tile") ?? null, rx, tile.y / n - cy, 1 / (n * extent));
+  }
+
   private readonly ground = new Float32Array(9);
   private groundKey = "";
 
@@ -543,6 +576,8 @@ export class VectorPainter {
     const opacity = layer.paintValue<number>("opacity", { zoom });
     if (!(opacity > 0)) return;
     const terrain = frame.terrain ?? null;
+    const globe = transform.globeness > 0;
+    const [cx, cy] = transform.centerWorld;
     const b = (transform.bearing * Math.PI) / 180;
     const [sx, sy, sz] = LIGHT;
     const sun = frame.sun?.light;
@@ -554,7 +589,21 @@ export class VectorPainter {
         : terrain
           ? EXTRUSION_TERRAIN
           : extrusionShader;
-      const program = this.program(source, pick);
+      const program = globe
+        ? this.gl.program(EXTRUSION_GLOBE[`${terrain !== null}/${whole}/${pick !== undefined}`]!)
+        : this.program(source, pick);
+      if (globe) {
+        this.gl.use(program);
+        const m = Math.PI * (1 - 2 * cy);
+        gl.uniform4f(
+          program.uniforms.get("u_globe") ?? null,
+          transform.globeness,
+          transform.globeRadius,
+          transform.worldSize,
+          Math.cosh(m),
+        );
+        gl.uniform3f(program.uniforms.get("u_globe_center") ?? null, cy, Math.tanh(m), 1 / Math.cosh(m));
+      }
       this.prepare(program, layer, zoom, EXTRUSION_PAINT);
       gl.uniform1f(program.uniforms.get("u_opacity") ?? null, Math.min(1, opacity));
       if (terrain) {
@@ -593,6 +642,7 @@ export class VectorPainter {
           const bucket = piece.tile.data!.buckets.get(layer.id)!;
           this.bindPaint(program, layer, bucket, zoom, EXTRUSION_PAINT, states);
           this.tileUniforms(program, frame, piece, bucket, pick);
+          if (globe) this.globeTile(program, transform.globeMatrix, piece, bucket.extent, cx, cy, pick);
           if (terrain) this.bindGround(program, terrain, piece, bucket.extent);
           const lat = latFromMercatorY((piece.tile.y + 0.5) / 2 ** piece.tile.z);
           gl.uniform1f(program.uniforms.get("u_pixels_per_meter") ?? null, 1 / metersPerPixel(lat, zoom));
