@@ -1389,6 +1389,17 @@ export class MapkernMap extends Emitter<MapEvents> {
     t.setGround(Math.min(terrain.ground, t.elevation));
   }
 
+  private aimElevation(terrain: Terrain): number | null {
+    const t = this.transform;
+    if (t.globeness > 0) return null;
+    const ws = t.worldSize;
+    const [px, py] = t.centerPoint;
+    const { origin, dir } = t.screenRay(px, py);
+    const d = [dir[0] / ws, dir[1] / ws, dir[2] / ws];
+    const hit = terrain.raycast([origin[0] / ws, origin[1] / ws, origin[2] / ws], d, Math.hypot(d[0]!, d[1]!, d[2]!));
+    return hit ? terrain.elevationAt(hit[0], hit[1]) : null;
+  }
+
   private backOff(terrain: Terrain): void {
     const t = this.transform;
     const clear = (zoom: number) => {
