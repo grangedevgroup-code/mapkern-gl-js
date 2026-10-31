@@ -944,9 +944,7 @@ export class Transform {
       add(w * (1 - f), h);
       add(0, h * (1 - f));
     }
-    const pole = [0, 0, 0];
     for (const y of [0, 1]) {
-      unitFromMercator(this.cx, y, pole);
       const p = scratchScreen;
       const wv = this.projectGlobe(this.cx, y, 0, p);
       if (wv > 0 && p[0]! >= 0 && p[0]! <= w && p[1]! >= 0 && p[1]! <= h) {
@@ -1018,7 +1016,6 @@ export class Transform {
   }
 
   private globeCovering(options: CoverOptions): CoveringTile[] {
-    const ws = this.worldSize;
     const g = this.globeAmount;
     const R = this.radius;
     const cam = this.globeCam;
