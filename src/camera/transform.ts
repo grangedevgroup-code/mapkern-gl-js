@@ -757,6 +757,11 @@ export class Transform {
 
   project(x: number, y: number, zPixels = 0): Point & { w: number } {
     this.update();
+    if (this.globeAmount > 0) {
+      const p = scratchScreen;
+      const w = this.projectGlobe(x, y, zPixels, p);
+      return { x: p[0]!, y: p[1]!, w };
+    }
     const ws = this.worldSize;
     const p = mat4.transformVec4(this.tmp, this.pixelMatrix, x * ws, y * ws, zPixels, 1);
     const w = p[3];
