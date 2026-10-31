@@ -593,7 +593,7 @@ export class InputHandlers {
       if (Math.abs(turn) > needed && (Math.abs(turn) * now.dist) / 2 > ROTATE_ARC) mode.turnStart = turn;
     }
     if (mode.turnStart !== null) transform.setBearing(mode.bearing0 - ((turn - mode.turnStart) * 180) / Math.PI);
-    if (mode.anchor) transform.setLocationAtPoint(mode.anchor, now.midX, now.midY, mode.anchor[2]);
+    if (mode.anchor) mode.zoom0 += transform.setLocationAtPoint(mode.anchor, now.midX, now.midY, mode.anchor[2], true);
     this.host.changed();
   }
 
