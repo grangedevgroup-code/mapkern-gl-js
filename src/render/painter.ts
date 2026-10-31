@@ -12,7 +12,7 @@ import { premultiply } from "../style/color.ts";
 import type { StateLookup } from "../style/feature-state.ts";
 import type { CustomLayerInput, StyleLayer } from "../style/layer.ts";
 import type { SkySpec } from "../style/types.ts";
-import { terrainMesh } from "../terrain/mesh.ts";
+import { GRID, terrainMesh } from "../terrain/mesh.ts";
 import type { Terrain, TerrainSlot } from "../terrain/terrain.ts";
 import type { LabelTerrain, SymbolLayerInput } from "../text/labels.ts";
 import { LabelRenderer } from "../text/labels.ts";
@@ -99,6 +99,12 @@ export interface Surface {
 }
 
 const SPACE: RGBA = [0.035, 0.045, 0.085, 1];
+const GLOBE_LAND: RGBA = [0.86, 0.88, 0.9, 1];
+
+function over(top: RGBA, bottom: RGBA): RGBA {
+  const k = 1 - top[3];
+  return [top[0] + bottom[0] * k, top[1] + bottom[1] * k, top[2] + bottom[2] * k, top[3] + bottom[3] * k];
+}
 
 const POINT_MARGIN = 0.125;
 const MERCATOR_Z = (2 * Math.PI * 6371008.8) / EARTH_CIRCUMFERENCE;
@@ -197,7 +203,6 @@ export class Painter {
   private terrainGeometry: TerrainGeometry | null = null;
   private capGeometry: TerrainGeometry | null = null;
   private blankDrape: WebGLTexture | null = null;
-  private blankColor = "";
   private readonly drapes: DrapeCache;
   private readonly hash = new Hash();
   private drapesBehind = false;
@@ -242,7 +247,6 @@ export class Painter {
     this.terrainGeometry = null;
     this.capGeometry = null;
     this.blankDrape = null;
-    this.blankColor = "";
     for (const shader of [
       solidShader,
       rasterShader,
@@ -279,7 +283,9 @@ export class Painter {
     this.vector.budget.deadline = performance.now() + 4;
     this.vector.budget.behind = false;
     const terrain = frame.terrain ?? null;
-    if (terrain) this.renderDrapes(frame, terrain);
+    const surface = frame.surface ?? terrain;
+    const globe = surface !== null && frame.transform.globeness > 0;
+    if (surface) this.renderDrapes(frame, surface);
     else if (this.drapes.count > 0) this.drapes.destroy();
     this.prerenderCustom(frame);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -298,8 +304,9 @@ export class Painter {
     gl.clearStencil(0);
     g.setDepth(false, true);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
-    if (terrain) {
-      this.drawTerrain(frame, terrain);
+    if (surface) {
+      if (globe && !frame.framebuffer) this.drawAtmosphere(frame, clear);
+      this.drawTerrain(frame, surface, globe ? clear : null);
       for (const layer of layers) {
         if ((layer.type === "extrusion" || layer.type === "custom") && layer.isVisible(zoom))
           this.drawLayer(frame, layer);
@@ -310,12 +317,13 @@ export class Painter {
         if (layer.isVisible(zoom)) this.drawLayer(frame, layer);
       }
     }
-    const fog = terrain !== null && frame.sky !== undefined && frame.sky !== null && frame.transform.pitch > 0;
-    if (!frame.framebuffer && (fog || skyInView(frame.transform))) {
+    const fog =
+      terrain !== null && !globe && frame.sky !== undefined && frame.sky !== null && frame.transform.pitch > 0;
+    if (!frame.framebuffer && !globe && (fog || skyInView(frame.transform))) {
       this.sky.draw(frame.transform, skyLook(frame.sky, zoom, clear), fog, this.quadVao);
       this.stats.drawCalls++;
     }
-    if (frame.sun && !frame.framebuffer && nightInView(frame.transform, frame.sun)) {
+    if (frame.sun && !frame.framebuffer && !globe && nightInView(frame.transform, frame.sun)) {
       this.night.draw(frame.transform, frame.sun, this.quadVao);
       this.stats.drawCalls++;
     }
@@ -445,7 +453,7 @@ export class Painter {
     else g.setViewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
   }
 
-  private renderDrapes(frame: FrameInput, terrain: Terrain): void {
+  private renderDrapes(frame: FrameInput, terrain: Surface): void {
     const g = this.gl;
     const gl = g.gl;
     const t = frame.transform;
@@ -569,12 +577,16 @@ export class Painter {
     return vectorManager(source)?.pieces ?? null;
   }
 
-  private drawTerrain(frame: FrameInput, terrain: Terrain): void {
+  private drawTerrain(frame: FrameInput, terrain: Surface, blank: RGBA | null): void {
     const g = this.gl;
     const gl = g.gl;
     const t = frame.transform;
     const mesh = this.terrainMesh();
     if (!mesh) return;
+    if (blank) {
+      this.drawGlobe(frame, terrain, mesh, blank);
+      return;
+    }
     const program = g.program(terrainShader);
     g.use(program);
     g.setBlend("premultiplied");
@@ -611,7 +623,7 @@ export class Painter {
       }
       gl.uniform4f(uDrapeRect, rect[0], rect[1], rect[2], rect[3]);
       const data = slot.dem?.data ?? null;
-      const dem = data ? terrain.source.elevationTexture(data) : null;
+      const dem = data ? (terrain.source?.elevationTexture(data) ?? null) : null;
       g.bindTexture(0, entry.texture);
       g.bindTexture(1, dem ?? this.flatDem);
       g.bindTexture(2, data?.gradientTexture ?? this.flatDem);
@@ -636,6 +648,163 @@ export class Painter {
     g.bindTexture(1, null);
     gl.activeTexture(gl.TEXTURE0);
     g.setDepth(false, false);
+  }
+
+  private drawGlobe(frame: FrameInput, terrain: Surface, mesh: TerrainGeometry, blank: RGBA): void {
+    const g = this.gl;
+    const gl = g.gl;
+    const t = frame.transform;
+    const caps = this.capMesh();
+    const empty = this.emptyDrape();
+    if (!caps || !empty) return;
+    const program = g.program(globeSurfaceShader);
+    g.use(program);
+    g.setBlend("premultiplied");
+    g.setDepth(true, true);
+    gl.depthFunc(gl.LEQUAL);
+    gl.uniform1i(uniform(program, "u_drape"), 0);
+    gl.uniform1i(uniform(program, "u_dem"), 1);
+    gl.uniform1i(uniform(program, "u_gradient"), 2);
+    const ws = t.worldSize;
+    gl.uniform1f(uniform(program, "u_world"), ws);
+    gl.uniform1f(uniform(program, "u_exaggeration"), terrain.exaggeration);
+    const sunLight = frame.sun?.light ?? null;
+    const light = sunLight ?? (terrain.relief > 0 ? reliefLight(t.bearing) : null);
+    gl.uniform3f(uniform(program, "u_sun_light"), light?.[0] ?? 0, light?.[1] ?? 0, light?.[2] ?? 1);
+    gl.uniform1f(uniform(program, "u_sun_gain"), sunLight ? 0.7 : light ? terrain.relief : 0);
+    const [cx, cy] = t.centerWorld;
+    const m = Math.PI * (1 - 2 * cy);
+    gl.uniform4f(uniform(program, "u_globe"), t.globeness, t.globeRadius, ws, Math.cosh(m));
+    gl.uniform3f(uniform(program, "u_globe_center"), cy, Math.tanh(m), 1 / Math.cosh(m));
+    const base = blank[3] >= 0.999 ? blank : over(blank, GLOBE_LAND);
+    gl.uniform4f(uniform(program, "u_base"), base[0], base[1], base[2], base[3]);
+    mat4.toFloat32(t.globeMatrix, this.matrix);
+    gl.uniformMatrix4fv(uniform(program, "u_matrix"), false, this.matrix);
+    const uGradientTexel = uniform(program, "u_gradient_texel");
+    const uGradientScale = uniform(program, "u_gradient_scale");
+    const uRect = uniform(program, "u_dem_rect");
+    const uSize = uniform(program, "u_dem_size");
+    const uHas = uniform(program, "u_has_dem");
+    const uRows = uniform(program, "u_rows");
+    const uSkirt = uniform(program, "u_skirt");
+    const uDrapeRect = uniform(program, "u_drape_rect");
+    const uTile = uniform(program, "u_tile");
+    for (const slot of terrain.slots) {
+      let entry = this.drapes.lookup(slot.key);
+      let rect: readonly [number, number, number, number] = [0, 0, 1, 1];
+      let texture: WebGLTexture = empty;
+      if (entry && !Number.isNaN(entry.signature)) {
+        texture = entry.texture;
+      } else {
+        const fallback = this.drapeFallback(slot);
+        if (fallback) {
+          entry = fallback.entry;
+          rect = fallback.rect;
+          texture = entry.texture;
+        }
+      }
+      gl.uniform4f(uDrapeRect, rect[0], rect[1], rect[2], rect[3]);
+      const data = slot.dem?.data ?? null;
+      const dem = data ? (terrain.source?.elevationTexture(data) ?? null) : null;
+      g.bindTexture(0, texture);
+      g.bindTexture(1, dem ?? this.flatDem);
+      g.bindTexture(2, data?.gradientTexture ?? this.flatDem);
+      const n = 2 ** slot.z;
+      let rx = slot.wrap + slot.x / n - cx;
+      rx -= Math.round(rx);
+      gl.uniform3f(uTile, rx, slot.y / n - cy, 1 / n);
+      const r = slot.rect;
+      gl.uniform4f(uRect, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+      gl.uniform1f(uSize, data ? data.grid.size : 1);
+      const cells = data ? data.grid.size : 1;
+      gl.uniform2f(uGradientTexel, cells / (cells + 2), 1 / (cells + 2));
+      gl.uniform1f(uGradientScale, data ? (2 ** data.z * cells) / EARTH_CIRCUMFERENCE : 0);
+      gl.uniform1f(uHas, dem ? 1 : 0);
+      gl.uniform2f(uRows, slot.y / n, (slot.y + 1) / n);
+      const range = data ? data.grid.max - data.grid.min : 0;
+      gl.uniform1f(uSkirt, Math.max(30, range * 0.2) * Math.max(1, terrain.exaggeration));
+      gl.bindVertexArray(mesh.vao);
+      gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
+      this.stats.drawCalls++;
+      this.stats.pieces++;
+      if (slot.y === 0 || slot.y === n - 1) {
+        gl.bindVertexArray(caps.vao);
+        const half = caps.count / 2;
+        if (slot.y === 0) gl.drawElements(gl.TRIANGLES, half, gl.UNSIGNED_SHORT, 0);
+        if (slot.y === n - 1) gl.drawElements(gl.TRIANGLES, half, gl.UNSIGNED_SHORT, half * 2);
+        this.stats.drawCalls++;
+      }
+    }
+    g.bindTexture(2, null);
+    g.bindTexture(1, null);
+    gl.activeTexture(gl.TEXTURE0);
+    g.setDepth(false, false);
+  }
+
+  private drawAtmosphere(frame: FrameInput, background: RGBA): void {
+    const g = this.gl;
+    const gl = g.gl;
+    const t = frame.transform;
+    const program = g.program(atmosphereShader);
+    g.use(program);
+    g.setBlend("none");
+    g.setDepth(false, false);
+    mat4.toFloat32(t.globeMatrixInverse, this.matrix);
+    gl.uniformMatrix4fv(uniform(program, "u_inverse"), false, this.matrix);
+    const cam = t.globeCamera;
+    gl.uniform3f(uniform(program, "u_camera"), cam[0], cam[1], cam[2]);
+    gl.uniform1f(uniform(program, "u_radius"), t.globeRadius);
+    const look = skyLook(frame.sky, t.zoom, background);
+    gl.uniform4f(uniform(program, "u_space"), SPACE[0], SPACE[1], SPACE[2], SPACE[3]);
+    gl.uniform4f(uniform(program, "u_glow"), look.horizon[0], look.horizon[1], look.horizon[2], look.horizon[3]);
+    gl.uniform4f(uniform(program, "u_sky"), look.sky[0], look.sky[1], look.sky[2], look.sky[3]);
+    const day = Math.min(1, Math.max(0, (t.zoom - 5) / 4));
+    gl.uniform1f(uniform(program, "u_daylight"), day * day * (3 - 2 * day));
+    gl.bindVertexArray(this.quadVao);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    this.stats.drawCalls++;
+  }
+
+  private emptyDrape(): WebGLTexture | null {
+    if (this.blankDrape) return this.blankDrape;
+    const g = this.gl;
+    if (g.isLost) return null;
+    const gl = g.gl;
+    const texture = gl.createTexture();
+    if (!texture) return null;
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    this.blankDrape = texture;
+    return texture;
+  }
+
+  private capMesh(): TerrainGeometry | null {
+    if (this.capGeometry) return this.capGeometry;
+    const g = this.gl;
+    const gl = g.gl;
+    if (g.isLost) return null;
+    const vertices: number[] = [];
+    const indices: number[] = [];
+    for (const row of [0, GRID]) {
+      const base = vertices.length / 4;
+      for (let i = 0; i <= GRID; i++) vertices.push(i, row, 0, 0, i, row, 0, 1);
+      for (let k = 0; k < GRID; k++) {
+        const edge = base + k * 2;
+        indices.push(edge, edge + 1, edge + 2, edge + 2, edge + 1, edge + 3);
+      }
+    }
+    const vao = gl.createVertexArray();
+    if (!vao) return null;
+    gl.bindVertexArray(vao);
+    const buffer = g.createBuffer(gl.ARRAY_BUFFER, Int16Array.from(vertices));
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 4, gl.SHORT, false, 8, 0);
+    const index = g.createBuffer(gl.ELEMENT_ARRAY_BUFFER, Uint16Array.from(indices));
+    gl.bindVertexArray(null);
+    this.capGeometry = { vao, vertices: buffer, indices: index, count: indices.length };
+    return this.capGeometry;
   }
 
   private terrainMesh(): TerrainGeometry | null {
@@ -775,6 +944,15 @@ export class Painter {
       this.gl.deleteBuffer(terrain.indices);
     }
     this.terrainGeometry = null;
+    const caps = this.capGeometry;
+    if (caps) {
+      this.gl.deleteVertexArray(caps.vao);
+      this.gl.deleteBuffer(caps.vertices);
+      this.gl.deleteBuffer(caps.indices);
+    }
+    this.capGeometry = null;
+    this.gl.deleteTexture(this.blankDrape);
+    this.blankDrape = null;
     this.quadBuffer = null;
     this.quadVao = null;
     this.openMask = null;
