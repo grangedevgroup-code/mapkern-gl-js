@@ -186,14 +186,6 @@ const EMPTY_STYLE = { version: 8, sources: {}, layers: [] };
 
 export const defaults = { workerCount: 0, maxParallelImageRequests: 0 };
 
-let globeWarned = false;
-
-function warnGlobe(): void {
-  if (globeWarned) return;
-  globeWarned = true;
-  console.warn("Mapkern draws Web Mercator only, so the globe projection is shown as a flat map");
-}
-
 function enabled(value: unknown): boolean | undefined {
   if (value === undefined) return undefined;
   return value !== false;
@@ -543,6 +535,7 @@ export class CompatMap {
   readonly cooperativeGestures: Json;
   private readonly internals: MapInternals;
   private shadow: ShadowStyle | null = null;
+  private styleProjection: "globe" | "mercator" | null = null;
   private styleToken: Json | null = null;
   private readonly registrations: Registration[] = [];
   private readonly sources = new Map<string, CompatSource>();
@@ -623,7 +616,8 @@ export class CompatMap {
     if (o.respectPrefersReducedMotion === false) native.reducedMotion = false;
     if (defaults.workerCount > 0) native.workerCount = defaults.workerCount;
     if (defaults.maxParallelImageRequests > 0) native.maxParallelRequests = defaults.maxParallelImageRequests;
-    if (o.projection !== undefined && this.projectionType(o.projection) === "globe") warnGlobe();
+    if (o.projection !== undefined) native.projection = this.projectionType(o.projection);
+    else if (this.styleProjection) native.projection = this.styleProjection;
     this.native = new MapkernMap(native);
     this.internals = internalsOf(this.native);
     this.internals.enableSyncQueries();
@@ -1286,15 +1280,15 @@ export class CompatMap {
 
   setProjection(projection: unknown): this {
     const type = this.projectionType(projection);
-    if (type === "globe") warnGlobe();
     const shadow = this.shadow;
-    if (shadow) shadow.root.projection = { type: "mercator" };
-    this.fire({ type: "projectiontransition", newProjection: "mercator" });
+    if (shadow) shadow.root.projection = { type };
+    this.native.setProjection(type);
+    this.fire({ type: "projectiontransition", newProjection: type });
     return this;
   }
 
   getProjection(): Json {
-    return { type: "mercator" };
+    return { type: this.native.getProjection() };
   }
 
   setGlyphs(url: string | null): this {
@@ -1716,7 +1710,12 @@ export class CompatMap {
       this.sources.clear();
       this.noted.clear();
       const root = this.shadow.root;
-      if (root.projection !== undefined && this.projectionType(root.projection) === "globe") warnGlobe();
+      if (root.projection !== undefined) {
+        const type = this.projectionType(root.projection);
+        const current = (this as { native?: MapkernMap }).native;
+        if (current) current.setProjection(type);
+        else this.styleProjection = type;
+      }
     } else if (isJson(style)) {
       this.shadow = new ShadowStyle(EMPTY_STYLE);
       this.styleToken = { loaded: () => this.native.isStyleLoaded(), stylesheet: style };
@@ -1826,12 +1825,13 @@ export class CompatMap {
     }
   }
 
-  private projectionType(projection: unknown): string {
-    if (typeof projection === "string") return projection;
+  private projectionType(projection: unknown): "globe" | "mercator" {
+    const globe = (value: unknown) => value === "globe" || value === "vertical-perspective";
+    if (typeof projection === "string") return globe(projection) ? "globe" : "mercator";
     if (isJson(projection)) {
       const type = projection.type ?? projection.name;
-      if (typeof type === "string") return type;
-      if (Array.isArray(type) && type.includes("globe")) return "globe";
+      if (globe(type)) return "globe";
+      if (Array.isArray(type) && type.some(globe)) return "globe";
     }
     return "mercator";
   }
