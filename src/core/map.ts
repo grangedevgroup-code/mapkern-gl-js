@@ -48,7 +48,7 @@ import { injectStyles } from "../ui/css.ts";
 import type { DebugTile } from "../ui/debug.ts";
 import { DebugOverlay } from "../ui/debug.ts";
 import { LogoControl } from "../ui/logo.ts";
-import type { WorkerFactory } from "../worker/pool.ts";
+import { workerFactory } from "../worker/factory.ts";
 import { WorkerPool } from "../worker/pool.ts";
 import { deepClone } from "./clone.ts";
 import { errorMessage, MapkernError } from "./errors.ts";
@@ -151,7 +151,20 @@ export type UiText =
   | "searchPlaceholder"
   | "noResults"
   | "searchFailed"
-  | "clearSearch";
+  | "clearSearch"
+  | "directions"
+  | "closeDirections"
+  | "routeFrom"
+  | "routeTo"
+  | "chooseStart"
+  | "chooseDestination"
+  | "swapEnds"
+  | "byCar"
+  | "byBike"
+  | "onFoot"
+  | "findingRoute"
+  | "noRoute"
+  | "routeFailed";
 
 const NEAR_SAMPLES = 8;
 const PREFETCH_MARGIN = 1.4;
@@ -184,6 +197,19 @@ const DEFAULT_TEXT: Record<UiText, string> = {
   noResults: "Nothing found",
   searchFailed: "Search is not available",
   clearSearch: "Clear search",
+  directions: "Directions",
+  closeDirections: "Close directions",
+  routeFrom: "From",
+  routeTo: "To",
+  chooseStart: "Choose a start, or tap the map",
+  chooseDestination: "Choose a destination, or tap the map",
+  swapEnds: "Swap start and destination",
+  byCar: "Drive",
+  byBike: "Cycle",
+  onFoot: "Walk",
+  findingRoute: "Finding a route…",
+  noRoute: "No route was found between these places",
+  routeFailed: "Directions are not available",
 };
 
 export interface ScreenPosition {
@@ -3095,20 +3121,6 @@ function screenPoint(p: PointLike): [number, number] {
     throw new MapkernError("invalid-option", "points must be [x, y] or { x, y } in pixels");
   }
   return [x, y];
-}
-
-declare const MAPKERN_WORKER_SOURCE: string | undefined;
-
-function workerFactory(url: string | undefined): WorkerFactory | null {
-  if (typeof Worker === "undefined") return null;
-  if (url) return () => new Worker(url);
-  const source = typeof MAPKERN_WORKER_SOURCE === "string" ? MAPKERN_WORKER_SOURCE : undefined;
-  if (!source) return null;
-  let blobUrl: string | null = null;
-  return () => {
-    blobUrl ??= URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
-    return new Worker(blobUrl);
-  };
 }
 
 export const DEFAULT_STYLE = "https://tiles.openfreemap.org/styles/liberty";
