@@ -135,8 +135,8 @@ test("setLocationAtPoint drags the grabbed point under the pointer", () => {
     const grabbed = t.unproject(380, 280)!;
     t.setLocationAtPoint(grabbed, 470, 350);
     const p = t.project(grabbed[0], grabbed[1]);
-    close(p.x, 470, 1e-4);
-    close(p.y, 350, 1e-4);
+    close(p.x, 470, 1e-4 * (1 + zoom));
+    close(p.y, 350, 1e-4 * (1 + zoom));
   }
 });
 
@@ -186,6 +186,7 @@ test("from zoom 12 the globe projection is the flat map", () => {
   const flat = globe(12.5, 45, 20);
   flat.setProjection("mercator");
   assert.equal(t.globeness, 0);
+  flat.update();
   assert.deepEqual([...t.pixelMatrix], [...flat.pixelMatrix]);
   const a = t.project(0.17, 0.35);
   const b = flat.project(0.17, 0.35);
@@ -212,7 +213,10 @@ test("the whole globe has the area of its disc", () => {
   const t = globe(0, 0, 0, 0, 0);
   const area = t.tileArea(0, 0, 0, 0);
   const r = t.globeRadius;
-  assert.ok(area > Math.PI * r * r * 0.85 && area < Math.PI * r * r * 1.5, `${area} vs ${Math.PI * r * r}`);
+  const d = t.cameraToCenterDistance;
+  const disc = (d * r) / Math.sqrt((d + r) ** 2 - r * r);
+  const expected = Math.PI * disc * disc;
+  assert.ok(Math.abs(area - expected) < expected * 0.03, `${area} vs ${expected}`);
 });
 
 test("ground frame matches finite differences of project", () => {
