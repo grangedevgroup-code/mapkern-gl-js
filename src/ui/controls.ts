@@ -2,6 +2,7 @@ import { MapkernError } from "../core/errors.ts";
 import { Emitter } from "../core/events.ts";
 import type { FitBoundsOptions, MapkernMap, UiText } from "../core/map.ts";
 import type { Projection } from "../geo/globe.ts";
+import { globeFitZoom } from "../geo/globe.ts";
 import { distanceMeters, metersPerPixel } from "../geo/mercator.ts";
 import type { DemSourceSpec, StyleSpec, StyleSpecV8 } from "../style/types.ts";
 import { Marker } from "./marker.ts";
@@ -813,13 +814,14 @@ export class BasemapControl extends Emitter<BasemapEvents> implements Control {
   };
 }
 
-export type TerrainView = "flat" | "terrain" | "tilted";
+export type TerrainView = "flat" | "terrain" | "tilted" | "globe";
 
 export interface TerrainControlOptions {
   source: string | DemSourceSpec;
   exaggeration?: number;
   relief?: number;
   pitch?: number;
+  views?: readonly TerrainView[];
 }
 
 export interface TerrainViewEvent {
@@ -832,14 +834,19 @@ export interface TerrainEvents {
 }
 
 const TERRAIN_SOURCE = "mapkern-terrain";
-const VIEWS: readonly TerrainView[] = ["flat", "terrain", "tilted"];
+const VIEWS: readonly TerrainView[] = ["flat", "terrain", "tilted", "globe"];
 
 function demSource(source: string | DemSourceSpec | undefined): string | DemSourceSpec {
   if (typeof source === "string" && source !== "") return source;
   if (typeof source === "object" && source !== null && source.type === "dem") return { ...source };
   throw new MapkernError("invalid-option", "TerrainControl needs a dem source or the id of one");
 }
-const VIEW_TEXT: Record<TerrainView, UiText> = { flat: "flatView", terrain: "terrainView", tilted: "tiltedView" };
+const VIEW_TEXT: Record<TerrainView, UiText> = {
+  flat: "flatView",
+  terrain: "terrainView",
+  tilted: "tiltedView",
+  globe: "globeTerrainView",
+};
 
 const GLOBE_ICON = [
   "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z",
@@ -903,6 +910,8 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
   private element: HTMLElement | null = null;
   private button: HTMLButtonElement | null = null;
   private label: HTMLElement | null = null;
+  private globeIcon: SVGSVGElement | null = null;
+  private readonly views: readonly TerrainView[];
   private wanted = false;
   private target: TerrainView | null = null;
   private shown: TerrainView | null = null;
@@ -913,10 +922,14 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
     this.exaggeration = options.exaggeration ?? 1;
     this.relief = options.relief ?? 0.5;
     this.pitch = Math.max(TILTED * 2, options.pitch ?? 60);
+    const views = (options.views ?? VIEWS).filter((v, i, all) => VIEWS.includes(v) && all.indexOf(v) === i);
+    if (views.length === 0) throw new MapkernError("invalid-option", "TerrainControl needs at least one view");
+    this.views = views;
   }
 
   get view(): TerrainView {
     const map = this.map;
+    if (map?.getProjection() === "globe") return "globe";
     if (!map?.getTerrain()) return "flat";
     return map.getPitch() > TILTED ? "tilted" : "terrain";
   }
@@ -924,7 +937,7 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
   onAdd(map: MapkernMap): HTMLElement {
     const doc = map.getContainer().ownerDocument;
     this.map = map;
-    this.wanted = this.wanted || map.getTerrain() !== null;
+    this.wanted = this.wanted || map.getTerrain() !== null || !this.views.includes("flat");
     const el = doc.createElement("div");
     el.className = "mapkern-control mapkern-terrain";
     const label = doc.createElement("span");
@@ -934,15 +947,21 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
     b.type = "button";
     b.className = "mapkern-terrain-button";
     b.appendChild(label);
+    const globeIcon = icon(doc, GLOBE_ICON);
+    b.appendChild(globeIcon);
+    this.globeIcon = globeIcon;
     b.addEventListener("click", () => {
-      const current = VIEWS.indexOf(this.target ?? this.view);
-      this.setView(VIEWS[(current + 1) % VIEWS.length]!);
+      const views = this.views;
+      const now = this.target ?? this.view;
+      const current = views.indexOf(now === "flat" && !views.includes("flat") ? "terrain" : now);
+      this.setView(views[(current + 1) % views.length]!);
     });
     el.appendChild(b);
     this.element = el;
     this.button = b;
     this.label = label;
     map.on("pitch", this.render);
+    map.on("projection", this.render);
     map.on("moveend", this.settle);
     map.on("styleload", this.restyle);
     if (this.wanted && !map.getTerrain()) this.apply();
@@ -952,12 +971,14 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
 
   onRemove(map: MapkernMap): void {
     map.off("pitch", this.render);
+    map.off("projection", this.render);
     map.off("moveend", this.settle);
     map.off("styleload", this.restyle);
     this.element?.remove();
     this.element = null;
     this.button = null;
     this.label = null;
+    this.globeIcon = null;
     this.shown = null;
     this.map = null;
   }
@@ -972,10 +993,17 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
     } else {
       this.apply();
     }
+    map.setProjection(view === "globe" ? "globe" : "mercator");
     const pitch = view === "tilted" ? Math.min(this.pitch, map.getMaxPitch()) : 0;
-    if (Math.abs(map.getPitch() - pitch) > 0.5) {
+    const container = map.getContainer();
+    const fit =
+      view === "globe"
+        ? globeFitZoom(container.clientWidth, container.clientHeight, map.transform.fov, map.getCenter()[1])
+        : Number.POSITIVE_INFINITY;
+    const zoom = Math.min(map.getZoom(), fit);
+    if (Math.abs(map.getPitch() - pitch) > 0.5 || zoom < map.getZoom() - 0.01) {
       this.target = view;
-      map.easeTo({ pitch });
+      map.easeTo({ pitch, zoom, duration: zoom < map.getZoom() - 1 ? 1200 : 500 });
     } else {
       this.target = null;
     }
@@ -1036,9 +1064,12 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
     if (view === this.shown) return;
     const first = this.shown === null;
     this.shown = view;
-    label.textContent = view === "flat" ? "2D" : "3D";
+    const flatLabel = view === "flat" || (view === "terrain" && !this.views.includes("flat"));
+    label.textContent = flatLabel ? "2D" : "3D";
+    label.style.display = view === "globe" ? "none" : "";
+    if (this.globeIcon) this.globeIcon.style.display = view === "globe" ? "" : "none";
     button.classList.toggle("mapkern-tilted", view === "tilted");
-    const name = map.text(VIEW_TEXT[view]);
+    const name = map.text(flatLabel && view === "terrain" ? "flatView" : VIEW_TEXT[view]);
     button.title = name;
     button.setAttribute("aria-label", name);
     if (!first) this.emit("viewchange", { type: "viewchange", view });
