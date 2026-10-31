@@ -240,6 +240,9 @@ export class Painter {
     this.pickBuffer.reset();
     this.drapes.reset();
     this.terrainGeometry = null;
+    this.capGeometry = null;
+    this.blankDrape = null;
+    this.blankColor = "";
     for (const shader of [
       solidShader,
       rasterShader,
