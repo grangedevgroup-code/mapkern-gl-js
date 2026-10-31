@@ -386,6 +386,15 @@ export class TileManager<D> {
 
   private openGate(transform: Transform, ideal: readonly CoveringTile[], now: number): void {
     this.holding = false;
+    if (transform.globeness <= 0) {
+      this.gating = false;
+      this.gateSince = Number.NaN;
+      return;
+    }
+    if (!this.gating) {
+      this.gating = true;
+      for (const tile of this.tiles.values()) if (tile.isReady) tile.shown = true;
+    }
     let fresh = false;
     for (const tile of this.tiles.values()) {
       if (tile.isReady && !tile.shown) {
