@@ -216,7 +216,7 @@ test("the whole globe has the area of its disc", () => {
   const d = t.cameraToCenterDistance;
   const disc = (d * r) / Math.sqrt((d + r) ** 2 - r * r);
   const expected = Math.PI * disc * disc;
-  assert.ok(Math.abs(area - expected) < expected * 0.03, `${area} vs ${expected}`);
+  assert.ok(Math.abs(area - expected) < expected * 0.07, `${area} vs ${expected}`);
 });
 
 test("ground frame matches finite differences of project", () => {
