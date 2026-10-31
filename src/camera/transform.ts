@@ -860,6 +860,38 @@ export class Transform {
       this.setCenterWorld(this.cx + dx, this.cy + dy);
       if (this.elevationMeters === 0 || Math.abs(dx) + Math.abs(dy) < 1e-15) break;
     }
+    return 0;
+  }
+
+  private rotateGlobeTo(world: readonly number[], px: number, py: number, z: number | undefined, keepSize: boolean) {
+    const target = [0, 0, 0];
+    unitFromMercator(world[0]!, world[1]!, target);
+    const now = [0, 0, 0];
+    const center = [0, 0, 0];
+    const next = [0, 0, 0];
+    let zoomShift = 0;
+    for (let i = 0; i < 8; i++) {
+      this.update();
+      const hit = this.unprojectClamped(px, py, z === undefined ? undefined : z * this.worldSize);
+      unitFromMercator(hit[0], hit[1], now);
+      const miss = Math.hypot(now[0]! - target[0]!, now[1]! - target[1]!, now[2]! - target[2]!);
+      if (miss < 1e-14) break;
+      unitFromMercator(this.cx, this.cy, center);
+      rotateToward(center, now, target, next);
+      const [nx, ny] = mercatorFromUnit(next[0]!, next[1]!, next[2]!);
+      const before = Math.cosh(Math.PI * (1 - 2 * this.cy));
+      const g = this.globeAmount;
+      this.setCenterWorld(nx, ny);
+      if (keepSize) {
+        const after = Math.cosh(Math.PI * (1 - 2 * this.cy));
+        const shift = g * Math.log2(before / after);
+        const zoom = this.z;
+        this.setZoom(zoom + shift);
+        zoomShift += this.z - zoom;
+      }
+      if (miss < 1e-12) break;
+    }
+    return zoomShift;
   }
 
   zoomAround(zoom: number, px: number, py: number, z?: number): void {
