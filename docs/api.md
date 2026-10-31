@@ -341,7 +341,7 @@ basemaps.on("change", ({ index, basemap }) => console.log(index, basemap.name));
 
 `selected` says which one the map starts with, `select(index)` picks one from code and `selected` reads it back. It sits in the bottom-right corner unless you say otherwise.
 
-`TerrainControl` is a single button that steps through a flat map ("2D"), 3D terrain seen from straight above ("3D") and tilted 3D terrain (a tilted "3D"):
+`TerrainControl` is a single button that steps through a flat map ("2D"), 3D terrain seen from straight above ("3D"), tilted 3D terrain (a tilted "3D") and the 3D globe with terrain (a globe icon):
 
 ```js
 const terrain = new mapkern.TerrainControl({
@@ -351,7 +351,7 @@ map.addControl(terrain);
 terrain.on("viewchange", ({ view }) => console.log(view));
 ```
 
-`source` is an elevation source to add, or the id of one already in the style. `exaggeration`, `relief` (0.5 unless you say otherwise) and `pitch` (60) tune the 3D views. `setView("flat" | "terrain" | "tilted")` switches from code and `view` reads it back, also after someone tilts the map by hand. Terrain stays on when the style changes, for example from a `BasemapControl`. `setSource(source)` swaps in other elevation data, such as a file opened with `openTileFile` or `openElevationFile`, and keeps the current view.
+`source` is an elevation source to add, or the id of one already in the style. `exaggeration`, `relief` (0.5 unless you say otherwise) and `pitch` (60) tune the 3D views. `setView("flat" | "terrain" | "tilted" | "globe")` switches from code and `view` reads it back, also after someone tilts the map by hand. Switching to the globe zooms out until the whole globe fits, if you were closer. `views` picks which steps the button offers: `views: ["terrain", "tilted", "globe"]` keeps terrain on all the time, and the view from above is then labelled "2D". Terrain stays on when the style changes, for example from a `BasemapControl`. `setSource(source)` swaps in other elevation data, such as a file opened with `openTileFile` or `openElevationFile`, and keeps the current view.
 
 `GlobeControl` is a button that switches between the globe and the flat map. It shows in blue while the globe is on.
 
