@@ -376,7 +376,7 @@ export class InputHandlers {
       return;
     }
     if (current.kind === "pan" && current.pointer === e.pointerId) {
-      transform.setLocationAtPoint(current.anchor, x, y, current.anchor[2]);
+      transform.setLocationAtPoint(current.anchor, x, y, current.anchor[2], true);
       this.samples.push({ t: e.timeStamp, x, y });
       while (this.samples.length > 2 && e.timeStamp - this.samples[0]!.t > 100) this.samples.shift();
       this.host.changed();
