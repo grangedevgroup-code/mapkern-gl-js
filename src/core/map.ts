@@ -4,6 +4,7 @@ import type { Padding, WorldBounds } from "../camera/transform.ts";
 import { MIN_ZOOM, Transform } from "../camera/transform.ts";
 import { featureKey } from "../formats/mvt.ts";
 import type { Projection } from "../geo/globe.ts";
+import { globeFitZoom } from "../geo/globe.ts";
 import type { LngLat, LngLatLike } from "../geo/mercator.ts";
 import { latFromMercatorY, lngFromMercatorX, mercatorX, mercatorY, toLngLat, wrapLongitude } from "../geo/mercator.ts";
 import { sunAltitude, sunAzimuth, sunPosition } from "../geo/sun.ts";
@@ -143,6 +144,7 @@ export type UiText =
   | "flatView"
   | "terrainView"
   | "tiltedView"
+  | "globeTerrainView"
   | "globeView"
   | "mercatorView"
   | "search"
@@ -174,6 +176,7 @@ const DEFAULT_TEXT: Record<UiText, string> = {
   flatView: "2D map",
   terrainView: "3D terrain from above",
   tiltedView: "Tilted 3D terrain",
+  globeTerrainView: "3D globe",
   globeView: "Show the map as a globe",
   mercatorView: "Show the map flat",
   search: "Search",
@@ -3110,14 +3113,7 @@ function worldView(container: HTMLElement): { zoom: number; center: [number, num
 
 function globeView(container: HTMLElement, fov: number): { zoom: number; center: [number, number] } {
   const { center } = worldView(container);
-  const width = container.clientWidth;
-  const height = container.clientHeight;
-  if (!(width > 0 && height > 0)) return { zoom: 0, center };
-  const d = height / 2 / Math.tan((fov * Math.PI) / 360);
-  const r = 0.42 * Math.min(width, height);
-  const radius = (r * r + r * Math.sqrt(r * r + d * d)) / d;
-  const stretch = Math.cosh(Math.PI * (1 - 2 * mercatorY(center[1])));
-  return { zoom: Math.log2((2 * Math.PI * radius) / (512 * stretch)), center };
+  return { zoom: globeFitZoom(container.clientWidth, container.clientHeight, fov, center[1]), center };
 }
 
 function absoluteUrl(url: string): string | undefined {
