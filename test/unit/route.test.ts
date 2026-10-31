@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { decodeRoute, encodeRoute } from "../../src/route/format.ts";
 import { RouteGraph, type RouteProfile } from "../../src/route/graph.ts";
 import { formatRef } from "../../src/route/guidance.ts";
+import { type NavigationAnnouncement, Navigator, simulateFixes, spokenDistance } from "../../src/route/navigator.ts";
 import { Router } from "../../src/route/router.ts";
 import type { RegionData } from "../../tools/tiles/extract.ts";
 import type { Tags } from "../../tools/tiles/osm-pbf.ts";
@@ -291,4 +292,58 @@ test("route refs read the way road signs write them", () => {
   assert.equal(formatRef("I 5"), "I-5");
   assert.equal(formatRef("US 101;SR 8"), "US-101 / SR-8");
   assert.equal(formatRef("A1"), "A1");
+});
+
+test("a simulated drive hears every turn before it, stays on route and arrives", () => {
+  const router = gridTown(6).router();
+  const route = router.route(
+    [
+      [0, 0],
+      [5 * STEP, 3 * STEP],
+    ],
+    { profile: "car" },
+  );
+  assert.ok(route);
+  const nav = new Navigator(route);
+  const heard: NavigationAnnouncement[] = [];
+  let state = null as ReturnType<Navigator["update"]> | null;
+  let lastStep = 0;
+  for (const fix of simulateFixes(nav, () => 12, 2)) {
+    state = nav.update(fix);
+    assert.equal(state.offRoute, false, `off route at ${state.along.toFixed(0)} m`);
+    assert.ok(state.step >= lastStep, "steps went backwards");
+    lastStep = state.step;
+    for (const a of nav.announcements(state, fix.speed ?? 0)) {
+      if (a.stage !== "start") assert.ok(a.step > state.step || state.arrived, `${a.text} came after the turn`);
+      heard.push(a);
+    }
+  }
+  assert.ok(state?.arrived, "never arrived");
+  const turns = route.legs[0]!.steps.filter((s) => s.maneuver.type === "turn").length;
+  const spokenTurns = new Set(heard.filter((a) => a.stage === "now").map((a) => a.step)).size;
+  assert.ok(spokenTurns >= turns, `heard ${spokenTurns} maneuvers for ${turns} turns`);
+  assert.equal(heard[heard.length - 1]!.text, "You have arrived at your destination");
+});
+
+test("driving away from the route is noticed on the second fix", () => {
+  const router = gridTown(4).router();
+  const route = router.route(
+    [
+      [0, 0],
+      [3 * STEP, 0],
+    ],
+    { profile: "car" },
+  );
+  assert.ok(route);
+  const nav = new Navigator(route);
+  assert.equal(nav.update({ lng: STEP, lat: 0, speed: 10, accuracy: 5 }).offRoute, false);
+  assert.equal(nav.update({ lng: STEP, lat: 0.0015, speed: 10, accuracy: 5 }).offRoute, false);
+  assert.equal(nav.update({ lng: STEP, lat: 0.0016, speed: 10, accuracy: 5 }).offRoute, true);
+});
+
+test("spoken distances round the way people say them", () => {
+  assert.equal(spokenDistance(430), "450 meters");
+  assert.equal(spokenDistance(1460), "1.5 kilometers");
+  assert.equal(spokenDistance(160, "imperial"), "500 feet");
+  assert.equal(spokenDistance(800, "imperial"), "half a mile");
 });
