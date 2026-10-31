@@ -126,26 +126,45 @@ export class NavigationControl implements Control {
 
 export interface AttributionOptions {
   custom?: string | string[];
+  compact?: boolean;
 }
+
+const INFO_ICON = ["M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z", "M12 11v6", "M12 7.6v.2"];
 
 export class AttributionControl implements Control {
   readonly defaultPosition: ControlPosition = "bottom-right";
   private readonly custom: string[];
+  private readonly compact: boolean;
   private element: HTMLElement | null = null;
+  private inner: HTMLElement | null = null;
+  private toggle: HTMLButtonElement | null = null;
   private last = "";
   private readonly update = () => this.refresh();
   private mapRef: MapkernMap | null = null;
 
   constructor(options: AttributionOptions = {}) {
     this.custom = options.custom === undefined ? [] : Array.isArray(options.custom) ? options.custom : [options.custom];
+    this.compact = options.compact !== false;
   }
 
   onAdd(map: MapkernMap): HTMLElement {
     const doc = map.getContainer().ownerDocument;
     const el = doc.createElement("div");
-    el.className = "mapkern-attribution";
+    el.className = this.compact ? "mapkern-attribution mapkern-attribution-compact" : "mapkern-attribution";
     el.setAttribute("role", "contentinfo");
+    const inner = doc.createElement("span");
+    inner.className = "mapkern-attribution-inner";
+    if (this.compact) {
+      const toggle = button(doc, map.text("credits"), "mapkern-attribution-button", icon(doc, INFO_ICON), () =>
+        this.setOpen(!this.isOpen()),
+      );
+      toggle.setAttribute("aria-expanded", "false");
+      el.appendChild(toggle);
+      this.toggle = toggle;
+    }
+    el.appendChild(inner);
     this.element = el;
+    this.inner = inner;
     this.mapRef = map;
     map.on("sourcedata", this.update);
     map.on("styleload", this.update);
@@ -158,25 +177,38 @@ export class AttributionControl implements Control {
     map.off("styleload", this.update);
     this.element?.remove();
     this.element = null;
+    this.inner = null;
+    this.toggle = null;
     this.mapRef = null;
+  }
+
+  private isOpen(): boolean {
+    return this.element?.classList.contains("mapkern-attribution-open") ?? false;
+  }
+
+  private setOpen(open: boolean): void {
+    this.element?.classList.toggle("mapkern-attribution-open", open);
+    this.toggle?.setAttribute("aria-expanded", String(open));
   }
 
   private refresh(): void {
     const el = this.element;
+    const inner = this.inner;
     const map = this.mapRef;
-    if (!el || !map) return;
+    if (!el || !inner || !map) return;
     const parts = [...this.custom, ...map.getAttributions()];
     const unique = [...new Set(parts.map((p) => p.trim()).filter((p) => p.length > 0))];
     const key = unique.join("\u0000");
     if (key === this.last) return;
     this.last = key;
-    el.replaceChildren();
+    inner.replaceChildren();
     const doc = el.ownerDocument;
     unique.forEach((part, i) => {
-      if (i > 0) el.appendChild(doc.createTextNode(" | "));
-      el.appendChild(safeLinkFragment(doc, part));
+      if (i > 0) inner.appendChild(doc.createTextNode(" | "));
+      inner.appendChild(safeLinkFragment(doc, part));
     });
-    el.title = el.textContent ?? "";
+    el.hidden = unique.length === 0;
+    el.title = inner.textContent ?? "";
   }
 }
 
