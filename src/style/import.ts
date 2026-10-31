@@ -161,7 +161,7 @@ const QUIET = new Set([
   "symbol-avoid-edges",
 ]);
 
-const DROPPED_ROOT = ["light", "lights", "projection", "imports", "models", "camera", "state", "schema"];
+const DROPPED_ROOT = ["light", "lights", "imports", "models", "camera", "state", "schema"];
 
 const SKY_NAMES: Record<string, keyof SkySpec> = {
   "sky-color": "color",
@@ -324,6 +324,7 @@ export function importStyle(input: unknown, base?: string): ImportedStyle {
     else style.sprite = sprite;
   }
   for (const key of DROPPED_ROOT) if (input[key] !== undefined) skipped.add(`${key} isn't supported yet`);
+  if (input.projection !== undefined) skipped.add("projection is set on the map with setProjection, not in the style");
   const sky = convertSky(input, skipped);
   if (sky) style.sky = sky;
   const sources: Record<string, SourceSpec> = {};
