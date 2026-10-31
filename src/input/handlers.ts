@@ -183,6 +183,7 @@ export class InputHandlers {
         i.from[0] + i.offset[0] * k,
         i.from[1] + i.offset[1] * k,
         i.anchor[2],
+        true,
       );
       this.host.changed();
       if (t >= 1) this.inertia = null;
