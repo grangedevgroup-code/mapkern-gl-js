@@ -72,6 +72,7 @@ export interface ManagerEvents {
 const FULL: Rect = { x0: 0, y0: 0, x1: 1, y1: 1 };
 const LINGER_MS = 2500;
 const MAX_FALLBACK_DEPTH = 2;
+const REVEAL_WAIT_MS = 1200;
 const SWAP_WAIT_MS = 100;
 const BREAKER_THRESHOLD = 16;
 
@@ -88,6 +89,8 @@ export class TileManager<D> {
   private frame = 0;
   private generation = 0;
   private fading = false;
+  private holding = false;
+  private gateSince = Number.NaN;
   private consecutiveFailures = 0;
   private pausedUntil = 0;
   private destroyed = false;
@@ -381,7 +384,51 @@ export class TileManager<D> {
     return tile;
   }
 
+  private openGate(transform: Transform, ideal: readonly CoveringTile[], now: number): void {
+    this.holding = false;
+    let fresh = false;
+    for (const tile of this.tiles.values()) {
+      if (tile.isReady && !tile.shown) {
+        fresh = true;
+        break;
+      }
+    }
+    if (!fresh) {
+      this.gateSince = Number.NaN;
+      return;
+    }
+    let pending = false;
+    if (transform.globeness > 0) {
+      for (const slot of ideal) {
+        if (!this.withinBounds(slot)) continue;
+        const tile = this.tiles.get(tileKey(slot.z, slot.x, slot.y));
+        if (!tile?.isSettled) {
+          pending = true;
+          break;
+        }
+      }
+    }
+    if (Number.isNaN(this.gateSince)) this.gateSince = now;
+    if (pending && now - this.gateSince < REVEAL_WAIT_MS) {
+      this.holding = true;
+      this.events.wakeAt(this.gateSince + REVEAL_WAIT_MS);
+      return;
+    }
+    const together = transform.globeness > 0;
+    for (const tile of this.tiles.values()) {
+      if (!tile.isReady || tile.shown) continue;
+      tile.shown = true;
+      if (together) tile.readyAt = Math.min(tile.readyAt, now - this.options.fadeDuration);
+    }
+    this.gateSince = Number.NaN;
+  }
+
+  private usable(tile: Tile<D> | undefined): boolean {
+    return tile?.isReady === true && (tile.shown || !this.holding);
+  }
+
   private buildPieces(transform: Transform, ideal: readonly CoveringTile[], now: number): void {
+    this.openGate(transform, ideal, now);
     const pieces: RenderPiece<D>[] = [];
     this.fading = false;
     this.fallbackCount = 0;
@@ -397,7 +444,7 @@ export class TileManager<D> {
         continue;
       }
       const tile = this.tiles.get(tileKey(slot.z, slot.x, slot.y));
-      if (tile?.isReady) {
+      if (tile && this.usable(tile)) {
         const age = now - tile.readyAt;
         if (this.options.fadeDuration > 0 && age < this.options.fadeDuration) {
           this.fallback(pieces, slot, slot.wrap, slot.z, 0);
@@ -412,7 +459,22 @@ export class TileManager<D> {
         this.noDataArea += area;
         continue;
       }
-      const covered = this.fallback(pieces, slot, slot.wrap, slot.z, 0);
+      const start = pieces.length;
+      const counted = this.fallbackCount;
+      let covered = this.fallback(pieces, slot, slot.wrap, slot.z, 0);
+      if (!covered && this.holding) {
+        pieces.length = start;
+        this.fallbackCount = counted;
+        this.holding = false;
+        covered = this.fallback(pieces, slot, slot.wrap, slot.z, 0);
+        this.holding = true;
+        for (let i = start; i < pieces.length; i++) pieces[i]!.tile.shown = true;
+      }
+      if (!covered && tile?.isReady) {
+        tile.shown = true;
+        pieces.push(this.piece(tile, slot.wrap, FULL, 1, slot.z));
+        covered = true;
+      }
       if (!covered) {
         if (tile?.state === "empty") this.noDataArea += area;
         else if (tile?.state === "failed") this.blankFailedArea += area;
@@ -436,7 +498,7 @@ export class TileManager<D> {
         let all = true;
         for (const kid of kids) {
           const tile = this.tiles.get(tileKey(kid.z, kid.x, kid.y));
-          if (tile?.isReady) {
+          if (tile && this.usable(tile)) {
             out.push(this.piece(tile, wrap, FULL, 1, slotZ));
             this.fallbackCount++;
           } else if (!this.fallback(out, kid, wrap, slotZ, depth + 1)) {
@@ -449,7 +511,7 @@ export class TileManager<D> {
     for (let z = region.z - 1; z >= this.tiling.minZoom; z--) {
       const a = parentTile(region, region.z - z);
       const tile = this.tiles.get(tileKey(a.z, a.x, a.y));
-      if (tile?.isReady) {
+      if (tile && this.usable(tile)) {
         out.push(this.piece(tile, wrap, subRect(a, region), 1, slotZ));
         this.fallbackCount++;
         return true;
@@ -460,7 +522,7 @@ export class TileManager<D> {
 
   private hasReadyDescendant(t: TileCoord, levels: number): boolean {
     const tile = this.tiles.get(tileKey(t.z, t.x, t.y));
-    if (tile?.isReady) return true;
+    if (this.usable(tile)) return true;
     if (levels <= 0 || t.z + 1 > this.tiling.maxZoom) return false;
     for (const kid of childTiles(t)) if (this.hasReadyDescendant(kid, levels - 1)) return true;
     return false;
