@@ -870,7 +870,7 @@ export class Transform {
     const center = [0, 0, 0];
     const next = [0, 0, 0];
     let zoomShift = 0;
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 16; i++) {
       this.update();
       const hit = this.unprojectClamped(px, py, z === undefined ? undefined : z * this.worldSize);
       unitFromMercator(hit[0], hit[1], now);
@@ -889,7 +889,7 @@ export class Transform {
         this.setZoom(zoom + shift);
         zoomShift += this.z - zoom;
       }
-      if (miss < 1e-12) break;
+      if (miss < 1e-13) break;
     }
     return zoomShift;
   }
@@ -982,7 +982,7 @@ export class Transform {
       const s = a.x * b.y - b.x * a.y + (b.x * c.y - c.x * b.y) + (c.x * d.y - d.x * c.y) + (d.x * a.y - a.x * d.y);
       return Math.abs(s) / 2;
     }
-    const k = z < 3 ? 8 : 2;
+    const k = z < 2 ? 32 : z < 4 ? 8 : 2;
     const sx = new Float64Array((k + 1) * (k + 1));
     const sy = new Float64Array((k + 1) * (k + 1));
     const ok = new Uint8Array((k + 1) * (k + 1));
