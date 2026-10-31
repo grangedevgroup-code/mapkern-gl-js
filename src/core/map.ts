@@ -668,7 +668,7 @@ export class MapkernMap extends Emitter<MapEvents> {
       const custom = typeof options.attributionControl === "object" ? options.attributionControl.custom : undefined;
       this.addControl(new AttributionControl(custom === undefined ? {} : { custom }));
     }
-    if (options.logoControl !== false) this.addControl(new LogoControl());
+    if (options.logoControl === true) this.addControl(new LogoControl());
 
     if (options.bounds !== undefined) {
       const camera = this.cameraForBounds(options.bounds, options.fitBoundsOptions ?? {});
