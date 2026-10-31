@@ -42,7 +42,7 @@ import type { TransformRequest } from "../tiles/fetch.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileManager, TileStats } from "../tiles/manager.ts";
 import { RequestScheduler } from "../tiles/scheduler.ts";
-import type { Control, ControlPosition } from "../ui/controls.ts";
+import type { AttributionOptions, Control, ControlPosition } from "../ui/controls.ts";
 import { AttributionControl } from "../ui/controls.ts";
 import { injectStyles } from "../ui/css.ts";
 import type { DebugTile } from "../ui/debug.ts";
