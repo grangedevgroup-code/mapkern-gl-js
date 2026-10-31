@@ -703,6 +703,20 @@ export class Painter {
     const uDrapeRect = uniform(program, "u_drape_rect");
     const uTile = uniform(program, "u_tile");
     const uCap = uniform(program, "u_cap");
+    const uTileWorld = uniform(program, "u_tile_world");
+    const sun = frame.sun ?? null;
+    if (sun) {
+      gl.uniform4f(
+        uniform(program, "u_night_sun"),
+        Math.sin(sun.sun.declination * DEG),
+        Math.cos(sun.sun.declination * DEG),
+        sun.sun.subsolarLng * DEG,
+        1,
+      );
+      gl.uniform4f(uniform(program, "u_night"), sun.night[0], sun.night[1], sun.night[2], sun.twilight * DEG);
+    } else {
+      gl.uniform4f(uniform(program, "u_night_sun"), 0, 0, 0, 0);
+    }
     const uDrapeSize = uniform(program, "u_drape_size");
     for (const slot of terrain.slots) {
       const { texture, rect, size } = this.slotDrape(slot, empty);
@@ -717,6 +731,7 @@ export class Painter {
       let rx = slot.wrap + slot.x / n - cx;
       rx -= Math.round(rx);
       gl.uniform3f(uTile, rx, slot.y / n - cy, 1 / n);
+      gl.uniform3f(uTileWorld, slot.wrap + slot.x / n, slot.y / n, 1 / n);
       const r = slot.rect;
       gl.uniform4f(uRect, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
       gl.uniform1f(uSize, data ? data.grid.size : 1);
