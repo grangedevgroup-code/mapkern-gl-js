@@ -200,10 +200,10 @@ test("a roundabout counts the exits it passes", () => {
     const dy = p[1] - c[1];
     town.way([p, [c[0] + dx * 4, c[1] + dy * 4]], street(name));
   };
-  arm(0, "South Arm");
-  arm(4, "West Arm");
-  arm(8, "North Arm");
-  arm(12, "East Arm");
+  arm(0, "North Arm");
+  arm(4, "East Arm");
+  arm(8, "South Arm");
+  arm(12, "West Arm");
   const router = town.router();
   const route = router.route(
     [
@@ -280,8 +280,8 @@ test("the router finds the same cheapest time as a plain search on random towns"
       if (!Number.isFinite(expected)) continue;
       assert.ok(route, `no route ${a} -> ${b} though one exists`);
       assert.ok(
-        route.duration <= expected + 1e-3,
-        `round ${round}: router ${route.duration.toFixed(3)} s is slower than the best ${expected.toFixed(3)} s`,
+        Math.abs(route.duration - expected) < 1e-3,
+        `round ${round}: router ${route.duration.toFixed(3)} s differs from the best ${expected.toFixed(3)} s`,
       );
     }
   }
