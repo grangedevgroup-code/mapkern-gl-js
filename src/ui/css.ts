@@ -581,12 +581,63 @@ export const CSS = `
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.mapkern-attribution:empty {
+.mapkern-attribution[hidden] {
   display: none;
 }
 .mapkern-attribution:hover,
 .mapkern-attribution:focus-within {
   white-space: normal;
+}
+.mapkern-attribution-compact {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 15px;
+  white-space: normal;
+}
+.mapkern-bottom-right > .mapkern-attribution-compact {
+  margin: 0;
+  max-width: 100%;
+}
+.mapkern-attribution-compact .mapkern-attribution-inner {
+  display: none;
+  padding: 0 8px 0 4px;
+}
+.mapkern-attribution-open .mapkern-attribution-inner {
+  display: inline;
+}
+.mapkern-attribution-button {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.mapkern-attribution-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+.mapkern-attribution-button:focus-visible {
+  outline: 2px solid #2f6fdb;
+  outline-offset: 1px;
+}
+@media (pointer: coarse) {
+  .mapkern-attribution-button {
+    width: 30px;
+    height: 30px;
+  }
 }
 .mapkern-attribution a {
   color: inherit;
