@@ -96,6 +96,18 @@ npx mapkern-tiles search --world --input africa-latest.osm.pbf --input asia-late
 
 Where a file cuts through a country's border, the pieces are joined up so places near the edge still get their state and country.
 
+## Road graph
+
+`mapkern-tiles route` turns the same OpenStreetMap file into a road graph for [directions](api.md#directions):
+
+```sh
+npx mapkern-tiles route --input north-america-latest.osm.pbf --bbox=-123.4,46.8,-121.7,48.1 --output puget.route
+```
+
+It keeps every road, path and trail someone can drive, cycle or walk on, with which way traffic may go for each, speed limits, roundabouts, tolls, names and route numbers. Turn restrictions that turn at a junction ("no left turn", "only straight on") are kept for each kind of traffic they apply to; the rare ones that run through a whole stretch of road are left out, and the builder says how many.
+
+The box above, from Olympia to Everett, holds 1.6 million road pieces and comes out at 45 MB, most of it the shape of each road. Serve it with gzip left as it is; Mapkern unpacks it in the browser.
+
 ## Credit
 
 OpenStreetMap data is shared under the [Open Database License](https://www.openstreetmap.org/copyright), which asks you to credit "© OpenStreetMap contributors" wherever the map is shown. The builder stores that line in the file and Mapkern puts it in the corner of the map for you.
