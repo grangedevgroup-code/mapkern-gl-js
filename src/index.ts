@@ -104,6 +104,7 @@ export {
   BasemapControl,
   FullscreenControl,
   GeolocateControl,
+  GlobeControl,
   NavigationControl,
   ScaleControl,
   TerrainControl,
