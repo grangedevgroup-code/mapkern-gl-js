@@ -1,3 +1,4 @@
+import { decodeRoute } from "./format.ts";
 import type { RouteProfile, Snap } from "./graph.ts";
 import { meters, RouteGraph } from "./graph.ts";
 import { buildSteps, type RouteStep } from "./guidance.ts";
@@ -32,8 +33,6 @@ export interface PathPiece {
   length: number;
   seconds: number;
 }
-
-const MAX_SPEED: Record<RouteProfile, number> = { car: 130 / 3.6, bike: 25 / 3.6, foot: 6 / 3.6 };
 
 class Heap {
   keys = new Float64Array(1024);
@@ -153,7 +152,7 @@ export class Router {
     this.reset();
     const heap = new Heap();
     const target = to.point;
-    const speed = MAX_SPEED[profile];
+    const speed = this.topSpeed(profile);
     const kLat = Math.cos(target[1] * (Math.PI / 180));
     const nodeLon = g.data.nodeLon;
     const nodeLat = g.data.nodeLat;
@@ -161,41 +160,64 @@ export class Router {
       const node = g.head(d);
       const dx = (nodeLon[node]! * 1e-7 - target[0]) * kLat;
       const dy = nodeLat[node]! * 1e-7 - target[1];
-      return (Math.hypot(dx, dy) * 111195) / speed;
+      return (Math.hypot(dx, dy) * 110000) / speed;
     };
     const fromCost = costs[from.edge]!;
     const toCost = costs[to.edge]!;
-    let best = Infinity;
-    let bestState = -2;
-    let bestDirect = false;
     const fwd = from.edge * 2;
     const bwd = fwd + 1;
-    if (from.edge === to.edge) {
+    const toFwd = to.edge * 2;
+    const toBwd = toFwd + 1;
+    const startNode = atNode(g, from);
+    const endNode = atNode(g, to);
+    let best = Infinity;
+    let bestState = -2;
+    let endState = -1;
+    let direct = -1;
+    const offer = (cost: number, state: number, end: number) => {
+      if (cost < best) {
+        best = cost;
+        bestState = state;
+        endState = end;
+        direct = -1;
+      }
+    };
+    if (startNode < 0 && endNode < 0 && from.edge === to.edge) {
       if (to.fraction >= from.fraction && g.allowed(fwd, profile)) {
         best = (to.fraction - from.fraction) * fromCost;
-        bestDirect = true;
-        bestState = fwd;
+        direct = fwd;
       }
       if (to.fraction <= from.fraction && g.allowed(bwd, profile)) {
         const c = (from.fraction - to.fraction) * fromCost;
         if (c < best) {
           best = c;
-          bestDirect = true;
-          bestState = bwd;
+          direct = bwd;
         }
       }
     }
-    const seed = (d: number, cost: number) => {
-      if (!g.allowed(d, profile)) return;
-      this.touch(d);
+    const startAt = new Map<number, number>();
+    const partial = (d: number) => (d === toFwd ? to.fraction : 1 - to.fraction) * toCost;
+    const seed = (d: number, cost: number, a: number) => {
+      if (!g.allowed(d, profile) || cost >= dist[d]!) return;
+      if (dist[d] === Infinity) this.touch(d);
       dist[d] = cost;
       prev[d] = -1;
+      startAt.set(d, a);
       heap.push(cost + heuristic(d), d);
+      if (endNode >= 0 && g.head(d) === endNode) offer(cost, d, -1);
     };
-    seed(fwd, (1 - from.fraction) * fromCost);
-    seed(bwd, from.fraction * fromCost);
-    const toFwd = to.edge * 2;
-    const toBwd = toFwd + 1;
+    if (startNode >= 0) {
+      if (startNode === endNode) return [];
+      for (let i = g.outStart[startNode]!; i < g.outStart[startNode + 1]!; i++) {
+        const d = g.outList[i]!;
+        if (!g.allowed(d, profile)) continue;
+        seed(d, costs[d >> 1]!, 0);
+        if (endNode < 0 && (d === toFwd || d === toBwd)) offer(partial(d), -1, d);
+      }
+    } else {
+      seed(fwd, (1 - from.fraction) * fromCost, from.fraction);
+      seed(bwd, from.fraction * fromCost, 1 - from.fraction);
+    }
     let settled = 0;
     while (heap.size > 0) {
       if (heap.minKey >= best) break;
@@ -210,55 +232,59 @@ export class Router {
         if (next === (d ^ 1) && !g.uTurnAllowed(d, profile)) continue;
         if (!g.turnAllowed(d, next, profile)) continue;
         const turn = g.turnCost(d, next, profile);
-        if (next === toFwd || next === toBwd) {
-          const partial = next === toFwd ? to.fraction * toCost : (1 - to.fraction) * toCost;
-          const total = base + turn + partial;
-          if (total < best) {
-            best = total;
-            bestState = d;
-            bestDirect = false;
-            this.endState = next;
-          }
-        }
+        if (endNode < 0 && (next === toFwd || next === toBwd)) offer(base + turn + partial(next), d, next);
         const cost = base + turn + costs[next >> 1]!;
         if (cost < dist[next]!) {
           if (dist[next] === Infinity) this.touch(next);
           dist[next] = cost;
           prev[next] = d;
           heap.push(cost + heuristic(next), next);
+          if (endNode >= 0 && g.head(next) === endNode) offer(cost, next, -1);
         }
       }
     }
     this.lastSettled = settled;
-    if (bestState === -2) return null;
-    if (bestDirect) {
-      const forward = bestState === fwd;
+    if (direct >= 0) {
+      const forward = direct === fwd;
       const a = forward ? from.fraction : 1 - from.fraction;
       const b = forward ? to.fraction : 1 - to.fraction;
-      return [this.piece(bestState, a, b, best)];
+      return [this.piece(direct, a, b, best)];
     }
+    if (bestState === -2) return null;
     const chain: number[] = [];
     for (let d = bestState; d !== -1; d = prev[d]!) chain.push(d);
     chain.reverse();
     const pieces: PathPiece[] = [];
-    const first = chain[0]!;
-    const startAt = first & 1 ? 1 - from.fraction : from.fraction;
     for (let i = 0; i < chain.length; i++) {
       const d = chain[i]!;
-      const cost = costs[d >> 1]!;
-      const a = i === 0 ? startAt : 0;
-      pieces.push(this.piece(d, a, 1, cost * (1 - a)));
+      const a = i === 0 ? (startAt.get(d) ?? 0) : 0;
+      pieces.push(this.piece(d, a, 1, costs[d >> 1]! * (1 - a)));
     }
-    const last = this.endState;
-    const stop = last & 1 ? 1 - to.fraction : to.fraction;
-    pieces.push(this.piece(last, 0, stop, toCost * stop));
-    for (let i = 1; i < pieces.length; i++) {
-      pieces[i]!.seconds += g.turnCost(chain[i - 1] ?? -1, i < chain.length ? chain[i]! : last, profile);
+    const moves = chain.slice();
+    if (endState >= 0) {
+      const stop = endState & 1 ? 1 - to.fraction : to.fraction;
+      pieces.push(this.piece(endState, 0, stop, toCost * stop));
+      moves.push(endState);
     }
-    return pieces.filter((p) => p.coords.length >= 2);
+    for (let i = 1; i < pieces.length; i++) pieces[i]!.seconds += g.turnCost(moves[i - 1]!, moves[i]!, profile);
+    return pieces.filter((p) => p.coords.length >= 2 && p.length > 0);
   }
 
-  private endState = -1;
+  private readonly speeds = new Map<RouteProfile, number>();
+
+  private topSpeed(profile: RouteProfile): number {
+    let top = this.speeds.get(profile);
+    if (top !== undefined) return top;
+    const costs = this.graph.edgeCosts(profile);
+    const lengths = this.graph.data.edgeLength;
+    top = 1;
+    for (let e = 0; e < costs.length; e++) {
+      const c = costs[e]!;
+      if (c > 0 && this.graph.usable(e, profile)) top = Math.max(top, lengths[e]! / c);
+    }
+    this.speeds.set(profile, top);
+    return top;
+  }
 
   private piece(d: number, a: number, b: number, seconds: number): PathPiece {
     const coords = slice(this.graph.coords(d), a, b);
@@ -314,41 +340,19 @@ export function slice(pts: [number, number][], a: number, b: number): [number, n
 
 export async function loadRouter(url: string, init?: RequestInit): Promise<Router> {
   const response = await fetch(url, init);
-  if (!response.ok || !response.body) throw new Error(`Could not load the route graph (${response.status})`);
-  const bytes = new Uint8Array(await new Response(gunzipIfNeeded(response.body)).arrayBuffer());
-  const { decodeRoute } = await import("./format.ts");
+  if (!response.ok) throw new Error(`Could not load the route graph (${response.status})`);
+  let bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  }
   return new Router(new RouteGraph(decodeRoute(bytes)));
 }
 
-function gunzipIfNeeded(stream: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
-  const reader = stream.getReader();
-  let first: Uint8Array | null = null;
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const head = await reader.read();
-      first = head.value ?? new Uint8Array(0);
-      const gz = first.length >= 2 && first[0] === 0x1f && first[1] === 0x8b;
-      const source = new ReadableStream<Uint8Array>({
-        start(c) {
-          if (first && first.length > 0) c.enqueue(first);
-          if (head.done) c.close();
-        },
-        async pull(c) {
-          const { done, value } = await reader.read();
-          if (done) c.close();
-          else c.enqueue(value);
-        },
-      });
-      const out = gz
-        ? source.pipeThrough(new DecompressionStream("gzip") as unknown as TransformStream<Uint8Array, Uint8Array>)
-        : source;
-      const r = out.getReader();
-      for (;;) {
-        const { done, value } = await r.read();
-        if (done) break;
-        controller.enqueue(value);
-      }
-      controller.close();
-    },
-  });
+const AT_NODE = 1e-6;
+
+function atNode(g: RouteGraph, snap: Snap): number {
+  if (snap.fraction <= AT_NODE) return g.data.edgeFrom[snap.edge]!;
+  if (snap.fraction >= 1 - AT_NODE) return g.data.edgeTo[snap.edge]!;
+  return -1;
 }
