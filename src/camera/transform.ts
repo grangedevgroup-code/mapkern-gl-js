@@ -353,6 +353,7 @@ export class Transform {
 
   private constrain(): void {
     if (!this.keepInWorld) return;
+    if (this.mode === "globe" && globeness(this.z) > 0) return;
     const { bounds: b, wraps, left, right, top, bottom, fit } = this.view();
     let z = this.z;
     if (z < fit) z = Math.min(this.maxZoom, fit);
