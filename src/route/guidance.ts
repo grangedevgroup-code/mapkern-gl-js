@@ -98,7 +98,7 @@ export function instructionFor(step: StepText, previous?: StepText): string {
     case "merge":
       return `Merge${onto}`;
     case "fork":
-      return `Keep ${dir.includes("left") ? "left" : "right"}${road ? ` toward ${road}` : ""}`;
+      return `Keep ${dir.includes("left") ? "left" : "right"}${stay ? ` to stay on ${road}` : road ? ` toward ${road}` : ""}`;
     case "new name":
     case "continue":
       return `Continue${onto}`;
