@@ -40,10 +40,14 @@ ${globeChunk}
 #endif
 layout(location = 0) in vec4 a_pos;
 out vec2 v_uv;
+#ifdef GLOBE
+out float v_pole;
+#endif
 void main() {
   vec2 uv = a_pos.xy / ${GRID.toFixed(1)};
   v_uv = uv;
 #ifdef GLOBE
+  v_pole = a_pos.w;
   float meters = u_has_dem > 0.5 ? demElevation(u_dem_rect.xy + uv * u_dem_rect.zw) * u_exaggeration : 0.0;
   meters -= a_pos.z * u_skirt;
   float pole = a_pos.w > 0.5 ? (uv.y < 0.5 ? 1.0 : -1.0) : 0.0;
@@ -64,15 +68,30 @@ uniform vec2 u_gradient_texel;
 uniform float u_gradient_scale;
 #ifdef GLOBE
 uniform vec4 u_base;
+uniform float u_cap;
+uniform float u_drape_size;
+uniform sampler2D u_pole;
+in float v_pole;
 #endif
 ${demChunk}
 in vec2 v_uv;
 out vec4 fragColor;
 void main() {
   vec2 uv = u_drape_rect.xy + v_uv * u_drape_rect.zw;
-  vec4 color = texture(u_drape, vec2(uv.x, 1.0 - uv.y));
+  vec2 st = vec2(uv.x, 1.0 - uv.y);
 #ifdef GLOBE
+  vec4 color;
+  if (u_cap > 0.5) {
+    float coarse = max(log2(u_drape_size) - 3.0, 0.0);
+    vec4 edge = textureLod(u_drape, st, coarse * smoothstep(0.0, 0.12, v_pole));
+    vec4 pole = texture(u_pole, vec2(st.y > 0.5 ? 0.25 : 0.75, 0.5));
+    color = mix(edge, pole, smoothstep(0.08, 0.7, v_pole));
+  } else {
+    color = texture(u_drape, st);
+  }
   color += u_base * (1.0 - color.a);
+#else
+  vec4 color = texture(u_drape, st);
 #endif
   if (u_sun_gain > 0.0 && u_has_dem > 0.5) {
     vec2 dem = u_dem_rect.xy + v_uv * u_dem_rect.zw;
