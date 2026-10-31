@@ -91,6 +91,15 @@ interface TerrainGeometry {
   count: number;
 }
 
+export interface Surface {
+  readonly slots: readonly TerrainSlot[];
+  readonly exaggeration: number;
+  readonly relief: number;
+  readonly source: { elevationTexture(data: DemTile): WebGLTexture | null } | null;
+}
+
+const SPACE: RGBA = [0.035, 0.045, 0.085, 1];
+
 const POINT_MARGIN = 0.125;
 const MERCATOR_Z = (2 * Math.PI * 6371008.8) / EARTH_CIRCUMFERENCE;
 
