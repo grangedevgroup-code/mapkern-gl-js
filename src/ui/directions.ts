@@ -253,7 +253,7 @@ export class DirectionsControl extends Emitter<DirectionsEvents> implements Cont
 
   private drawLine(route: Route): void {
     const map = this.map;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map?.isStyleLoaded()) return;
     const data = {
       type: "Feature" as const,
       properties: {},
@@ -284,7 +284,7 @@ export class DirectionsControl extends Emitter<DirectionsEvents> implements Cont
 
   private removeLine(): void {
     const map = this.map;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map?.isStyleLoaded()) return;
     for (const id of LAYERS) if (map.getLayer(id)) map.removeLayer(id);
     if (map.getSource(SOURCE)) map.removeSource(SOURCE);
   }
