@@ -5,9 +5,11 @@ import { RouteGraph, type RouteProfile } from "../../src/route/graph.ts";
 import { formatRef } from "../../src/route/guidance.ts";
 import { type NavigationAnnouncement, Navigator, simulateFixes, spokenDistance } from "../../src/route/navigator.ts";
 import { Router } from "../../src/route/router.ts";
+import { TiledRouter } from "../../src/route/tiled.ts";
 import type { RegionData } from "../../tools/tiles/extract.ts";
 import type { Tags } from "../../tools/tiles/osm-pbf.ts";
 import { buildRouteGraph } from "../../tools/tiles/route.ts";
+import { buildRouteTiles, splitArchive, writeArchive } from "../../tools/tiles/route-tiles.ts";
 
 const STEP = 0.001;
 
@@ -74,20 +76,28 @@ class Town {
   router(): Router {
     return new Router(new RouteGraph(decodeRoute(encodeRoute(buildRouteGraph(this.region()).data))));
   }
+
+  data() {
+    return buildRouteGraph(this.region()).data;
+  }
 }
 
 function street(name: string, extra: Tags = {}): Tags {
   return { highway: "residential", name, ...extra };
 }
 
-function gridTown(n: number, tags: (kind: "h" | "v", i: number) => Tags = (k, i) => street(`${k}${i}`)): Town {
+function gridTown(
+  n: number,
+  tags: (kind: "h" | "v", i: number) => Tags = (k, i) => street(`${k}${i}`),
+  step = STEP,
+): Town {
   const town = new Town();
   for (let i = 0; i < n; i++) {
     const row: [number, number][] = [];
     const col: [number, number][] = [];
     for (let j = 0; j < n; j++) {
-      row.push([j * STEP, i * STEP]);
-      col.push([i * STEP, j * STEP]);
+      row.push([j * step, i * step]);
+      col.push([i * step, j * step]);
     }
     town.way(row, tags("h", i));
     town.way(col, tags("v", i));
@@ -346,4 +356,114 @@ test("spoken distances round the way people say them", () => {
   assert.equal(spokenDistance(1460), "1.5 kilometers");
   assert.equal(spokenDistance(160, "imperial"), "500 feet");
   assert.equal(spokenDistance(800, "imperial"), "half a mile");
+});
+
+const WIDE = 0.01;
+
+function widetown(): Town {
+  return gridTown(
+    9,
+    (k, i) => {
+      if (i % 4 === 0) return { highway: "primary", name: `${k} Highway ${i}` };
+      return { highway: "residential", name: `${k} Street ${i}`, ...(i % 3 === 1 ? { oneway: "yes" } : {}) };
+    },
+    WIDE,
+  );
+}
+
+function trips(count: number): [number, number][][] {
+  let seed = 11;
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648;
+  };
+  const out: [number, number][][] = [];
+  while (out.length < count) {
+    const a: [number, number] = [Math.floor(rand() * 9) * WIDE, Math.floor(rand() * 9) * WIDE];
+    const b: [number, number] = [Math.floor(rand() * 9) * WIDE, Math.floor(rand() * 9) * WIDE];
+    if (a[0] !== b[0] || a[1] !== b[1]) out.push([a, b]);
+  }
+  return out;
+}
+
+test("route tiles split a graph into many small tiles and route exactly like the whole graph", async () => {
+  const town = widetown();
+  const data = town.data();
+  const build = buildRouteTiles(data, { tileEdges: 40 });
+  assert.ok(build.detail.length >= 4, `only ${build.detail.length} tiles`);
+  assert.ok(build.overview.length >= 1, "no highway layer");
+  const bytes = writeArchive(build.meta, build.detail, build.overview);
+  const full = new Router(new RouteGraph(data));
+  for (const profile of ["car", "foot"] as const) {
+    for (const pts of trips(12)) {
+      const expected = full.route(pts, { profile });
+      const tiled = await TiledRouter.open(bytes);
+      tiled.longRoute = Number.POSITIVE_INFINITY;
+      const got = await tiled.route(pts, { profile });
+      assert.equal(Boolean(got), Boolean(expected), `${profile} ${JSON.stringify(pts)}`);
+      if (got && expected) {
+        assert.ok(
+          Math.abs(got.duration - expected.duration) < 1e-3 * expected.duration + 0.01,
+          `${profile} ${JSON.stringify(pts)}: tiled ${got.duration} vs ${expected.duration}`,
+        );
+      }
+    }
+  }
+});
+
+test("long car routes use the highway layer away from both ends and stay close to the best time", async () => {
+  const town = widetown();
+  const data = town.data();
+  const build = buildRouteTiles(data, { tileEdges: 40 });
+  const bytes = writeArchive(build.meta, build.detail, build.overview);
+  const full = new Router(new RouteGraph(data));
+  const pts: [number, number][] = [
+    [0, 0],
+    [8 * WIDE, 8 * WIDE],
+  ];
+  const expected = full.route(pts, { profile: "car" });
+  assert.ok(expected);
+  const tiled = await TiledRouter.open(bytes);
+  tiled.near = 1500;
+  tiled.longRoute = 3000;
+  const got = await tiled.route(pts, { profile: "car" });
+  assert.ok(got, "no route with the highway layer");
+  assert.ok(got.duration >= expected.duration - 1e-3, "faster than the best route is impossible");
+  assert.ok(got.duration <= expected.duration * 1.3, `${got.duration} is far slower than ${expected.duration}`);
+  assert.ok(tiled.tilesLoaded < build.detail.length, `loaded every detail tile (${tiled.tilesLoaded})`);
+});
+
+test("a route set split into parts behind a manifest routes the same as one file", async () => {
+  const town = widetown();
+  const build = buildRouteTiles(town.data(), { tileEdges: 40 });
+  const single = writeArchive(build.meta, build.detail, build.overview);
+  const { manifest, files } = splitArchive(build, "town", 1200);
+  assert.ok(files.length >= 3, `only ${files.length} parts`);
+  const served = new Map(files.map((f) => [`https://example.test/routes/${f.file}`, f.bytes]));
+  served.set("https://example.test/routes/town.route.json", new TextEncoder().encode(JSON.stringify(manifest)));
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+    const body = served.get(url);
+    if (!body) return new Response(null, { status: 404 });
+    const range = new Headers(init?.headers).get("range");
+    const m = range ? /bytes=(\d+)-(\d+)/.exec(range) : null;
+    if (!m) return new Response(body as unknown as BodyInit, { status: 200 });
+    const part = body.slice(Number(m[1]), Number(m[2]) + 1);
+    return new Response(part as unknown as BodyInit, {
+      status: 206,
+      headers: { "content-range": `bytes ${m[1]}-${m[2]}/${body.length}` },
+    });
+  }) as typeof fetch;
+  try {
+    for (const pts of trips(8)) {
+      const a = await (await TiledRouter.open(single)).route(pts, { profile: "car" });
+      const b = await (await TiledRouter.open("https://example.test/routes/town.route.json")).route(pts, {
+        profile: "car",
+      });
+      assert.equal(b?.duration, a?.duration, JSON.stringify(pts));
+    }
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

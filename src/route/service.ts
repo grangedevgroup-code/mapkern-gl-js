@@ -1,8 +1,18 @@
 import { workerFactory } from "../worker/factory.ts";
 import { WorkerPool } from "../worker/pool.ts";
 import type { RouteRequest } from "../worker/route-task.ts";
-import type { LngLatLike, Route, RouteOptions, Router } from "./router.ts";
+import type { LngLatLike, Route, RouteOptions } from "./router.ts";
 import { loadRouter } from "./router.ts";
+import { TiledRouter } from "./tiled.ts";
+
+export interface RouteEngine {
+  route(points: LngLatLike[], options: RouteOptions): Route | null | Promise<Route | null>;
+}
+
+export async function openRoutes(url: string): Promise<RouteEngine> {
+  if (/[.](route[.]json|json|mkroute)([?#]|$)/.test(url)) return TiledRouter.open(url);
+  return loadRouter(url);
+}
 
 export interface RouterServiceOptions {
   workerUrl?: string;
@@ -15,7 +25,7 @@ export interface Directions {
 export class RouterService implements Directions {
   readonly url: string;
   private pool: WorkerPool | null = null;
-  private local: Promise<Router> | null = null;
+  private local: Promise<RouteEngine> | null = null;
   private readonly workerUrl: string | undefined;
 
   constructor(url: string, options: RouterServiceOptions = {}) {
@@ -55,8 +65,8 @@ export class RouterService implements Directions {
     return this.pool;
   }
 
-  private inline(): Promise<Router> {
-    this.local ??= loadRouter(this.url).catch((error: unknown) => {
+  private inline(): Promise<RouteEngine> {
+    this.local ??= openRoutes(this.url).catch((error: unknown) => {
       this.local = null;
       throw error;
     });

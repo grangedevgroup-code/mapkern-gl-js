@@ -4678,7 +4678,7 @@ const specs: Spec[] = [
       await createMap(page, rasterStyle(base, "/fixture/raster"), { center: [0.005, 0.005], zoom: 15 });
       const S = TOWN_STEP;
       const summary = await page.evaluate<{ text: string; steps: string[]; line: boolean }>(`(async () => {
-        const directions = new mapkern.RouterService("${base}/fixture/town.route");
+        const directions = new mapkern.RouterService("${base}/fixture/town.mkroute");
         window.dir = new mapkern.DirectionsControl({ directions, demoSpeed: 40, units: "metric" });
         window.map.addControl(window.dir);
         window.dir.open();

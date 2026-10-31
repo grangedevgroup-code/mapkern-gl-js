@@ -30,8 +30,13 @@ if (existsSync(data)) {
   console.warn(`No map data at ${data}; the site will show an empty map`);
 }
 const indexes = existsSync(searchDir) ? readdirSync(searchDir).filter((f) => f.endsWith(".search")) : [];
+const routes = existsSync(searchDir)
+  ? readdirSync(searchDir).filter((f) => f.endsWith(".mkroute") || f.endsWith(".route.json"))
+  : [];
 mkdirSync(join(out, "data"), { recursive: true });
-for (const file of indexes) cpSync(join(searchDir, file), join(out, "data", file));
+for (const file of [...indexes, ...routes]) cpSync(join(searchDir, file), join(out, "data", file));
 if (indexes.length === 0)
   console.warn(`No search index in ${searchDir}; search on the site will say it is not available`);
+if (routes.length === 0)
+  console.warn(`No route data in ${searchDir}; directions on the site will say they are not available`);
 console.log(`Site written to ${out}`);

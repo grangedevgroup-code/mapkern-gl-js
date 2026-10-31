@@ -5,12 +5,14 @@ import { EARTH_CIRCUMFERENCE, mercatorX, mercatorY } from "../../src/geo/mercato
 import { encodeRoute } from "../../src/route/format.ts";
 import { encodeTile } from "../../tools/tiles/mvt-writer.ts";
 import { buildRouteGraph } from "../../tools/tiles/route.ts";
+import { encodeTiledRoute } from "../../tools/tiles/route-tiles.ts";
 import { BLOCK_FONT, glyphRange } from "./glyph-pbf.ts";
 import { encodePng, fixtureTile } from "./png.ts";
 
 const cache = new Map<string, Buffer>();
 const hits = new Map<string, number>();
 let townGraph: Buffer | null = null;
+let townTiles: Buffer | null = null;
 
 export const TOWN_STEP = 0.002;
 
@@ -48,6 +50,7 @@ function townRoute(): Buffer {
     relations: [],
   });
   townGraph = Buffer.from(encodeRoute(data));
+  townTiles = Buffer.from(encodeTiledRoute(data, { tileEdges: 20 }));
   return townGraph;
 }
 
@@ -150,6 +153,25 @@ export const fixtureRoute: Route = async (req, res, url) => {
     }
     res.writeHead(200, { "content-type": "application/x-protobuf", "cache-control": "no-store" });
     res.end(Buffer.from(glyphRange(stack, start, BLOCK_FONT)));
+    return true;
+  }
+  if (path === "/fixture/town.mkroute") {
+    townRoute();
+    const body = townTiles!;
+    const range = /^bytes=(\d+)-(\d+)$/.exec(String(req.headers.range ?? ""));
+    if (range) {
+      const start = Number(range[1]);
+      const end = Math.min(body.length - 1, Number(range[2]));
+      res.writeHead(206, {
+        "content-type": "application/octet-stream",
+        "content-range": `bytes ${start}-${end}/${body.length}`,
+        "cache-control": "no-store",
+      });
+      res.end(body.subarray(start, end + 1));
+    } else {
+      res.writeHead(200, { "content-type": "application/octet-stream", "cache-control": "no-store" });
+      res.end(body);
+    }
     return true;
   }
   if (path === "/fixture/town.route") {

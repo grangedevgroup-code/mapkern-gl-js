@@ -53,6 +53,8 @@ export type { LngLatLike as RouteLngLat, Route, RouteLeg, RouteOptions, RoutePro
 export { loadRouter, Router } from "./route/router.ts";
 export type { Directions, RouterServiceOptions } from "./route/service.ts";
 export { RouterService } from "./route/service.ts";
+export type { TiledRouteSource } from "./route/tiled.ts";
+export { TiledRouteFile, TiledRouter } from "./route/tiled.ts";
 export type { SearchKind } from "./search/format.ts";
 export { SearchIndexError } from "./search/format.ts";
 export type {

@@ -33,7 +33,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: gh release download demo-data --pattern seattle.pmtiles --pattern '*.search' --dir demo
+      - run: gh release download demo-data --pattern seattle.pmtiles --pattern '*.search' --pattern '*.mkroute' --dir demo
         env:
           GH_TOKEN: ${{ github.token }}
       - run: node scripts/site.ts demo/seattle.pmtiles demo

@@ -234,7 +234,8 @@ export class RouteGraph {
     let delta = this.startBearing[to]! - this.endBearing[from]!;
     delta = ((delta + 540) % 360) - 180;
     const angle = Math.abs(delta);
-    const busy = this.degree(node) >= 3;
+    const known = this.data.nodeBusy?.[node];
+    const busy = known === 0 || known === 1 ? known === 1 : this.degree(node) >= 3;
     if (profile === "bike") return angle > 45 ? 2 : 0;
     let cost = busy ? 1 : 0;
     if (angle > 25) cost += 7.5 * Math.min(1, ((angle - 25) / 65) ** 1.3) * (delta < 0 ? 1.4 : 1);

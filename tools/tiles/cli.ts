@@ -3,13 +3,13 @@ import { availableParallelism } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { gzipSync } from "node:zlib";
-import { encodeRoute } from "../../src/route/format.ts";
 import { convertMbtiles } from "./convert.ts";
 import { buildDem } from "./dem.ts";
 import { extractRegion } from "./extract.ts";
 import { buildFeatures, regionRect } from "./features.ts";
 import { Compression, PMTilesWriter, TileType } from "./pmtiles-writer.ts";
 import { buildRouteGraph } from "./route.ts";
+import { buildRouteTiles, splitArchive, writeArchive } from "./route-tiles.ts";
 import type { Entry } from "./search.ts";
 import { collectEntries, ENTRY_VERSION, loadEntries, saveEntries, writeSearchIndex } from "./search.ts";
 import { buildTiles } from "./tiler.ts";
@@ -64,7 +64,7 @@ Usage:
   mapkern-tiles --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.pmtiles>
   mapkern-tiles search --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.search>
   mapkern-tiles search --world --input <file.osm.pbf> [--input ...] --output world.search
-  mapkern-tiles route --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.route>
+  mapkern-tiles route --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.mkroute> [--split <MB>]
   mapkern-tiles dem <file.tif>... --output <file.pmtiles>
   mapkern-tiles convert <file.mbtiles> <file.pmtiles>
 
@@ -189,6 +189,7 @@ async function main(): Promise<void> {
         bbox: { type: "string" },
         output: { type: "string" },
         threads: { type: "string" },
+        split: { type: "string" },
         help: { type: "boolean", default: false },
       },
     });
@@ -209,9 +210,20 @@ async function main(): Promise<void> {
       profile: "route",
     });
     const { data } = buildRouteGraph(region, log);
-    const bytes = gzipSync(encodeRoute(data), { level: 9 });
-    writeFileSync(output, bytes);
-    log(`wrote ${output}: ${(bytes.length / 1e6).toFixed(1)} MB`);
+    const build = buildRouteTiles(data, { attribution: "© OpenStreetMap contributors", log });
+    if (values.split) {
+      const name = basename(output).replace(/[.](route[.]json|json|mkroute)$/, "");
+      const { manifest, files } = splitArchive(build, name, Number(values.split) * 1e6);
+      for (const f of files) writeFileSync(join(dirname(output), f.file), f.bytes);
+      const manifestPath = join(dirname(output), `${name}.route.json`);
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+      const total = files.reduce((a, f) => a + f.bytes.length, 0);
+      log(`wrote ${manifestPath} and ${files.length} parts: ${(total / 1e6).toFixed(1)} MB`);
+    } else {
+      const bytes = writeArchive(build.meta, build.detail, build.overview);
+      writeFileSync(output, bytes);
+      log(`wrote ${output}: ${(bytes.length / 1e6).toFixed(1)} MB`);
+    }
     log(`done in ${((performance.now() - started) / 1000).toFixed(1)} s`);
     return;
   }

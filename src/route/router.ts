@@ -92,6 +92,8 @@ export class Router {
   private readonly touched: Int32Array;
   private touchedCount = 0;
   lastSettled = 0;
+  frontier: Uint8Array | null = null;
+  readonly reached = new Set<number>();
 
   constructor(graph: RouteGraph) {
     this.graph = graph;
@@ -104,6 +106,7 @@ export class Router {
   route(points: readonly LngLatLike[], options: RouteOptions = {}): Route | null {
     const profile = options.profile ?? "car";
     if (points.length < 2) throw new Error("A route needs at least two points");
+    this.reached.clear();
     const snaps: Snap[] = [];
     for (const p of points) {
       const [lng, lat] = Array.isArray(p) ? p : [p.lng, p.lat];
@@ -225,6 +228,10 @@ export class Router {
       const base = dist[d]!;
       settled++;
       const node = g.head(d);
+      if (this.frontier?.[node]) {
+        this.reached.add(node);
+        continue;
+      }
       const end = g.outStart[node + 1]!;
       for (let i = g.outStart[node]!; i < end; i++) {
         const next = g.outList[i]!;

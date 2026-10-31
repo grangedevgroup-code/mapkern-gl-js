@@ -101,12 +101,20 @@ Where a file cuts through a country's border, the pieces are joined up so places
 `mapkern-tiles route` turns the same OpenStreetMap file into a road graph for [directions](api.md#directions):
 
 ```sh
-npx mapkern-tiles route --input north-america-latest.osm.pbf --bbox=-123.4,46.8,-121.7,48.1 --output puget.route
+npx mapkern-tiles route --input north-america-latest.osm.pbf --bbox=-123.4,46.8,-121.7,48.1 --output puget.mkroute
 ```
 
 It keeps every road, path and trail someone can drive, cycle or walk on, with which way traffic may go for each, speed limits, roundabouts, tolls, names and route numbers. Turn restrictions that turn at a junction ("no left turn", "only straight on") are kept for each kind of traffic they apply to; the rare ones that run through a whole stretch of road are left out, and the builder says how many.
 
-The box above, from Olympia to Everett, holds 1.6 million road pieces and comes out at 45 MB, most of it the shape of each road. Serve it with gzip left as it is; Mapkern unpacks it in the browser.
+The roads are cut into tiles, small in cities and larger in the country, and a second, coarser set of tiles holds just the motorways and main roads. Mapkern reads a route's tiles straight out of the file with range requests, as it does for PMTiles, so nobody downloads the whole thing: a walk across town reads a few hundred kilobytes, and a drive across the region about 3 MB, because only the ends of a long drive need every side street and the middle uses the main road tiles. The box above, from Olympia to Everett, holds 1.6 million road pieces and comes out at 18 MB. Road shapes are kept to within a meter, which is well inside what a phone's GPS can tell apart.
+
+For a large area, `--split 90` writes the tiles as several files of at most 90 MB each, every one covering its own patch of the map, plus a small `.route.json` that lists them. Pass the `.route.json` to Mapkern and it opens only the files a route passes through. That keeps each file under the limits of static hosts such as GitHub Pages, and a patch can be handed out on its own for offline use.
+
+```sh
+npx mapkern-tiles route --input north-america-latest.osm.pbf --bbox=-125,24,-66,50 --output usa.mkroute --split 90
+```
+
+Serve the files as they are, from a server that answers range requests. They are compressed already.
 
 ## Credit
 

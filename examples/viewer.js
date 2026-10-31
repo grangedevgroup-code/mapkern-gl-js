@@ -35,7 +35,7 @@ export const SEARCH = ["world", "seattle", "olympia"].map(
   (name) => new URL(`../data/${name}.search`, import.meta.url).href,
 );
 
-export const ROUTES = new URL("../data/puget.route", import.meta.url).href;
+export const ROUTES = new URL("../data/puget.mkroute", import.meta.url).href;
 
 export function lazyGeocoder(sources) {
   const list = Array.isArray(sources) ? sources : [sources];

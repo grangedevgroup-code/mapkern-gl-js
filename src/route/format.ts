@@ -75,9 +75,10 @@ export interface RouteData {
   resTo: Uint32Array;
   resKind: Uint8Array;
   resModes: Uint8Array;
+  nodeBusy?: Uint8Array;
 }
 
-type Section = Exclude<keyof RouteData, "meta">;
+type Section = Exclude<keyof RouteData, "meta" | "nodeBusy">;
 
 const SECTIONS: readonly [Section, "i32" | "u32" | "f32" | "u8" | "u16", (m: RouteMeta) => number][] = [
   ["nodeLon", "i32", (m) => m.nodes],

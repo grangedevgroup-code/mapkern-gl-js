@@ -427,17 +427,17 @@ It sits in the bottom-right corner unless you say otherwise; added last, it land
 Mapkern plans routes for driving, cycling and walking from a road graph you build yourself from OpenStreetMap data (see [Tiles](tiles.md#road-graph)). Like search, there is no routing server: the graph is a file you serve, and routes are worked out in the browser, offline if need be.
 
 ```js
-const directions = new mapkern.RouterService("puget.route");
+const directions = new mapkern.RouterService("puget.mkroute");
 const route = await directions.route([[-122.2348, 47.3809], [-122.3422, 47.6097]], { profile: "car" });
 console.log(route.duration / 60, "minutes", route.distance / 1000, "km");
 for (const step of route.legs[0].steps) console.log(step.instruction);
 ```
 
-`RouterService` loads the graph in a Web Worker the first time it is asked for a route, so neither the download nor the search holds up the map. `preload()` starts that early. Points can be `[lng, lat]` pairs or `{ lng, lat }` objects, more than two make a route with stops, and each point snaps to the nearest road the chosen profile may use, within 2 km unless you pass `snapRadius`. The profiles are `car`, `bike` and `foot`. Cars keep to oneway streets and turn restrictions, avoid roads closed to them, slow down on service roads and private access, and pay a little time for each turn, more for a left turn across traffic. Bikes and people on foot use paths, trails and footways as well.
+`RouterService` works in a Web Worker, so neither the downloads nor the search hold up the map. It reads only the tiles of the road graph a route needs, and keeps them for the next route. It takes a single `.mkroute` file or the `.route.json` list of a graph split into parts. `preload()` opens the file early. Points can be `[lng, lat]` pairs or `{ lng, lat }` objects, more than two make a route with stops, and each point snaps to the nearest road the chosen profile may use, within 2 km unless you pass `snapRadius`. The profiles are `car`, `bike` and `foot`. Cars keep to oneway streets and turn restrictions, avoid roads closed to them, slow down on service roads and private access, and pay a little time for each turn, more for a left turn across traffic. Bikes and people on foot use paths, trails and footways as well.
 
 The answer is `null` when no route exists. Otherwise it has the `distance` in meters, the `duration` in seconds, the whole line as `geometry`, the snapped `waypoints`, and one leg per pair of points. Each leg lists its steps, and each step has an English `instruction` ("Keep left to stay on I-5", "At the roundabout, take the second exit onto Main Street"), its `distance`, `duration`, road `name` and `ref`, the `geometry` it covers, and a `maneuver` with a `type` such as `turn`, `fork`, `off ramp`, `merge`, `roundabout` or `arrive`, a `modifier` such as `slight left`, the `location`, and for roundabouts the `exit` number. The names follow the OSRM and Mapbox Directions responses, so code written for those reads these steps with few changes.
 
-If you have the graph's bytes in a worker or in Node, `new mapkern.Router(graph)` does the same work without a worker; `loadRouter(url)` fetches and opens a graph that way.
+Without a worker, `await mapkern.TiledRouter.open(source)` does the same work on the thread you call it from. The source can be a URL, a `File` the person picks, or the bytes.
 
 `DirectionsControl` adds a directions button. It opens a panel with Drive, Cycle and Walk, a From and a To box that suggest places from your geocoder (and your location, for the start), and a swap button. You can also tap the map to set whichever box is active. Once both ends are set it draws the route, fits the map to it beside the panel, and shows the time, distance, the main road it takes and every step; picking a step flies to it.
 

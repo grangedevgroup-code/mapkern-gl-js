@@ -1,14 +1,22 @@
 export const TILED_MAGIC = 0x54524b4d;
 export const TILED_VERSION = 2;
-export const TILE_ZOOM = 11;
+export const MIN_ZOOM = 8;
+export const MAX_ZOOM = 14;
+export const TILE_EDGES = 6000;
+export const OVERVIEW_MIN_ZOOM = 5;
+export const OVERVIEW_MAX_ZOOM = 10;
+export const OVERVIEW_EDGES = 20000;
+export const OVERVIEW_CLASSES = 8;
 export const COORD = 1e6;
 
 export interface TiledMeta {
-  zoom: number;
+  minZoom: number;
+  maxZoom: number;
   bbox: [number, number, number, number];
   tiles: number;
   nodes: number;
   edges: number;
+  overview?: { minZoom: number; maxZoom: number; tiles: number };
   attribution?: string;
   created?: string;
 }
@@ -20,6 +28,7 @@ export interface TileEdge {
   fromLocal: number;
   toTile: number;
   toLocal: number;
+  busy?: number;
   farLon: number;
   farLat: number;
   cls: number;
@@ -32,6 +41,7 @@ export interface TileEdge {
 }
 
 export interface TileRestriction {
+  viaTile: number;
   via: number;
   from: number;
   to: number;
@@ -121,22 +131,30 @@ export class Reader {
   }
 }
 
-export function tileOf(lon: number, lat: number, zoom: number): number {
-  const n = 2 ** zoom;
+const Z = 2 ** 28;
+
+export function tileKey(z: number, x: number, y: number): number {
+  return z * Z + y * 2 ** z + x;
+}
+
+export function keyZXY(key: number): [number, number, number] {
+  const z = Math.floor(key / Z);
+  const rest = key - z * Z;
+  const n = 2 ** z;
+  return [z, rest % n, Math.floor(rest / n)];
+}
+
+export function keyAt(lon: number, lat: number, z: number): number {
+  const n = 2 ** z;
   const x = Math.min(n - 1, Math.max(0, Math.floor(((lon + 180) / 360) * n)));
   const s = Math.sin((Math.max(-85.0511, Math.min(85.0511, lat)) * Math.PI) / 180);
   const y = Math.min(n - 1, Math.max(0, Math.floor((0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n)));
-  return y * n + x;
+  return tileKey(z, x, y);
 }
 
-export function tileXY(id: number, zoom: number): [number, number] {
-  const n = 2 ** zoom;
-  return [id % n, Math.floor(id / n)];
-}
-
-export function tileBounds(id: number, zoom: number): [number, number, number, number] {
-  const n = 2 ** zoom;
-  const [x, y] = tileXY(id, zoom);
+export function keyBounds(key: number): [number, number, number, number] {
+  const [z, x, y] = keyZXY(key);
+  const n = 2 ** z;
   const lon = (v: number) => (v / n) * 360 - 180;
   const lat = (v: number) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * v) / n))) * 180) / Math.PI;
   return [lon(x), lat(y + 1), lon(x + 1), lat(y)];
@@ -145,6 +163,7 @@ export function tileBounds(id: number, zoom: number): [number, number, number, n
 const COLUMNS = [
   "nodes",
   "counts",
+  "neighbors",
   "ends",
   "owners",
   "far",
@@ -171,7 +190,7 @@ export function newColumns(): Record<Column, Writer> {
   return Object.fromEntries(COLUMNS.map((c) => [c, new Writer()])) as Record<Column, Writer>;
 }
 
-export function decodeTile(id: number, zoom: number, bytes: Uint8Array): TileData {
+export function decodeTile(id: number, bytes: Uint8Array): TileData {
   const head = new Reader(bytes);
   const lengths = COLUMNS.map(() => head.uint());
   const col: Partial<Record<Column, Reader>> = {};
@@ -185,15 +204,20 @@ export function decodeTile(id: number, zoom: number, bytes: Uint8Array): TileDat
   const text = new TextDecoder();
   const stringCount = c.strings.uint();
   for (let i = 0; i < stringCount; i++) strings.push(text.decode(c.strings.slice(c.strings.uint())));
-  const [tx, ty] = tileXY(id, zoom);
-  const n = 2 ** zoom;
+  const neighbors = [id];
+  const neighborCount = c.neighbors.uint();
+  let last = 0;
+  for (let i = 0; i < neighborCount; i++) {
+    last += c.neighbors.uint();
+    neighbors.push(last);
+  }
   const nodeCount = c.counts.uint();
   const owned = c.counts.uint();
   const foreign = c.counts.uint();
   const restrictionCount = c.counts.uint();
   const lon = new Float64Array(nodeCount);
   const lat = new Float64Array(nodeCount);
-  const [w, s] = tileBounds(id, zoom);
+  const [w, s] = keyBounds(id);
   let x = Math.round(w * COORD);
   let y = Math.round(s * COORD);
   for (let i = 0; i < nodeCount; i++) {
@@ -203,10 +227,8 @@ export function decodeTile(id: number, zoom: number, bytes: Uint8Array): TileDat
     lat[i] = y / COORD;
   }
   const ref = (r: Reader): [number, number] => {
-    const dx = r.int();
-    const dy = r.int();
-    const local = r.uint();
-    return [(ty + dy) * n + (tx + dx), local];
+    const tile = neighbors[r.uint()]!;
+    return [tile, r.uint()];
   };
   const edges: TileEdge[] = [];
   let ownedSeen = 0;
@@ -274,6 +296,7 @@ export function decodeTile(id: number, zoom: number, bytes: Uint8Array): TileDat
   const restrictions: TileRestriction[] = [];
   for (let i = 0; i < restrictionCount; i++) {
     restrictions.push({
+      viaTile: id,
       via: c.restrictions.uint(),
       from: c.restrictions.uint(),
       to: c.restrictions.uint(),
@@ -282,4 +305,157 @@ export function decodeTile(id: number, zoom: number, bytes: Uint8Array): TileDat
     });
   }
   return { id, lon, lat, edges, restrictions };
+}
+
+function columnsOf(bytes: Uint8Array): Record<Column, Reader> {
+  const head = new Reader(bytes);
+  const lengths = COLUMNS.map(() => head.uint());
+  const col: Partial<Record<Column, Reader>> = {};
+  let at = head.pos;
+  COLUMNS.forEach((name, i) => {
+    col[name] = new Reader(bytes, at, at + lengths[i]!);
+    at += lengths[i]!;
+  });
+  return col as Record<Column, Reader>;
+}
+
+export function decodeOverviewTile(id: number, bytes: Uint8Array): TileData {
+  const c = columnsOf(bytes);
+  const strings: string[] = [""];
+  const text = new TextDecoder();
+  const stringCount = c.strings.uint();
+  for (let i = 0; i < stringCount; i++) strings.push(text.decode(c.strings.slice(c.strings.uint())));
+  const table: number[] = [];
+  const tableCount = c.neighbors.uint();
+  let last = 0;
+  for (let i = 0; i < tableCount; i++) {
+    last += c.neighbors.uint();
+    table.push(last);
+  }
+  const edgeCount = c.counts.uint();
+  const restrictionCount = c.counts.uint();
+  const [w, s] = keyBounds(id);
+  let ox = Math.round(w * COORD);
+  let oy = Math.round(s * COORD);
+  const edges: TileEdge[] = [];
+  for (let i = 0; i < edgeCount; i++) {
+    const fromTile = table[c.ends.uint()]!;
+    const fromLocal = c.ends.uint();
+    const toTile = table[c.ends.uint()]!;
+    const toLocal = c.ends.uint();
+    const busy = c.ends.uint();
+    const ownerIndex = c.owners.uint();
+    ox += c.far.int();
+    oy += c.far.int();
+    const pts = c.shapes.uint();
+    const lon = new Float64Array(pts + 2);
+    const lat = new Float64Array(pts + 2);
+    let sx = ox;
+    let sy = oy;
+    lon[0] = sx / COORD;
+    lat[0] = sy / COORD;
+    for (let k = 1; k <= pts; k++) {
+      sx += c.shapes.int();
+      sy += c.shapes.int();
+      lon[k] = sx / COORD;
+      lat[k] = sy / COORD;
+    }
+    sx += c.far.int();
+    sy += c.far.int();
+    lon[pts + 1] = sx / COORD;
+    lat[pts + 1] = sy / COORD;
+    edges.push({
+      owner: fromTile,
+      ownerIndex,
+      busy,
+      fromTile,
+      fromLocal,
+      toTile,
+      toLocal,
+      farLon: Number.NaN,
+      farLat: Number.NaN,
+      cls: c.classes.byte(),
+      flags: c.flags.uint(),
+      speed: c.speeds.byte(),
+      name: strings[c.names.uint()] ?? "",
+      ref: strings[c.refs.uint()] ?? "",
+      lon,
+      lat,
+    });
+  }
+  const restrictions: TileRestriction[] = [];
+  for (let i = 0; i < restrictionCount; i++) {
+    restrictions.push({
+      viaTile: table[c.restrictions.uint()]!,
+      via: c.restrictions.uint(),
+      from: c.restrictions.uint(),
+      to: c.restrictions.uint(),
+      kind: c.restrictions.byte(),
+      modes: c.restrictions.byte(),
+    });
+  }
+  return { id, lon: new Float64Array(0), lat: new Float64Array(0), edges, restrictions };
+}
+
+const Q_ZOOM = 16;
+
+export function quadStart(key: number): number {
+  const [z, x, y] = keyZXY(key);
+  let q = 0;
+  for (let i = z - 1; i >= 0; i--) {
+    const bx = Math.floor(x / 2 ** i) % 2;
+    const by = Math.floor(y / 2 ** i) % 2;
+    q = q * 4 + by * 2 + bx;
+  }
+  return q * 4 ** (Q_ZOOM - z);
+}
+
+export function keyFromQuad(start: number, z: number): number {
+  let q = Math.floor(start / 4 ** (Q_ZOOM - z));
+  let x = 0;
+  let y = 0;
+  for (let i = 0; i < z; i++) {
+    const d = q % 4;
+    x += (d % 2) * 2 ** i;
+    y += Math.floor(d / 2) * 2 ** i;
+    q = Math.floor(q / 4);
+  }
+  return tileKey(z, x, y);
+}
+
+export interface DirectoryEntry {
+  key: number;
+  offset: number;
+  length: number;
+}
+
+export function encodeDirectory(entries: { key: number; length: number }[]): Uint8Array {
+  const sorted = entries.slice().sort((a, b) => quadStart(a.key) - quadStart(b.key));
+  const w = new Writer();
+  w.uint(sorted.length);
+  let last = 0;
+  for (const e of sorted) {
+    const q = quadStart(e.key);
+    w.uint(q - last);
+    last = q;
+    w.uint(keyZXY(e.key)[0]);
+    w.uint(e.length);
+  }
+  return w.done();
+}
+
+export function decodeDirectory(bytes: Uint8Array, base: number): DirectoryEntry[] {
+  const r = new Reader(bytes);
+  const count = r.uint();
+  const out: DirectoryEntry[] = [];
+  let q = 0;
+  let offset = base;
+  for (let i = 0; i < count; i++) {
+    q += r.uint();
+    const z = r.uint();
+    const length = r.uint();
+    out.push({ key: keyFromQuad(q, z), offset, length });
+    offset += length;
+  }
+  return out;
 }
