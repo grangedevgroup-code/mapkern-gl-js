@@ -181,8 +181,65 @@ export function buildSteps(
     instruction: "",
   };
   steps.push(arrive);
-  for (const s of steps) s.instruction = instructionFor(s);
-  return steps;
+  const tidy = collapse(steps, profile);
+  for (let i = 0; i < tidy.length; i++) tidy[i]!.instruction = instructionFor(tidy[i]!, tidy[i - 1]);
+  return tidy;
+}
+
+const MIN_STEP: Record<RouteProfile, number> = { car: 12, bike: 15, foot: 25 };
+
+function sameRoad(a: RouteStep, b: RouteStep): boolean {
+  return (a.name !== "" || a.ref !== "") && a.name === b.name && a.ref === b.ref;
+}
+
+function merge(into: RouteStep, from: RouteStep): void {
+  into.distance += from.distance;
+  into.duration += from.duration;
+  for (const c of from.geometry) {
+    const last = into.geometry[into.geometry.length - 1];
+    if (!last || last[0] !== c[0] || last[1] !== c[1]) into.geometry.push(c);
+  }
+}
+
+function collapse(steps: RouteStep[], profile: RouteProfile): RouteStep[] {
+  const out: RouteStep[] = [];
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i]!;
+    const prev = out[out.length - 1];
+    const next = steps[i + 1];
+    const type = step.maneuver.type;
+    if (prev && next && type === "off ramp" && next.maneuver.type === "merge" && sameRoad(prev, next)) {
+      const keep: RouteStep = { ...step, name: next.name, ref: next.ref };
+      keep.maneuver = { ...step.maneuver, type: "fork", modifier: forkSide(step.maneuver.modifier) };
+      merge(keep, next);
+      out.push(keep);
+      i++;
+      continue;
+    }
+    const minor = type === "new name" || type === "turn" || type === "continue" || type === "fork";
+    if (prev && next && minor && step.distance < MIN_STEP[profile] && next.maneuver.type !== "arrive") {
+      merge(prev, step);
+      continue;
+    }
+    if (prev && type === "new name" && sameRoad(prev, step)) {
+      merge(prev, step);
+      continue;
+    }
+    out.push(step);
+  }
+  return out;
+}
+
+function forkSide(modifier: ManeuverModifier | undefined): ManeuverModifier {
+  return modifier?.includes("left") ? "slight left" : "slight right";
+}
+
+export function formatRef(ref: string): string {
+  return ref
+    .split(";")
+    .map((r) => r.trim().replace(/^([A-Z]{1,4}) (\d+[A-Z]?)$/, "$1-$2"))
+    .filter(Boolean)
+    .join(" / ");
 }
 
 function open(graph: RouteGraph, piece: PathPiece, profile: RouteProfile, maneuver: RouteManeuver): RouteStep {
@@ -250,11 +307,9 @@ function classify(
   if (isLink(fromCls) && isHighway(toCls)) return { type: "merge", modifier };
   if (others.length === 0) return sameRoad ? null : { type: "new name", modifier };
   const close = others.filter((d) => Math.abs(turnDelta(graph.endBearing[from]!, graph.startBearing[d]!)) < 45);
-  if (Math.abs(delta) < 45 && close.length > 0 && close.length + 1 === others.length + 1 && others.length === 1) {
-    if (!sameRoad || Math.abs(delta) > 10) {
-      const alt = turnDelta(graph.endBearing[from]!, graph.startBearing[close[0]!]!);
-      return { type: "fork", modifier: delta < alt ? "slight left" : "slight right" };
-    }
+  if (Math.abs(delta) < 45 && others.length === 1 && close.length === 1 && (!sameRoad || Math.abs(delta) > 10)) {
+    const alt = turnDelta(graph.endBearing[from]!, graph.startBearing[close[0]!]!);
+    return { type: "fork", modifier: delta < alt ? "slight left" : "slight right" };
   }
   if (Math.abs(delta) >= 35) return { type: "turn", modifier };
   if (!sameRoad) return { type: "new name", modifier };
