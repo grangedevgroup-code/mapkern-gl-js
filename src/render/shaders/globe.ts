@@ -23,6 +23,33 @@ vec3 surfacePoint(vec2 rel, float meters, float pole) {
 }
 `;
 
+export const poleShader = {
+  name: "pole",
+  vertex: `
+uniform float u_target;
+void main() {
+  gl_Position = vec4(u_target, 0.0, 0.0, 1.0);
+  gl_PointSize = 1.0;
+}
+`,
+  fragment: `
+uniform sampler2D u_drape;
+uniform vec4 u_drape_rect;
+uniform float u_row;
+uniform float u_lod;
+uniform float u_weight;
+out vec4 fragColor;
+void main() {
+  vec4 sum = vec4(0.0);
+  for (int i = 0; i < 8; i++) {
+    vec2 uv = u_drape_rect.xy + vec2((float(i) + 0.5) / 8.0, u_row) * u_drape_rect.zw;
+    sum += textureLod(u_drape, vec2(uv.x, 1.0 - uv.y), u_lod);
+  }
+  fragColor = sum * (u_weight / 8.0);
+}
+`,
+};
+
 export const atmosphereShader = {
   name: "atmosphere",
   vertex: `
@@ -50,10 +77,12 @@ void main() {
   float b = dot(oc, dir);
   float closest = sqrt(max(dot(oc, oc) - b * b, 0.0));
   float above = max(closest - u_radius, 0.0) / u_radius;
-  float glow = b < 0.0 ? exp(-above * 9.0) : 0.0;
+  float thin = mix(16.0, 7.0, u_daylight);
+  float glow = b < 0.0 ? exp(-above * thin) : 0.0;
   float up = clamp(dir.z * 0.5 + 0.5, 0.0, 1.0);
   vec4 space = mix(u_space, u_sky, u_daylight * smoothstep(0.35, 0.75, up));
-  fragColor = mix(space, u_glow, clamp(glow, 0.0, 1.0));
+  vec4 rim = mix(vec4(0.45, 0.68, 1.0, 1.0), u_glow, u_daylight);
+  fragColor = mix(space, rim, clamp(glow, 0.0, 1.0) * mix(0.85, 1.0, u_daylight));
 }
 `,
 };
