@@ -1211,6 +1211,27 @@ export class Transform {
 }
 
 const scratchMatrix: Mat4 = mat4.create();
+const scratchUnit = [0, 0, 0];
+const scratchLocal = [0, 0, 0];
+const scratchScreen = [0, 0];
+
+function frustumPlanes(m: Mat4): number[][] {
+  const planes: number[][] = [];
+  for (const [row, sign] of [
+    [0, 1],
+    [0, -1],
+    [1, 1],
+    [1, -1],
+  ] as const) {
+    const a = m[3]! + sign * m[row]!;
+    const b = m[7]! + sign * m[row + 4]!;
+    const c = m[11]! + sign * m[row + 8]!;
+    const d = m[15]! + sign * m[row + 12]!;
+    const length = Math.hypot(a, b, c) || 1;
+    planes.push([a / length, b / length, c / length, d / length]);
+  }
+  return planes;
+}
 
 export function convexHull(points: [number, number][]): [number, number][] {
   const pts = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
