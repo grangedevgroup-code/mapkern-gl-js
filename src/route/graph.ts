@@ -342,7 +342,27 @@ export class RouteGraph {
   private index() {
     if (this.grid) return this.grid;
     const d = this.data;
-    const [w, s, east, n] = d.meta.bbox;
+    let w = Infinity;
+    let s = Infinity;
+    let east = -Infinity;
+    let n = -Infinity;
+    for (let i = 0; i < this.nodes; i++) {
+      const x = d.nodeLon[i]! * 1e-7;
+      const y = d.nodeLat[i]! * 1e-7;
+      if (x < w) w = x;
+      if (x > east) east = x;
+      if (y < s) s = y;
+      if (y > n) n = y;
+    }
+    for (let i = 0; i < d.shapeLon.length; i++) {
+      const x = d.shapeLon[i]! * 1e-7;
+      const y = d.shapeLat[i]! * 1e-7;
+      if (x < w) w = x;
+      if (x > east) east = x;
+      if (y < s) s = y;
+      if (y > n) n = y;
+    }
+    if (!(w <= east)) [w, s, east, n] = d.meta.bbox;
     const minX = w - CELL;
     const minY = s - CELL;
     const cols = Math.max(1, Math.ceil((east - minX) / CELL) + 2);
