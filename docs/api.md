@@ -36,6 +36,7 @@ const map = new mapkern.Map({
 | `bearingSnap` | 7 | After a rotation that ends this many degrees or less from north, the map turns back to north |
 | `clickTolerance` | 4 | How far in pixels the pointer may move between press and release and still count as a click |
 | `renderWorldCopies` | `true` | Repeat the world sideways when zoomed far out |
+| `projection` | `"mercator"` | `"globe"` draws the world as a globe when zoomed out. See [Globe](#globe) |
 | `pixelRatio` | the screen's, up to `maxPixelRatio` | A lower value saves battery |
 | `maxPixelRatio` | 2 | |
 | `antialias` | `false` | Smoother edges at the cost of memory |
@@ -78,7 +79,7 @@ map.easeTo({ center: [-122.33, 47.6], padding: { left: 0 }, duration: 600 });
 
 The center of the map then sits in the middle of what's left, so `getCenter()`, `easeTo` and `fitBounds` all work around the panel. `jumpTo`, `easeTo` and `flyTo` take `padding` and animate it along with everything else, and `getPadding()` reads it back.
 
-The map always fills its container. You can't pan past the poles, and zooming out stops once the world reaches from the top of the map to the bottom, so there's never empty space above or below it. Sideways the world repeats, or with `renderWorldCopies: false` you stop at its edges instead. On a tall, narrow map this stop can sit above `minZoom`, and `map.transform.lowestZoom` tells you where it is right now.
+On a flat map the map always fills its container. You can't pan past the poles, and zooming out stops once the world reaches from the top of the map to the bottom, so there's never empty space above or below it. Sideways the world repeats, or with `renderWorldCopies: false` you stop at its edges instead. On a tall, narrow map this stop can sit above `minZoom`, and `map.transform.lowestZoom` tells you where it is right now.
 
 `setMaxBounds([[west, south], [east, north]])` keeps the whole view inside an area: you can't pan out of it, and zooming out stops once the area fills the screen. `setMaxBounds(null)` lifts the limit and `getMaxBounds()` reads it.
 
@@ -269,6 +270,22 @@ map.setTerrain(null);
 
 `setTerrain` turns 3D terrain on with an elevation source from the style, or off again with `null`. `getTerrain()` returns the current setting. `relief`, from 0 to 1, shades the slopes from the top left of the screen, so the shape of the land shows even when you look straight down; 0, the default, leaves the colors as they are. The camera always stays above the ground: zooming in close to a slope stops just above it instead of going through. While terrain is on, `project`, `unproject`, pointer events and `queryRenderedFeatures` all work on the raised ground, so `event.lngLat` is the spot on the hillside under the pointer. [The style guide](style.md#terrain) explains what changes on screen.
 
+## Globe
+
+```js
+const map = new mapkern.Map({ container: "map", style, projection: "globe" });
+map.setProjection("mercator");
+map.on("projection", ({ projection }) => console.log(projection));
+```
+
+With `projection: "globe"` the world is drawn as a ball in space when you zoom out, with a thin atmosphere around it and the poles filled in. Every layer goes on the globe: imagery, vector maps, hillshade, labels, markers, 3D buildings, terrain and night. Between zoom 10 and 12 the globe flattens out, and from zoom 12 on it is the normal flat map, pixel for pixel, so street-level views look and perform exactly as they do without it.
+
+`setProjection("globe" | "mercator")` switches at any time and fires a `projection` event. `getProjection()` returns the setting, and `isGlobe()` tells you whether the globe is showing right now, which is false from zoom 12 on even with the globe setting.
+
+Dragging turns the globe under your finger, so the spot you grabbed stays under it. Panning toward a pole changes the zoom a little to keep the globe the same size on screen. Zooming out has no lower stop other than `minZoom`, and there's no world repeating sideways.
+
+Two things stay flat for now: custom layers get the flat map's matrix, and with terrain on, clicks below zoom 12 hit the smooth globe rather than the raised ground. Both are exact again from zoom 12.
+
 ## Sky
 
 ```js
@@ -335,6 +352,12 @@ terrain.on("viewchange", ({ view }) => console.log(view));
 ```
 
 `source` is an elevation source to add, or the id of one already in the style. `exaggeration`, `relief` (0.5 unless you say otherwise) and `pitch` (60) tune the 3D views. `setView("flat" | "terrain" | "tilted")` switches from code and `view` reads it back, also after someone tilts the map by hand. Terrain stays on when the style changes, for example from a `BasemapControl`. `setSource(source)` swaps in other elevation data, such as a file opened with `openTileFile` or `openElevationFile`, and keeps the current view.
+
+`GlobeControl` is a button that switches between the globe and the flat map. It shows in blue while the globe is on.
+
+```js
+map.addControl(new mapkern.GlobeControl());
+```
 
 `FullscreenControl` fills the screen with the map, or with the element you pass as `container`. Browsers without the Fullscreen API, such as Safari on iPhone, get the same effect by stretching the map over the page. It fires `fullscreenstart` and `fullscreenend`, and `isFullscreen()` tells you which state it's in.
 
