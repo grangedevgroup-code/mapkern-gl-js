@@ -416,6 +416,7 @@ export class MapkernMap extends Emitter<MapEvents> {
   private wakeAtTime = Number.POSITIVE_INFINITY;
   private motion: { motion: CameraMotion; start: number; flags: CameraFlags } | null = null;
   private terrain: Terrain | null = null;
+  private surface: Surface | null = null;
   private featureStates = new FeatureStates();
   private readonly layerEvents: LayerEvents<MapLayerEvent> = new LayerEvents<MapLayerEvent>({
     query: (point, layers) => this.queryLayersAt(point, layers),
@@ -2153,13 +2154,14 @@ export class MapkernMap extends Emitter<MapEvents> {
       sources,
       blankRatio: blank,
       canvas: { width: this.canvas.width, height: this.canvas.height, pixelRatio: this.pixelRatioValue },
-      terrain: this.terrain
-        ? {
-            tiles: this.terrain.slots.length,
-            textureBytes: this.painter.drapeBytes,
-            redrawn: this.painter.stats.drapes,
-          }
-        : null,
+      terrain:
+        this.terrain || this.surface
+          ? {
+              tiles: (this.terrain ?? this.surface)?.slots.length ?? 0,
+              textureBytes: this.painter.drapeBytes,
+              redrawn: this.painter.stats.drapes,
+            }
+          : null,
       contextLost: this.contextLost,
     };
   }
@@ -2643,6 +2645,7 @@ export class MapkernMap extends Emitter<MapEvents> {
         if (source.uploadPending(deadline, now)) moreUploads = true;
       }
       this.updateTerrain(style, progress);
+      this.surface = this.globeSurface();
       const predicted = this.predicted();
       for (const source of style.sources.values()) {
         if (source.setLayers) source.setLayers(style.layers.filter((l) => l.source === source.id));
@@ -2654,7 +2657,7 @@ export class MapkernMap extends Emitter<MapEvents> {
         transform: this.transform,
         view: this.transform,
         terrain: this.terrain,
-        surface: this.globeSurface(),
+        surface: this.surface,
         pixelRatio: this.pixelRatioValue,
         layers: style.layers,
         sources: style.sources,
