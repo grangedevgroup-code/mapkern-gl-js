@@ -4281,7 +4281,7 @@ const specs: Spec[] = [
     },
   },
   {
-    name: "the terrain button cycles a flat map, terrain from above and tilted terrain",
+    name: "the terrain button cycles a flat map, terrain from above, tilted terrain and the 3D globe",
     async run({ page, base, shot }) {
       await createMap(page, rasterStyle(base, "/fixture/raster"), { center: HILL, zoom: 6 });
       await page.evaluate(`(() => {
@@ -4333,8 +4333,15 @@ const specs: Spec[] = [
       await shot("tilted");
       await press();
       s0 = await state();
-      if (s0.label !== "2D" || s0.terrain !== null || s0.pitch !== 0)
-        fail(`a fourth press goes back to flat: ${JSON.stringify(s0)}`);
+      const globe = await page.evaluate<string>("window.map.getProjection()");
+      if (s0.view !== "globe" || globe !== "globe" || !s0.terrain || s0.pitch !== 0 || s0.name !== "3D globe")
+        fail(`fourth view is the 3D globe: ${JSON.stringify(s0)} ${globe}`);
+      await shot("globe");
+      await press();
+      s0 = await state();
+      const flat = await page.evaluate<string>("window.map.getProjection()");
+      if (s0.label !== "2D" || s0.terrain !== null || s0.pitch !== 0 || flat !== "mercator")
+        fail(`a fifth press goes back to the flat map: ${JSON.stringify(s0)} ${flat}`);
       await press();
       await page.call(
         `(style) => new Promise((r) => { window.map.once("styleload", () => r(0)); window.map.setStyle(style); })`,
@@ -4346,7 +4353,7 @@ const specs: Spec[] = [
         fail(`terrain should come back after the style changes: ${JSON.stringify(s0)}`);
       }
       const views = await page.evaluate<string[]>("window.views");
-      if (JSON.stringify(views) !== '["terrain","tilted","flat","terrain"]')
+      if (JSON.stringify(views) !== '["terrain","tilted","globe","flat","terrain"]')
         fail(`viewchange events: ${JSON.stringify(views)}`);
       const errors = await page.evaluate<unknown[]>("window.errors");
       if (errors.length > 0) fail(`map reported errors: ${JSON.stringify(errors)}`);
@@ -4529,11 +4536,10 @@ const specs: Spec[] = [
       })()`);
       await shot("viewer");
       if (
-        JSON.stringify(layout.order) !==
-        '["mapkern-search","mapkern-navigation","mapkern-terrain","mapkern-globe","mapkern-basemaps"]'
+        JSON.stringify(layout.order) !== '["mapkern-search","mapkern-navigation","mapkern-terrain","mapkern-basemaps"]'
       )
         fail(
-          `bottom-right should hold search, zoom and compass, 2D/3D, the globe, then the basemap button: ${JSON.stringify(layout)}`,
+          `bottom-right should hold search, zoom and compass, the 2D/3D/globe button, then the basemap button: ${JSON.stringify(layout)}`,
         );
       const stackLeft = layout.stack[0] ?? 0;
       const scaleRight = layout.scale?.[2] ?? Number.POSITIVE_INFINITY;
