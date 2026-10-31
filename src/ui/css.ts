@@ -236,6 +236,9 @@ export const CSS = `
   cursor: default;
   opacity: 0.7;
 }
+.mapkern-control .mapkern-globe-button.mapkern-active {
+  color: var(--mapkern-focus, #2f6fdb);
+}
 .mapkern-control .mapkern-terrain-button {
   font: inherit;
   font-size: 12px;
