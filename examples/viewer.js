@@ -35,6 +35,8 @@ export const SEARCH = ["world", "seattle", "olympia"].map(
   (name) => new URL(`../data/${name}.search`, import.meta.url).href,
 );
 
+export const ROUTES = new URL("../data/puget.route", import.meta.url).href;
+
 export function lazyGeocoder(sources) {
   const list = Array.isArray(sources) ? sources : [sources];
   let loading = null;
@@ -84,6 +86,7 @@ export function createViewer(options = {}) {
     basemap,
     terrain = TERRAIN,
     search = SEARCH,
+    routes = ROUTES,
     view = "globe",
     globeControl = !terrain,
     overlay,
@@ -119,10 +122,19 @@ export function createViewer(options = {}) {
   if (terrainControl) map.addControl(terrainControl, "bottom-right");
   map.addControl(new mapkern.NavigationControl(), "bottom-right");
   map.addControl(new mapkern.ScaleControl(), "bottom-right");
-  const searchControl = search
-    ? new mapkern.SearchControl({ geocoder: typeof search.search === "function" ? search : lazyGeocoder(search) })
-    : null;
+  const geocoder = search ? (typeof search.search === "function" ? search : lazyGeocoder(search)) : undefined;
+  const searchControl = geocoder ? new mapkern.SearchControl({ geocoder }) : null;
   if (searchControl) map.addControl(searchControl, "bottom-right");
+  const directions = routes
+    ? new mapkern.DirectionsControl({
+        directions: typeof routes.route === "function" ? routes : new mapkern.RouterService(routes),
+        geocoder,
+      })
+    : null;
+  if (directions) map.addControl(directions, "bottom-right");
+  searchControl?.on("result", (event) =>
+    directions?.setDestination({ center: event.result.center, label: event.result.label }),
+  );
   picker?.on("change", (event) => stored.set("basemap", event.basemap.name));
   terrainControl?.on("viewchange", (event) => stored.set("view", event.view));
   if (!terrainControl)
@@ -139,6 +151,7 @@ export function createViewer(options = {}) {
     terrain: terrainControl,
     globe,
     search: searchControl,
+    directions,
     panel: (...children) => addPanel(map, children),
   };
 }
