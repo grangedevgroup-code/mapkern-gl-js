@@ -530,6 +530,194 @@ export class Transform {
     this.peakPx = Number.isFinite(this.peakMeters)
       ? Math.max(this.groundPx, Math.min(this.peakMeters * ppm, this.cameraPos[2] - 1))
       : this.groundPx;
+    if (this.globeAmount > 0) {
+      mat4.translate(this.globeMatrix, this.pixelMatrix, this.cx * ws, this.cy * ws, 0);
+      mat4.invert(this.globeMatrixInverse, this.globeMatrix);
+    }
+  }
+
+  surfaceLocal(x: number, y: number, h: number, out: number[] | Float64Array): void {
+    this.update();
+    const ws = this.worldSize;
+    let dx = x - this.cx;
+    dx -= Math.round(dx);
+    const fx = dx * ws;
+    const fy = (y - this.cy) * ws;
+    const g = this.globeAmount;
+    if (g <= 0) {
+      out[0] = fx;
+      out[1] = fy;
+      out[2] = h;
+      return;
+    }
+    const u = scratchUnit;
+    unitFromMercator(x, y, u);
+    const m = Math.PI * (1 - 2 * y);
+    const r = this.radius + (h * Math.cosh(Math.PI * (1 - 2 * this.cy))) / Math.cosh(m);
+    const c = this.axisC;
+    const e = this.axisE;
+    const n = this.axisN;
+    const gx = r * (u[0]! * e[0]! + u[1]! * e[1]! + u[2]! * e[2]!);
+    const gy = -r * (u[0]! * n[0]! + u[1]! * n[1]! + u[2]! * n[2]!);
+    const gz = r * (u[0]! * c[0]! + u[1]! * c[1]! + u[2]! * c[2]!) - this.radius;
+    out[0] = fx + (gx - fx) * g;
+    out[1] = fy + (gy - fy) * g;
+    out[2] = h + (gz - h) * g;
+  }
+
+  globeHidden(lx: number, ly: number, lz: number): boolean {
+    const g = this.globeAmount;
+    if (g <= 0) return false;
+    const rho = this.radius / g;
+    const cam = this.globeCam;
+    const nz = lz + rho;
+    const dot = lx * (cam[0] - lx) + ly * (cam[1] - ly) + nz * (cam[2] - lz);
+    return dot < -1e-9 * rho * rho;
+  }
+
+  private projectGlobe(x: number, y: number, zPixels: number, out: Float64Array | number[]): number {
+    const l = scratchLocal;
+    this.surfaceLocal(x, y, zPixels, l);
+    const m = this.globeMatrix;
+    const lx = l[0]!;
+    const ly = l[1]!;
+    const lz = l[2]!;
+    const cx = m[0]! * lx + m[4]! * ly + m[8]! * lz + m[12]!;
+    const cy = m[1]! * lx + m[5]! * ly + m[9]! * lz + m[13]!;
+    const w = m[3]! * lx + m[7]! * ly + m[11]! * lz + m[15]!;
+    out[0] = ((cx / w + 1) / 2) * this.width;
+    out[1] = ((1 - cy / w) / 2) * this.height;
+    if (w > 0 && this.globeHidden(lx, ly, lz)) return -w;
+    return w;
+  }
+
+  groundFrame(x: number, y: number, zPixels: number, out: Float64Array): number {
+    this.update();
+    if (this.globeAmount <= 0) {
+      const u = this.unitMatrix;
+      const w = u[3]! * x + u[7]! * y + u[11]! * zPixels + u[15]!;
+      if (w <= 0) return w;
+      const xn = (u[0]! * x + u[4]! * y + u[8]! * zPixels + u[12]!) / w;
+      const yn = (u[1]! * x + u[5]! * y + u[9]! * zPixels + u[13]!) / w;
+      const hw = this.width / 2;
+      const hh = this.height / 2;
+      out[0] = (xn + 1) * hw;
+      out[1] = (1 - yn) * hh;
+      out[2] = (hw * (u[0]! - xn * u[3]!)) / w;
+      out[3] = (hw * (u[4]! - xn * u[7]!)) / w;
+      out[4] = (-hh * (u[1]! - yn * u[3]!)) / w;
+      out[5] = (-hh * (u[5]! - yn * u[7]!)) / w;
+      return w;
+    }
+    const p = scratchScreen;
+    const w = this.projectGlobe(x, y, zPixels, p);
+    if (w <= 0) return w;
+    const sx = p[0]!;
+    const sy = p[1]!;
+    const step = 0.5 / this.worldSize;
+    this.projectGlobe(x + step, y, zPixels, p);
+    const ex = p[0]!;
+    const ey = p[1]!;
+    this.projectGlobe(x - step, y, zPixels, p);
+    out[2] = (ex - p[0]!) / (2 * step);
+    out[4] = (ey - p[1]!) / (2 * step);
+    this.projectGlobe(x, y + step, zPixels, p);
+    const nx = p[0]!;
+    const ny = p[1]!;
+    this.projectGlobe(x, y - step, zPixels, p);
+    out[3] = (nx - p[0]!) / (2 * step);
+    out[5] = (ny - p[1]!) / (2 * step);
+    out[0] = sx;
+    out[1] = sy;
+    return w;
+  }
+
+  private globeRay(px: number, py: number): [number, number, number] {
+    const nx = (px / this.width) * 2 - 1;
+    const ny = 1 - (py / this.height) * 2;
+    const b = mat4.transformVec4([0, 0, 0, 0], this.globeMatrixInverse, nx, ny, 1, 1);
+    const cam = this.globeCam;
+    return [b[0] / b[3] - cam[0], b[1] / b[3] - cam[1], b[2] / b[3] - cam[2]];
+  }
+
+  private localToMercator(lx: number, ly: number, lz: number): [number, number] {
+    const c = this.axisC;
+    const e = this.axisE;
+    const n = this.axisN;
+    const up = lz + this.radius;
+    return mercatorFromUnit(
+      up * c[0]! + lx * e[0]! - ly * n[0]!,
+      up * c[1]! + lx * e[1]! - ly * n[1]!,
+      up * c[2]! + lx * e[2]! - ly * n[2]!,
+    );
+  }
+
+  private sphereHit(px: number, py: number, height: number, clamp: boolean): [number, number] | null {
+    const dir = this.globeRay(px, py);
+    const cam = this.globeCam;
+    const r = this.radius + height;
+    const ox = cam[0];
+    const oy = cam[1];
+    const oz = cam[2] + this.radius;
+    const a = dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2];
+    const b = ox * dir[0] + oy * dir[1] + oz * dir[2];
+    const c = ox * ox + oy * oy + oz * oz - r * r;
+    const disc = b * b - a * c;
+    if (disc >= 0) {
+      const t = (-b - Math.sqrt(disc)) / a;
+      if (t >= 0) {
+        const hx = ox + dir[0] * t;
+        const hy = oy + dir[1] * t;
+        const hz = oz + dir[2] * t;
+        return this.localToMercator(hx, hy, hz - this.radius);
+      }
+    }
+    if (!clamp) return null;
+    const t = Math.max(0, -b / a);
+    const qx = ox + dir[0] * t;
+    const qy = oy + dir[1] * t;
+    const qz = oz + dir[2] * t;
+    const q = Math.hypot(qx, qy, qz);
+    if (q < 1e-12) return [this.cx, this.cy];
+    return this.localToMercator((qx / q) * r, (qy / q) * r, (qz / q) * r - this.radius);
+  }
+
+  private refineGlobe(guess: [number, number], px: number, py: number, h: number): [number, number] | null {
+    let x = guess[0];
+    let y = guess[1];
+    const p = scratchScreen;
+    const step = 0.25 / this.worldSize;
+    for (let i = 0; i < 8; i++) {
+      if (this.projectGlobe(x, y, h, p) <= 0) return null;
+      const ex = p[0]! - px;
+      const ey = p[1]! - py;
+      if (Math.abs(ex) + Math.abs(ey) < 1e-6) return [x, y];
+      this.projectGlobe(x + step, y, h, p);
+      const ax = (p[0]! - px - ex) / step;
+      const ay = (p[1]! - py - ey) / step;
+      this.projectGlobe(x, y + step, h, p);
+      const bx = (p[0]! - px - ex) / step;
+      const by = (p[1]! - py - ey) / step;
+      const det = ax * by - bx * ay;
+      if (!(Math.abs(det) > 1e-30)) return null;
+      x -= (by * ex - bx * ey) / det;
+      y -= (ax * ey - ay * ex) / det;
+    }
+    if (this.projectGlobe(x, y, h, p) <= 0) return null;
+    return Math.abs(p[0]! - px) + Math.abs(p[1]! - py) < 0.01 ? [x, y] : null;
+  }
+
+  private unprojectGlobe(px: number, py: number, groundZ: number | undefined, clamp: boolean): [number, number] | null {
+    const h = groundZ ?? this.elevationPx;
+    const g = this.globeAmount;
+    if (g >= 1) return this.sphereHit(px, py, h, clamp);
+    const flat = this.flatUnproject(px, py, h);
+    const refined = flat ? this.refineGlobe(flat, px, py, h) : null;
+    if (refined) return refined;
+    const round = this.sphereHit(px, py, h, false);
+    const second = round ? this.refineGlobe(round, px, py, h) : null;
+    if (second || !clamp) return second;
+    return this.flatUnprojectClamped(px, py, h);
   }
 
   groundMatrix(refX: number, refY: number, width: number, height: number, out: Float32Array): Float32Array {
