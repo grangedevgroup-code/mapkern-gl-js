@@ -57,7 +57,7 @@ const FIELDS: Record<string, Record<string, string>> = {
   housenumber: { housenumber: "String" },
 };
 
-const HELP = `Build a vector tile archive (.pmtiles) or a search index from an OpenStreetMap
+const HELP = `Build a vector tile archive (.pmtiles), a search index or a road graph from an OpenStreetMap
 .osm.pbf file, turn elevation GeoTIFFs into elevation tiles, or convert an MBTiles file to PMTiles.
 
 Usage:
