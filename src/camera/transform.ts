@@ -902,6 +902,7 @@ export class Transform {
 
   footprint(): [number, number][] {
     this.update();
+    if (this.globeAmount > 0) return this.globeFootprint();
     const w = this.width,
       h = this.height;
     const g = this.groundPx;
