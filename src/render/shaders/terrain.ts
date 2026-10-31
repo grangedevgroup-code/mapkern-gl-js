@@ -1,4 +1,5 @@
 import { GRID } from "../../terrain/mesh.ts";
+import { globeChunk } from "./globe.ts";
 
 export const demChunk = `
 uniform highp sampler2D u_dem;
@@ -33,13 +34,24 @@ export const terrainShader = {
 uniform mat4 u_matrix;
 uniform float u_skirt;
 ${demChunk}
+#ifdef GLOBE
+uniform vec3 u_tile;
+${globeChunk}
+#endif
 layout(location = 0) in vec4 a_pos;
 out vec2 v_uv;
 void main() {
   vec2 uv = a_pos.xy / ${GRID.toFixed(1)};
-  float z = groundPixels(uv) - a_pos.z * u_skirt;
   v_uv = uv;
+#ifdef GLOBE
+  float meters = u_has_dem > 0.5 ? demElevation(u_dem_rect.xy + uv * u_dem_rect.zw) * u_exaggeration : 0.0;
+  meters -= a_pos.z * u_skirt;
+  float pole = a_pos.w > 0.5 ? (uv.y < 0.5 ? 1.0 : -1.0) : 0.0;
+  gl_Position = u_matrix * vec4(surfacePoint(u_tile.xy + uv * u_tile.z, meters, pole), 1.0);
+#else
+  float z = groundPixels(uv) - a_pos.z * u_skirt;
   gl_Position = u_matrix * vec4(uv, z, 1.0);
+#endif
 }
 `,
   fragment: `
@@ -50,12 +62,18 @@ uniform float u_sun_gain;
 uniform sampler2D u_gradient;
 uniform vec2 u_gradient_texel;
 uniform float u_gradient_scale;
+#ifdef GLOBE
+uniform vec4 u_base;
+#endif
 ${demChunk}
 in vec2 v_uv;
 out vec4 fragColor;
 void main() {
   vec2 uv = u_drape_rect.xy + v_uv * u_drape_rect.zw;
   vec4 color = texture(u_drape, vec2(uv.x, 1.0 - uv.y));
+#ifdef GLOBE
+  color += u_base * (1.0 - color.a);
+#endif
   if (u_sun_gain > 0.0 && u_has_dem > 0.5) {
     vec2 dem = u_dem_rect.xy + v_uv * u_dem_rect.zw;
     vec2 g = texture(u_gradient, dem * u_gradient_texel.x + u_gradient_texel.y).rg;
@@ -69,3 +87,5 @@ void main() {
 }
 `,
 };
+
+export const globeSurfaceShader = { ...terrainShader, defines: ["GLOBE"] };
