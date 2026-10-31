@@ -187,8 +187,36 @@ export class Transform {
     return this.nearZ;
   }
 
+  get projection(): Projection {
+    return this.mode;
+  }
+
+  get globeness(): number {
+    this.update();
+    return this.globeAmount;
+  }
+
+  get globeRadius(): number {
+    this.update();
+    return this.radius;
+  }
+
+  get globeCamera(): readonly [number, number, number] {
+    this.update();
+    return this.globeCam;
+  }
+
+  setProjection(projection: Projection): void {
+    const next: Projection = projection === "globe" ? "globe" : "mercator";
+    if (next === this.mode) return;
+    this.mode = next;
+    this.dirty = true;
+    this.constrain();
+  }
+
   clone(): Transform {
     const t = new Transform();
+    t.mode = this.mode;
     t.width = this.width;
     t.height = this.height;
     t.minZoom = this.minZoom;
