@@ -71,7 +71,18 @@ export class Transform {
   readonly pixelMatrix: Mat4 = mat4.create();
   readonly pixelMatrixInverse: Mat4 = mat4.create();
   readonly unitMatrix: Mat4 = mat4.create();
+  readonly globeMatrix: Mat4 = mat4.create();
+  readonly globeMatrixInverse: Mat4 = mat4.create();
 
+  private mode: Projection = "mercator";
+  private globeAmount = 0;
+  private radius = 1;
+  private readonly globeCam: [number, number, number] = [0, 0, 1];
+  private readonly forward: [number, number, number] = [0, 0, -1];
+  private readonly axisC: number[] = [1, 0, 0];
+  private readonly axisE: number[] = [0, 1, 0];
+  private readonly axisN: number[] = [0, 0, 1];
+  private coverCache = new Map<string, CoveringTile[]>();
   private cx = 0.5;
   private cy = 0.5;
   private z = 0;
