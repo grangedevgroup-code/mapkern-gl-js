@@ -422,6 +422,34 @@ search.on("result", ({ result }) => console.log(result.label));
 
 It sits in the bottom-right corner unless you say otherwise; added last, it lands above the zoom buttons. `geocoder` can be anything with a `search(text, options)` method that returns results, or a promise of them, so the same box works with your own server. The other options are `limit`, `kinds`, `marker: false`, `flyTo: false`, `proximity: false` to stop preferring places near the view, and `placeholder`. `open()`, `query(text)`, `select(result)` and `clear()` drive it from code, and it fires `results`, `result`, `clear` and `error`.
 
+## Directions
+
+Mapkern plans routes for driving, cycling and walking from a road graph you build yourself from OpenStreetMap data (see [Tiles](tiles.md#road-graph)). Like search, there is no routing server: the graph is a file you serve, and routes are worked out in the browser, offline if need be.
+
+```js
+const directions = new mapkern.RouterService("puget.route");
+const route = await directions.route([[-122.2348, 47.3809], [-122.3422, 47.6097]], { profile: "car" });
+console.log(route.duration / 60, "minutes", route.distance / 1000, "km");
+for (const step of route.legs[0].steps) console.log(step.instruction);
+```
+
+`RouterService` loads the graph in a Web Worker the first time it is asked for a route, so neither the download nor the search holds up the map. `preload()` starts that early. Points can be `[lng, lat]` pairs or `{ lng, lat }` objects, more than two make a route with stops, and each point snaps to the nearest road the chosen profile may use, within 2 km unless you pass `snapRadius`. The profiles are `car`, `bike` and `foot`. Cars keep to oneway streets and turn restrictions, avoid roads closed to them, slow down on service roads and private access, and pay a little time for each turn, more for a left turn across traffic. Bikes and people on foot use paths, trails and footways as well.
+
+The answer is `null` when no route exists. Otherwise it has the `distance` in meters, the `duration` in seconds, the whole line as `geometry`, the snapped `waypoints`, and one leg per pair of points. Each leg lists its steps, and each step has an English `instruction` ("Keep left to stay on I-5", "At the roundabout, take the second exit onto Main Street"), its `distance`, `duration`, road `name` and `ref`, the `geometry` it covers, and a `maneuver` with a `type` such as `turn`, `fork`, `off ramp`, `merge`, `roundabout` or `arrive`, a `modifier` such as `slight left`, the `location`, and for roundabouts the `exit` number. The names follow the OSRM and Mapbox Directions responses, so code written for those reads these steps with few changes.
+
+If you have the graph's bytes in a worker or in Node, `new mapkern.Router(graph)` does the same work without a worker; `loadRouter(url)` fetches and opens a graph that way.
+
+`DirectionsControl` adds a directions button. It opens a panel with Drive, Cycle and Walk, a From and a To box that suggest places from your geocoder (and your location, for the start), and a swap button. You can also tap the map to set whichever box is active. Once both ends are set it draws the route, fits the map to it beside the panel, and shows the time, distance, the main road it takes and every step; picking a step flies to it.
+
+```js
+const control = new mapkern.DirectionsControl({ directions, geocoder: index });
+map.addControl(control);
+control.setDestination({ center: [-122.3422, 47.6097], label: "Pike Place Market" });
+control.on("route", ({ route }) => console.log(route.duration));
+```
+
+`directions` can be anything with a `route(points, options)` method that returns a promise of a route in this shape, so the panel also works with your own server. The other options are `geocoder`, the starting `profile`, `profiles` to offer fewer modes, `fitRoute: false` and `routeColor`. `open()`, `setOrigin(place)`, `setDestination(place)`, `setProfile(profile)`, `getRoute()` and `clear()` drive it from code, and it fires `route`, `clear`, `error`, `open` and `close`.
+
 ## Markers and popups
 
 ```js
