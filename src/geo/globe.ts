@@ -63,13 +63,14 @@ export function rotateToward(
   return out;
 }
 
-export function nearestDotInBox(
+export function nearestInBox(
   lat0: number,
   lat1: number,
   lng0: number,
   lng1: number,
   latC: number,
   lngC: number,
+  out: number[],
 ): number {
   const span = lng1 - lng0;
   let d = lngC - lng0;
@@ -78,11 +79,17 @@ export function nearestDotInBox(
   const cosC = Math.cos(latC);
   if (d <= span) {
     const lat = Math.max(lat0, Math.min(lat1, latC));
+    out[0] = lat;
+    out[1] = lngC;
     return Math.cos(lat - latC);
   }
-  const toEdge = Math.min(d - span, 2 * Math.PI - d);
+  const east = d - span;
+  const west = 2 * Math.PI - d;
+  const toEdge = Math.min(east, west);
   const cosD = Math.cos(toEdge);
   const best = Math.atan2(sinC, cosC * cosD);
   const lat = Math.max(lat0, Math.min(lat1, best));
+  out[0] = lat;
+  out[1] = east <= west ? lng1 : lng0;
   return Math.cos(lat) * cosC * cosD + Math.sin(lat) * sinC;
 }
