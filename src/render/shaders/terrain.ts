@@ -44,6 +44,7 @@ out vec2 v_uv;
 uniform vec3 u_tile_world;
 out float v_pole;
 out highp vec2 v_world;
+out highp vec3 v_local;
 #endif
 void main() {
   vec2 uv = a_pos.xy / ${GRID.toFixed(1)};
@@ -54,7 +55,8 @@ void main() {
   float meters = u_has_dem > 0.5 ? demElevation(u_dem_rect.xy + uv * u_dem_rect.zw) * u_exaggeration : 0.0;
   meters -= a_pos.z * u_skirt;
   float pole = a_pos.w > 0.5 ? (uv.y < 0.5 ? 1.0 : -1.0) : 0.0;
-  gl_Position = u_matrix * vec4(surfacePoint(u_tile.xy + uv * u_tile.z, meters, pole), 1.0);
+  v_local = surfacePoint(u_tile.xy + uv * u_tile.z, meters, pole);
+  gl_Position = u_matrix * vec4(v_local, 1.0);
 #else
   float z = groundPixels(uv) - a_pos.z * u_skirt;
   gl_Position = u_matrix * vec4(uv, z, 1.0);
@@ -76,8 +78,11 @@ uniform float u_drape_size;
 uniform sampler2D u_pole;
 uniform vec4 u_night_sun;
 uniform vec4 u_night;
+uniform vec4 u_atmo;
+uniform float u_atmo_radius;
 in float v_pole;
 in highp vec2 v_world;
+in highp vec3 v_local;
 vec3 nightLight(float altitude) {
   float golden = (1.0 - smoothstep(-0.0145, 0.0873, altitude)) * smoothstep(-0.0698, -0.0145, altitude);
   float night = 1.0 - smoothstep(-u_night.a, -0.0145, altitude);
@@ -102,12 +107,20 @@ void main() {
     color = texture(u_drape, st);
   }
   color += u_base * (1.0 - color.a);
+  float daylit = 1.0;
   if (u_night_sun.w > 0.5) {
     float lat = atan(sinh(3.14159265 * (1.0 - 2.0 * clamp(v_world.y, 0.0, 1.0))));
     if (u_cap > 0.5) lat = mix(lat, v_world.y < 0.5 ? 1.5707963 : -1.5707963, v_pole);
     float lng = fract(v_world.x) * 6.28318531 - 3.14159265;
     float s = sin(lat) * u_night_sun.x + cos(lat) * u_night_sun.y * cos(lng - u_night_sun.z);
     color.rgb *= nightLight(asin(clamp(s, -1.0, 1.0)));
+    daylit = smoothstep(-0.12, 0.25, s);
+  }
+  if (u_atmo.w > 0.0) {
+    vec3 normal = normalize(v_local + vec3(0.0, 0.0, u_atmo_radius));
+    float facing = clamp(dot(normal, normalize(u_atmo.xyz - v_local)), 0.0, 1.0);
+    float haze = (pow(1.0 - facing, 2.6) * 0.8 + 0.04) * u_atmo.w;
+    color.rgb = mix(color.rgb, vec3(0.56, 0.74, 1.0) * daylit * color.a, haze);
   }
 #else
   vec4 color = texture(u_drape, st);
