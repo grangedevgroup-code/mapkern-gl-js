@@ -38,7 +38,7 @@ Markers, popups and the standard controls take MapLibre's options. Their element
 
 ## What works differently
 
-Mapkern draws Web Mercator only. `setProjection({ type: "globe" })` keeps a flat map and says so once in the console, and `GlobeControl` adds nothing.
+The globe works: `setProjection({ type: "globe" })`, a style with `projection: { type: "globe" }` and `GlobeControl` all turn it on, and so does MapLibre's `vertical-perspective` with the usual zoom expression. Mapkern always flattens the globe between zoom 10 and 12, whatever stops the expression names.
 
 Anything in a style that Mapkern can't draw is left out, and the reason is written to the console once, starting with "Mapkern left out". Mapbox-hosted data behind `mapbox://` addresses can't be read.
 
