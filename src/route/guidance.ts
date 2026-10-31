@@ -69,13 +69,17 @@ function isHighway(cls: string): boolean {
 }
 
 function roadLabel(name: string, ref: string): string {
-  if (name && ref) return `${name} (${ref})`;
-  return name || ref;
+  const r = formatRef(ref);
+  if (name && r) return `${name} (${r})`;
+  return name || r;
 }
 
-export function instructionFor(step: Pick<RouteStep, "name" | "ref" | "maneuver">): string {
+type StepText = Pick<RouteStep, "name" | "ref" | "maneuver">;
+
+export function instructionFor(step: StepText, previous?: StepText): string {
   const m = step.maneuver;
   const road = roadLabel(step.name, step.ref);
+  const stay = previous && road !== "" && road === roadLabel(previous.name, previous.ref);
   const onto = road ? ` onto ${road}` : "";
   const dir = m.modifier ?? "straight";
   switch (m.type) {
