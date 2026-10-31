@@ -474,6 +474,38 @@ export class Transform {
     const farDepth = groundAlongTopRay * Math.cos(fovRad / 2);
     this.farZ = farDepth * 1.01 + 1;
     this.nearZ = Math.max(d / 100, 0.01);
+    const bearingRad = this.bearingDeg * DEG;
+    const reach = d * Math.sin(pitch);
+    this.globeCam[0] = -Math.sin(bearingRad) * reach;
+    this.globeCam[1] = Math.cos(bearingRad) * reach;
+    this.globeCam[2] = camHeight + this.elevationPx;
+    this.forward[0] = -this.globeCam[0] / d;
+    this.forward[1] = -this.globeCam[1] / d;
+    this.forward[2] = -camHeight / d;
+    this.globeAmount = this.mode === "globe" ? globeness(this.z) : 0;
+    this.coverCache.clear();
+    if (this.globeAmount > 0) {
+      const m = Math.PI * (1 - 2 * this.cy);
+      this.radius = (ws * Math.cosh(m)) / (2 * Math.PI);
+      const sinLat = Math.tanh(m);
+      const cosLat = 1 / Math.cosh(m);
+      const lng = 2 * Math.PI * this.cx - Math.PI;
+      const sinLng = Math.sin(lng);
+      const cosLng = Math.cos(lng);
+      this.axisC[0] = cosLat * cosLng;
+      this.axisC[1] = cosLat * sinLng;
+      this.axisC[2] = sinLat;
+      this.axisE[0] = -sinLng;
+      this.axisE[1] = cosLng;
+      this.axisE[2] = 0;
+      this.axisN[0] = -sinLat * cosLng;
+      this.axisN[1] = -sinLat * sinLng;
+      this.axisN[2] = cosLat;
+      const rho = this.radius / this.globeAmount;
+      const reachToCenter = Math.hypot(this.globeCam[0], this.globeCam[1], this.globeCam[2] + rho);
+      const globeFar = reachToCenter * 1.01 + 1;
+      this.farZ = this.globeAmount >= 1 ? globeFar : Math.max(this.farZ, globeFar);
+    }
     mat4.perspective(this.projMatrix, fovRad, this.width / this.height, this.nearZ, this.farZ);
     const [principalX] = this.centerPoint;
     this.projMatrix[8] = -((principalX - this.width / 2) * 2) / this.width;
