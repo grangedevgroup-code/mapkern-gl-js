@@ -7,6 +7,7 @@ import type { Directions } from "../route/service.ts";
 import type { Geocoder, SearchResult } from "../search/index.ts";
 import type { Control, ControlPosition } from "./controls.ts";
 import { Marker } from "./marker.ts";
+import { NavigationView } from "./navigation.ts";
 
 export interface DirectionsControlOptions {
   directions: Directions;
@@ -15,6 +16,8 @@ export interface DirectionsControlOptions {
   profiles?: RouteProfile[];
   fitRoute?: boolean;
   routeColor?: string;
+  demoSpeed?: number;
+  units?: "metric" | "imperial";
 }
 
 export interface DirectionsPlace {
@@ -28,6 +31,8 @@ export interface DirectionsEvents {
   error: { type: "error"; error: unknown };
   open: { type: "open" };
   close: { type: "close" };
+  navigationstart: { type: "navigationstart"; demo: boolean };
+  navigationend: { type: "navigationend" };
 }
 
 type End = "from" | "to";
@@ -57,6 +62,8 @@ export class DirectionsControl extends Emitter<DirectionsEvents> implements Cont
   private current: Route | null = null;
   private request: AbortController | null = null;
   private lookup = 0;
+  private navigation: NavigationView | null = null;
+  private readonly units: "metric" | "imperial";
 
   constructor(options: DirectionsControlOptions) {
     super();
@@ -65,6 +72,7 @@ export class DirectionsControl extends Emitter<DirectionsEvents> implements Cont
     }
     this.options = { ...options };
     this.profile = options.profile ?? "car";
+    this.units = options.units ?? localUnits();
   }
 
   onAdd(map: MapkernMap): HTMLElement {
@@ -91,6 +99,8 @@ export class DirectionsControl extends Emitter<DirectionsEvents> implements Cont
   }
 
   onRemove(map: MapkernMap): void {
+    this.navigation?.destroy();
+    this.navigation = null;
     this.request?.abort();
     map.off("click", this.onMapClick);
     map.off("styleload", this.onStyle);
@@ -146,6 +156,52 @@ export class DirectionsControl extends Emitter<DirectionsEvents> implements Cont
 
   getRoute(): Route | null {
     return this.current;
+  }
+
+  navigate(options: { demo?: boolean } = {}): this {
+    const map = this.map;
+    const route = this.current;
+    const to = this.places.to;
+    if (!map || !route || !to || this.navigation) return this;
+    const demo = options.demo === true;
+    this.open(false);
+    this.button?.setAttribute("hidden", "");
+    this.markers.from?.remove();
+    this.navigation = new NavigationView({
+      map,
+      directions: this.options.directions,
+      profile: this.profile,
+      route,
+      destination: to.center,
+      demo: demo ? (this.options.demoSpeed ?? 4) : false,
+      units: this.units,
+      icon: (doc, step) => maneuverIcon(doc, step.maneuver),
+      onRoute: (next) => {
+        this.current = next;
+        this.drawLine(next);
+      },
+      onExit: () => this.stopNavigation(),
+    });
+    map.getContainer().classList.add("mapkern-navigating");
+    this.emit("navigationstart", { type: "navigationstart", demo });
+    return this;
+  }
+
+  stopNavigation(): this {
+    if (!this.navigation) return this;
+    this.navigation.destroy();
+    this.navigation = null;
+    this.button?.removeAttribute("hidden");
+    this.map?.getContainer().classList.remove("mapkern-navigating");
+    if (this.places.from && this.map) this.markers.from?.addTo(this.map);
+    this.open(true);
+    if (this.current) this.fit(this.current, { pitch: 0, bearing: 0 });
+    this.emit("navigationend", { type: "navigationend" });
+    return this;
+  }
+
+  isNavigating(): boolean {
+    return this.navigation !== null;
   }
 
   clear(): this {
@@ -218,7 +274,7 @@ export class DirectionsControl extends Emitter<DirectionsEvents> implements Cont
     this.emit("route", { type: "route", route, profile: this.profile });
   }
 
-  private fit(route: Route): void {
+  private fit(route: Route, camera: { pitch?: number; bearing?: number } = {}): void {
     const map = this.map;
     if (!map || route.geometry.length < 2) return;
     let w = Infinity;
@@ -247,6 +303,7 @@ export class DirectionsControl extends Emitter<DirectionsEvents> implements Cont
           left: wide && this.isOpen() && panel ? panel.offsetWidth + pad + 16 : pad,
         },
         maxZoom: 17,
+        ...camera,
       },
     );
   }
@@ -397,7 +454,7 @@ export class DirectionsControl extends Emitter<DirectionsEvents> implements Cont
     const time = doc.createElement("strong");
     time.textContent = formatDuration(route.duration);
     const dist = doc.createElement("span");
-    dist.textContent = formatDistance(route.distance);
+    dist.textContent = formatDistance(route.distance, this.units);
     this.summary.append(time, dist);
     const via = mainRoad(route);
     if (via) {
@@ -406,6 +463,20 @@ export class DirectionsControl extends Emitter<DirectionsEvents> implements Cont
       v.textContent = `via ${via}`;
       this.summary.appendChild(v);
     }
+    const actions = doc.createElement("div");
+    actions.className = "mapkern-directions-actions";
+    const start = doc.createElement("button");
+    start.type = "button";
+    start.className = "mapkern-directions-start";
+    start.textContent = map.text("startNavigation");
+    start.addEventListener("click", () => this.navigate());
+    const demo = doc.createElement("button");
+    demo.type = "button";
+    demo.className = "mapkern-directions-demo";
+    demo.textContent = map.text("demoDrive");
+    demo.addEventListener("click", () => this.navigate({ demo: true }));
+    actions.append(start, demo);
+    this.summary.appendChild(actions);
     for (const leg of route.legs) {
       for (const step of leg.steps) {
         const li = doc.createElement("li");
@@ -417,7 +488,7 @@ export class DirectionsControl extends Emitter<DirectionsEvents> implements Cont
         if (step.distance > 0) {
           const d = doc.createElement("span");
           d.className = "mapkern-directions-distance";
-          d.textContent = formatDistance(step.distance);
+          d.textContent = formatDistance(step.distance, this.units);
           li.appendChild(d);
         }
         li.tabIndex = 0;
@@ -602,7 +673,13 @@ export function formatDuration(seconds: number): string {
   return m ? `${h} h ${m} min` : `${h} h`;
 }
 
-export function formatDistance(meters: number): string {
+export function formatDistance(meters: number, units: "metric" | "imperial" = "metric"): string {
+  if (units === "imperial") {
+    const feet = meters * 3.28084;
+    if (feet < 528) return `${Math.max(10, Math.round(feet / 10) * 10)} ft`;
+    const miles = meters / 1609.344;
+    return `${miles.toFixed(miles < 9.95 ? 1 : 0)} mi`;
+  }
   if (meters < 950) return `${Math.max(10, Math.round(meters / 10) * 10)} m`;
   return `${(meters / 1000).toFixed(meters < 9500 ? 1 : 0)} km`;
 }
@@ -614,4 +691,12 @@ function mainRoad(route: Route): string {
   if (!best) return "";
   const step = best as RouteStep;
   return step.ref ? step.ref.replace(/^([A-Z]{1,4}) (\d+[A-Z]?)$/, "$1-$2") : step.name;
+}
+
+const IMPERIAL = new Set(["US", "LR", "MM"]);
+
+function localUnits(): "metric" | "imperial" {
+  const language = typeof navigator !== "undefined" ? navigator.language : "";
+  const region = language.split("-")[1]?.toUpperCase() ?? "";
+  return IMPERIAL.has(region) ? "imperial" : "metric";
 }

@@ -104,7 +104,7 @@ export class NavigationView {
     this.banner.remove();
     this.footer.remove();
     if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
-    this.o.map.easeTo({ pitch: 0, bearing: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 600 });
+    this.o.map.jumpTo({ padding: { top: 0, bottom: 0, left: 0, right: 0 } });
   }
 
   get current(): NavigationState | null {
@@ -163,13 +163,12 @@ export class NavigationView {
     };
   }
 
-  private demoSpeed(along: number): number {
+  private demoSpeed(): number {
     const nav = this.navigator;
     const state = this.state;
     const steps = nav.route.legs.flatMap((l) => l.steps);
     const step = steps[state?.step ?? 0];
     const base = step && step.duration > 0 ? step.distance / step.duration : 12;
-    void along;
     return base * (typeof this.o.demo === "number" ? this.o.demo : 1);
   }
 
@@ -177,11 +176,11 @@ export class NavigationView {
     if (this.o.demo && now >= this.demoClock) {
       const dt = Math.min(0.1, (now - (this.demoTick || now)) / 1000);
       this.demoTick = now;
-      const speed = this.demoSpeed(this.demoAlong);
+      const speed = this.demoSpeed();
       this.demoAlong = Math.min(this.navigator.totalDistance, this.demoAlong + speed * dt);
       if (now - this.lastDemoFix > 1000 || this.demoAlong >= this.navigator.totalDistance) {
         this.lastDemoFix = now;
-        this.fix(this.fixAt(this.demoAlong, speed));
+        this.fix(this.fixAt(this.demoAlong, speed / (typeof this.o.demo === "number" ? this.o.demo : 1)));
       }
       this.shown = this.demoAlong;
     } else if (this.lastFix) {
@@ -324,7 +323,7 @@ export class NavigationView {
     if (!state.arrived && then && state.distanceToManeuver < 300 && (next.distance ?? 0) < 150) {
       const t = doc.createElement("div");
       t.className = "mapkern-nav-then";
-      t.textContent = `${map.text("then")} ${then.instruction.charAt(0).toLowerCase()}${then.instruction.slice(1)}`;
+      t.textContent = `${map.text("thenNext")} ${then.instruction.charAt(0).toLowerCase()}${then.instruction.slice(1)}`;
       this.banner.appendChild(t);
     }
     const info = this.footer.querySelector(".mapkern-nav-info")!;

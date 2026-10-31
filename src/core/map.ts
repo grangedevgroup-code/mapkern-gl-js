@@ -164,7 +164,16 @@ export type UiText =
   | "onFoot"
   | "findingRoute"
   | "noRoute"
-  | "routeFailed";
+  | "routeFailed"
+  | "startNavigation"
+  | "demoDrive"
+  | "exitNavigation"
+  | "recenter"
+  | "muteVoice"
+  | "unmuteVoice"
+  | "rerouting"
+  | "thenNext"
+  | "arrived";
 
 const NEAR_SAMPLES = 8;
 const PREFETCH_MARGIN = 1.4;
@@ -210,6 +219,15 @@ const DEFAULT_TEXT: Record<UiText, string> = {
   findingRoute: "Finding a route…",
   noRoute: "No route was found between these places",
   routeFailed: "Directions are not available",
+  startNavigation: "Start",
+  demoDrive: "Demo drive",
+  exitNavigation: "End navigation",
+  recenter: "Re-center",
+  muteVoice: "Mute voice guidance",
+  unmuteVoice: "Turn on voice guidance",
+  rerouting: "Rerouting",
+  thenNext: "Then",
+  arrived: "You have arrived",
 };
 
 export interface ScreenPosition {

@@ -42,6 +42,13 @@ export { distanceMeters, lngLatToWorld, metersPerPixel, worldToLngLat } from "./
 export type { SunPosition } from "./geo/sun.ts";
 export { sunAltitude, sunAzimuth, sunPosition } from "./geo/sun.ts";
 export type { RouteManeuver, RouteStep } from "./route/guidance.ts";
+export type {
+  NavigationAnnouncement,
+  NavigationFix,
+  NavigationState,
+  NavigatorOptions,
+} from "./route/navigator.ts";
+export { Navigator } from "./route/navigator.ts";
 export type { LngLatLike as RouteLngLat, Route, RouteLeg, RouteOptions, RouteProfile } from "./route/router.ts";
 export { loadRouter, Router } from "./route/router.ts";
 export type { Directions, RouterServiceOptions } from "./route/service.ts";

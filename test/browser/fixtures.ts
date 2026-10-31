@@ -2,12 +2,54 @@ import { rmSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import type { Route } from "../../scripts/server.ts";
 import { EARTH_CIRCUMFERENCE, mercatorX, mercatorY } from "../../src/geo/mercator.ts";
+import { encodeRoute } from "../../src/route/format.ts";
 import { encodeTile } from "../../tools/tiles/mvt-writer.ts";
+import { buildRouteGraph } from "../../tools/tiles/route.ts";
 import { BLOCK_FONT, glyphRange } from "./glyph-pbf.ts";
 import { encodePng, fixtureTile } from "./png.ts";
 
 const cache = new Map<string, Buffer>();
 const hits = new Map<string, number>();
+let townGraph: Buffer | null = null;
+
+export const TOWN_STEP = 0.002;
+
+function townRoute(): Buffer {
+  if (townGraph) return townGraph;
+  const n = 6;
+  const nodes: [number, number][] = [];
+  const index = (i: number, j: number) => i * n + j;
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) nodes.push([j * TOWN_STEP, i * TOWN_STEP]);
+  const ways: number[][] = [];
+  const tags: Record<string, string>[] = [];
+  for (let i = 0; i < n; i++) {
+    ways.push(Array.from({ length: n }, (_, j) => index(i, j) + 1));
+    tags.push({ highway: "residential", name: `${i + 1}th Street` });
+    ways.push(Array.from({ length: n }, (_, j) => index(j, i) + 1));
+    tags.push({ highway: "tertiary", name: `${String.fromCharCode(65 + i)} Avenue` });
+  }
+  const offsets = [0];
+  const refs: number[] = [];
+  for (const w of ways) {
+    refs.push(...w);
+    offsets.push(refs.length);
+  }
+  const { data } = buildRouteGraph({
+    bbox: [-0.01, -0.01, 0.02, 0.02],
+    warnings: [],
+    nodeIds: Float64Array.from(nodes.map((_, i) => i + 1)),
+    nodeLon: Int32Array.from(nodes.map((p) => Math.round(p[0] * 1e7))),
+    nodeLat: Int32Array.from(nodes.map((p) => Math.round(p[1] * 1e7))),
+    points: [],
+    wayIds: Float64Array.from(ways.map((_, i) => i + 1)),
+    wayOffsets: Uint32Array.from(offsets),
+    wayRefs: Float64Array.from(refs),
+    wayTags: tags,
+    relations: [],
+  });
+  townGraph = Buffer.from(encodeRoute(data));
+  return townGraph;
+}
 
 function tile(z: number, x: number, y: number): Buffer {
   const key = `${z}/${x}/${y}`;
@@ -108,6 +150,11 @@ export const fixtureRoute: Route = async (req, res, url) => {
     }
     res.writeHead(200, { "content-type": "application/x-protobuf", "cache-control": "no-store" });
     res.end(Buffer.from(glyphRange(stack, start, BLOCK_FONT)));
+    return true;
+  }
+  if (path === "/fixture/town.route") {
+    res.writeHead(200, { "content-type": "application/octet-stream", "cache-control": "no-store" });
+    res.end(townRoute());
     return true;
   }
   const vector = /^\/fixture\/vector\/(\d+)\/(\d+)\/(\d+)\.pbf$/.exec(path);

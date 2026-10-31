@@ -8,7 +8,7 @@ import { readDted, sampleGrid } from "../../src/formats/elevation.ts";
 import { latFromMercatorY, mercatorX, mercatorY } from "../../src/geo/mercator.ts";
 import type { Page } from "./cdp.ts";
 import { Browser } from "./cdp.ts";
-import { demHeight, fixtureRoute, HILL, square, writeMbtilesFixture } from "./fixtures.ts";
+import { demHeight, fixtureRoute, HILL, square, TOWN_STEP, writeMbtilesFixture } from "./fixtures.ts";
 import { BORDER, zoomColor } from "./png.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -4670,6 +4670,60 @@ const specs: Spec[] = [
         if ((color[3] ?? 0) < 250) empty.push(`${x},${y}: ${color}`);
       }
       if (empty.length > 0) fail(`the ground near the camera was not drawn at ${empty.join("; ")}`);
+    },
+  },
+  {
+    name: "directions plan a route in a worker, list its turns and a demo drive follows it to the end",
+    async run({ page, base, shot }) {
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { center: [0.005, 0.005], zoom: 15 });
+      const S = TOWN_STEP;
+      const summary = await page.evaluate<{ text: string; steps: string[]; line: boolean }>(`(async () => {
+        const directions = new mapkern.RouterService("${base}/fixture/town.route");
+        window.dir = new mapkern.DirectionsControl({ directions, demoSpeed: 40, units: "metric" });
+        window.map.addControl(window.dir);
+        window.dir.open();
+        const routed = new Promise((r) => window.dir.once("route", r));
+        window.dir.setOrigin({ center: [0, 0], label: "Start" });
+        window.dir.setDestination({ center: [${4 * S}, ${3 * S}], label: "End" });
+        await routed;
+        await new Promise((r) => setTimeout(r, 400));
+        return {
+          text: document.querySelector(".mapkern-directions-summary").textContent,
+          steps: [...document.querySelectorAll(".mapkern-directions-steps li")].map((li) => li.textContent),
+          line: Boolean(window.map.getLayer("mapkern-route-line")),
+        };
+      })()`);
+      if (!summary.line) fail("the route line was not drawn");
+      if (!/km|m/.test(summary.text) || !summary.text.includes("Start")) fail(`summary: ${summary.text}`);
+      if (!summary.steps.some((s) => s.startsWith("Turn ")) || !summary.steps.at(-1)?.includes("arrived"))
+        fail(`steps: ${JSON.stringify(summary.steps)}`);
+      await shot("directions");
+      const drive = await page.evaluate<{
+        banners: string[];
+        arrived: boolean;
+        pitch: number;
+        idle: boolean;
+      }>(`(async () => {
+        const banners = new Set();
+        window.dir.navigate({ demo: true });
+        const start = performance.now();
+        while (performance.now() - start < 20000) {
+          await new Promise((r) => setTimeout(r, 100));
+          const text = document.querySelector(".mapkern-nav-banner")?.textContent ?? "";
+          banners.add(text.replace(/^[0-9.,]+ ?(m|km)/, ""));
+          if (document.querySelector(".mapkern-nav-info strong")?.textContent === window.map.text("arrived")) break;
+        }
+        const pitch = window.map.getPitch();
+        const arrived = document.querySelector(".mapkern-nav-info strong")?.textContent === window.map.text("arrived");
+        document.querySelector(".mapkern-nav-exit").click();
+        await new Promise((r) => setTimeout(r, 900));
+        return { banners: [...banners], arrived, pitch, idle: !window.dir.isNavigating() && window.dir.isOpen() };
+      })()`);
+      if (!drive.arrived) fail(`the demo drive never arrived: ${JSON.stringify(drive.banners)}`);
+      if (drive.pitch < 40) fail(`navigation should look ahead at a tilt, pitch was ${drive.pitch}`);
+      if (!drive.banners.some((b) => b.startsWith("Turn ")))
+        fail(`no turn was shown: ${JSON.stringify(drive.banners)}`);
+      if (!drive.idle) fail("ending navigation should bring the directions panel back");
     },
   },
   {
