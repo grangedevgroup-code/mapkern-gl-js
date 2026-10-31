@@ -4529,10 +4529,11 @@ const specs: Spec[] = [
       })()`);
       await shot("viewer");
       if (
-        JSON.stringify(layout.order) !== '["mapkern-search","mapkern-navigation","mapkern-terrain","mapkern-basemaps"]'
+        JSON.stringify(layout.order) !==
+        '["mapkern-search","mapkern-navigation","mapkern-terrain","mapkern-globe","mapkern-basemaps"]'
       )
         fail(
-          `bottom-right should hold search, zoom and compass, 2D/3D, then the basemap button: ${JSON.stringify(layout)}`,
+          `bottom-right should hold search, zoom and compass, 2D/3D, the globe, then the basemap button: ${JSON.stringify(layout)}`,
         );
       const stackLeft = layout.stack[0] ?? 0;
       const scaleRight = layout.scale?.[2] ?? Number.POSITIVE_INFINITY;
@@ -5304,6 +5305,7 @@ const specs: Spec[] = [
         empty: string;
         failed: string;
         near: number[] | null;
+        view: number[];
         stale: string[];
         clearing: {
           dismissShown: boolean;
@@ -5388,11 +5390,12 @@ const specs: Spec[] = [
         await type("broken");
         const failed = document.querySelector(".mapkern-search-results")?.textContent ?? "";
         const pending = control.query("sl");
+        const view = map.getCenter();
         await type("oly");
         slow();
         await pending;
         const stale = [...document.querySelectorAll(".mapkern-search-results [role=option] .mapkern-search-name")].map((e) => e.textContent);
-        return { opened, closed, options, context, expanded, center, zoom, input: chosen, pins, picked: first, empty, failed, near, stale, clearing };
+        return { opened, closed, options, context, expanded, center, zoom, input: chosen, pins, picked: first, empty, failed, near, view, stale, clearing };
       })()`);
       await shot("search");
       if (JSON.stringify(state.options) !== '["Olympia","Olympia Avenue"]')
@@ -5409,7 +5412,11 @@ const specs: Spec[] = [
       if (state.empty !== "Nothing found") fail(`no matches should say so: ${JSON.stringify(state)}`);
       if (state.failed !== "Search is not available")
         fail(`a failing geocoder should say so: ${JSON.stringify(state)}`);
-      if (!state.near || Math.abs(state.near[0]! + 122.3) > 1e-6)
+      if (
+        !state.near ||
+        Math.abs(state.near[0]! - state.view[0]!) > 1e-6 ||
+        Math.abs(state.near[1]! - state.view[1]!) > 1e-6
+      )
         fail(`search should prefer places near the view: ${JSON.stringify(state)}`);
       if (JSON.stringify(state.stale) !== '["Olympia","Olympia Avenue"]')
         fail(`a slow answer to an older query must not replace newer results: ${JSON.stringify(state)}`);
