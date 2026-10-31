@@ -1,6 +1,7 @@
 import { MapkernError } from "../core/errors.ts";
 import { Emitter } from "../core/events.ts";
 import type { FitBoundsOptions, MapkernMap, UiText } from "../core/map.ts";
+import type { Projection } from "../geo/globe.ts";
 import { distanceMeters, metersPerPixel } from "../geo/mercator.ts";
 import type { DemSourceSpec, StyleSpec, StyleSpecV8 } from "../style/types.ts";
 import { Marker } from "./marker.ts";
@@ -839,6 +840,57 @@ function demSource(source: string | DemSourceSpec | undefined): string | DemSour
   throw new MapkernError("invalid-option", "TerrainControl needs a dem source or the id of one");
 }
 const VIEW_TEXT: Record<TerrainView, UiText> = { flat: "flatView", terrain: "terrainView", tilted: "tiltedView" };
+
+const GLOBE_ICON = [
+  "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z",
+  "M12 3c-3.2 3-3.2 15 0 18",
+  "M12 3c3.2 3 3.2 15 0 18",
+  "M3.5 9h17",
+  "M3.5 15h17",
+];
+
+export class GlobeControl implements Control {
+  readonly defaultPosition: ControlPosition = "bottom-right";
+  private map: MapkernMap | null = null;
+  private element: HTMLElement | null = null;
+  private button: HTMLButtonElement | null = null;
+
+  onAdd(map: MapkernMap): HTMLElement {
+    const doc = map.getContainer().ownerDocument;
+    this.map = map;
+    const el = doc.createElement("div");
+    el.className = "mapkern-control mapkern-globe";
+    this.button = button(doc, map.text("globeView"), "mapkern-globe-button", icon(doc, GLOBE_ICON), () => {
+      const next: Projection = map.getProjection() === "globe" ? "mercator" : "globe";
+      map.setProjection(next);
+    });
+    el.appendChild(this.button);
+    this.element = el;
+    map.on("projection", this.render);
+    this.render();
+    return el;
+  }
+
+  onRemove(map: MapkernMap): void {
+    map.off("projection", this.render);
+    this.element?.remove();
+    this.element = null;
+    this.button = null;
+    this.map = null;
+  }
+
+  private readonly render = () => {
+    const map = this.map;
+    const b = this.button;
+    if (!map || !b) return;
+    const globe = map.getProjection() === "globe";
+    const name = map.text(globe ? "mercatorView" : "globeView");
+    b.title = name;
+    b.setAttribute("aria-label", name);
+    b.setAttribute("aria-pressed", globe ? "true" : "false");
+    b.classList.toggle("mapkern-active", globe);
+  };
+}
 const TILTED = 5;
 
 export class TerrainControl extends Emitter<TerrainEvents> implements Control {
