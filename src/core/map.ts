@@ -115,7 +115,7 @@ export interface MapOptions {
   requestTimeout?: number;
   prefetch?: boolean;
   transformRequest?: TransformRequest;
-  attributionControl?: boolean | { custom?: string | string[] };
+  attributionControl?: boolean | { custom?: string | string[]; compact?: boolean };
   logoControl?: boolean;
   diskCache?: boolean | { size?: number };
   workerCount?: number;
