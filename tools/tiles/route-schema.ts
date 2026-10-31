@@ -167,8 +167,7 @@ function allowed(value: string | undefined, fallback: boolean): boolean {
 function onewayOf(value: string | undefined, implied: boolean): -1 | 0 | 1 {
   if (value === "yes" || value === "true" || value === "1") return 1;
   if (value === "-1" || value === "reverse") return -1;
-  if (value === "no" || value === "false" || value === "0" || value === "alternating" || value === "reversible")
-    return value === "no" || value === "false" || value === "0" ? 0 : 0;
+  if (value === "no" || value === "false" || value === "0") return 0;
   return implied ? 1 : 0;
 }
 
