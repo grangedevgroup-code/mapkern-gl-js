@@ -300,7 +300,7 @@ export class Transform {
   }
 
   get lowestZoom(): number {
-    if (!this.keepInWorld) return this.minZoom;
+    if (!this.keepInWorld || this.mode === "globe") return this.minZoom;
     return Math.max(this.minZoom, Math.min(this.maxZoom, this.view().fit));
   }
 
