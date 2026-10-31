@@ -354,9 +354,10 @@ export class Painter {
     const ws = transform.worldSize;
     const c = transform.cameraPosition;
     const camera = [c[0] / ws, c[1] / ws, c[2] / ws];
+    const globe = transform.globeness > 0;
     return {
       height: (x, y) => terrain.heightAt(x, y),
-      hidden: (x, y, z) => terrain.hidden(camera, x, y, z),
+      hidden: (x, y, z) => !globe && terrain.hidden(camera, x, y, z),
     };
   }
 
