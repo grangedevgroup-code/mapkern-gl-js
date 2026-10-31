@@ -4672,6 +4672,38 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "a steep terrain view left alone after a drag holds still and stops drawing",
+    async run({ page, base }) {
+      const style = JSON.stringify({
+        version: 1,
+        sources: {
+          dem: { type: "dem", tiles: [`${base}/fixture/dem/{z}/{x}/{y}.png`], tileSize: 256, maxZoom: 12 },
+          fx: { type: "raster", tiles: [`${base}/fixture/raster/{z}/{x}/{y}.png`], tileSize: 256 },
+        },
+        layers: [{ id: "r", type: "raster", source: "fx", paint: { fadeDuration: 0 } }],
+        terrain: { source: "dem", exaggeration: 3 },
+      });
+      const rest = (ms: number) => page.evaluate(`new Promise((r) => setTimeout(r, ${ms}))`);
+      for (const pitch of [70, 80, 85]) {
+        await createMap(page, style, { center: [3, 1.3], zoom: 10, pitch, bearing: 0 });
+        await rest(600);
+        await idle(page);
+        await page.mouse("mouseMoved", 400, 400);
+        await page.mouse("mousePressed", 400, 400);
+        for (let i = 1; i <= 10; i++) {
+          await page.mouse("mouseMoved", 400, 400 - i * 4, { buttons: 1 });
+          await rest(16);
+        }
+        await page.mouse("mouseReleased", 400, 360);
+        await rest(1500);
+        const before = await page.evaluate<number>("window.map.getDiagnostics().frames");
+        await rest(700);
+        const after = await page.evaluate<number>("window.map.getDiagnostics().frames");
+        if (after !== before) fail(`at pitch ${pitch} the map drew ${after - before} frames while idle after a drag`);
+      }
+    },
+  },
+  {
     name: "tiles just outside the view load ahead of a pan without drawing extra frames",
     async run({ page, base }) {
       await createMap(page, rasterStyle(base, "/fixture/raster"), { zoom: 3.5, center: [0, 0] });
