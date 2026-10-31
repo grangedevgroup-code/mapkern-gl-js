@@ -183,6 +183,7 @@ const DEFAULT_TEXT: Record<UiText, string> = {
   zoomIn: "Zoom in",
   zoomOut: "Zoom out",
   resetNorth: "Reset bearing to north",
+  credits: "Map credits",
   map: "Map",
   marker: "Map marker",
   popup: "Map popup",
