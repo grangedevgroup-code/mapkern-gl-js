@@ -3,11 +3,13 @@ import { availableParallelism } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { gzipSync } from "node:zlib";
+import { encodeRoute } from "../../src/route/format.ts";
 import { convertMbtiles } from "./convert.ts";
 import { buildDem } from "./dem.ts";
 import { extractRegion } from "./extract.ts";
 import { buildFeatures, regionRect } from "./features.ts";
 import { Compression, PMTilesWriter, TileType } from "./pmtiles-writer.ts";
+import { buildRouteGraph } from "./route.ts";
 import type { Entry } from "./search.ts";
 import { collectEntries, ENTRY_VERSION, loadEntries, saveEntries, writeSearchIndex } from "./search.ts";
 import { buildTiles } from "./tiler.ts";
@@ -62,6 +64,7 @@ Usage:
   mapkern-tiles --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.pmtiles>
   mapkern-tiles search --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.search>
   mapkern-tiles search --world --input <file.osm.pbf> [--input ...] --output world.search
+  mapkern-tiles route --input <file.osm.pbf> --bbox=<west,south,east,north> --output <file.route>
   mapkern-tiles dem <file.tif>... --output <file.pmtiles>
   mapkern-tiles convert <file.mbtiles> <file.pmtiles>
 
@@ -173,6 +176,40 @@ async function main(): Promise<void> {
       }
     }
     const bytes = writeSearchIndex(bbox, entries, log, !values.world);
+    writeFileSync(output, bytes);
+    log(`wrote ${output}: ${(bytes.length / 1e6).toFixed(1)} MB`);
+    log(`done in ${((performance.now() - started) / 1000).toFixed(1)} s`);
+    return;
+  }
+  if (process.argv[2] === "route") {
+    const { values } = parseArgs({
+      args: process.argv.slice(3),
+      options: {
+        input: { type: "string" },
+        bbox: { type: "string" },
+        output: { type: "string" },
+        threads: { type: "string" },
+        help: { type: "boolean", default: false },
+      },
+    });
+    if (values.help || !values.input || !values.bbox || !values.output) {
+      console.log(HELP);
+      process.exit(values.help ? 0 : 1);
+    }
+    const bbox = parseBbox(values.bbox);
+    const input = resolve(values.input);
+    const output = resolve(values.output);
+    mkdirSync(dirname(output), { recursive: true });
+    const log = (m: string) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}`);
+    const started = performance.now();
+    log(`reading ${input} (${(statSync(input).size / 1e9).toFixed(2)} GB) for ${bbox.join(", ")}`);
+    const region = await extractRegion(input, bbox, {
+      threads: values.threads ? Number(values.threads) : availableParallelism(),
+      log,
+      profile: "route",
+    });
+    const { data } = buildRouteGraph(region, log);
+    const bytes = gzipSync(encodeRoute(data), { level: 9 });
     writeFileSync(output, bytes);
     log(`wrote ${output}: ${(bytes.length / 1e6).toFixed(1)} MB`);
     log(`done in ${((performance.now() - started) / 1000).toFixed(1)} s`);
