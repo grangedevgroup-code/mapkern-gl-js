@@ -165,6 +165,10 @@ function pickSetup(frame: FrameInput, box: PickBox): PickSetup {
 }
 
 function drapeSize(t: Transform, slot: TerrainSlot, pixelRatio: number): number {
+  if (t.globeness > 0) {
+    const pixels = Math.sqrt(t.tileArea(slot.z, slot.x, slot.y, slot.wrap)) * pixelRatio;
+    return pixels > 600 ? 1024 : pixels > 300 ? 512 : 256;
+  }
   const n = 2 ** slot.z;
   const x0 = slot.wrap + slot.x / n;
   const y0 = slot.y / n;
