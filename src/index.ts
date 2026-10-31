@@ -41,6 +41,11 @@ export type { LngLat, LngLatLike, LngLatObject } from "./geo/mercator.ts";
 export { distanceMeters, lngLatToWorld, metersPerPixel, worldToLngLat } from "./geo/mercator.ts";
 export type { SunPosition } from "./geo/sun.ts";
 export { sunAltitude, sunAzimuth, sunPosition } from "./geo/sun.ts";
+export type { RouteManeuver, RouteStep } from "./route/guidance.ts";
+export type { LngLatLike as RouteLngLat, Route, RouteLeg, RouteOptions, RouteProfile } from "./route/router.ts";
+export { loadRouter, Router } from "./route/router.ts";
+export type { Directions, RouterServiceOptions } from "./route/service.ts";
+export { RouterService } from "./route/service.ts";
 export type { SearchKind } from "./search/format.ts";
 export { SearchIndexError } from "./search/format.ts";
 export type {
@@ -109,6 +114,8 @@ export {
   ScaleControl,
   TerrainControl,
 } from "./ui/controls.ts";
+export type { DirectionsControlOptions, DirectionsEvents, DirectionsPlace } from "./ui/directions.ts";
+export { DirectionsControl, formatDistance, formatDuration } from "./ui/directions.ts";
 export { LogoControl } from "./ui/logo.ts";
 export type { Alignment, MarkerEvent, MarkerEvents, MarkerOptions } from "./ui/marker.ts";
 export { Marker } from "./ui/marker.ts";
