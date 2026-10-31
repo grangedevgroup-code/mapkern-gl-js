@@ -14,6 +14,8 @@ import {
   loadGeoJSON,
   removeGeoJSON,
 } from "./geojson-task.ts";
+import type { RouteRequest } from "./route-task.ts";
+import { routeLoadTask, routeTask } from "./route-task.ts";
 import type { VectorTileRequest } from "./vector-task.ts";
 import { buildVectorTile } from "./vector-task.ts";
 import { startWorker } from "./worker.ts";
@@ -27,4 +29,6 @@ startWorker({
   "geojson-features": (payload) => geojsonFeatures(payload as { source: string; indices: number[] }),
   "geojson-cluster": (payload) => geojsonCluster(payload as GeoJSONClusterRequest),
   "geojson-query": (payload) => geojsonSourceQuery(payload as GeoJSONSourceQuery),
+  route: (payload) => routeTask(payload as RouteRequest),
+  "route-load": (payload) => routeLoadTask(payload as { url: string }),
 });
