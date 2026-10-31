@@ -41,13 +41,16 @@ ${globeChunk}
 layout(location = 0) in vec4 a_pos;
 out vec2 v_uv;
 #ifdef GLOBE
+uniform vec3 u_tile_world;
 out float v_pole;
+out highp vec2 v_world;
 #endif
 void main() {
   vec2 uv = a_pos.xy / ${GRID.toFixed(1)};
   v_uv = uv;
 #ifdef GLOBE
   v_pole = a_pos.w;
+  v_world = u_tile_world.xy + uv * u_tile_world.z;
   float meters = u_has_dem > 0.5 ? demElevation(u_dem_rect.xy + uv * u_dem_rect.zw) * u_exaggeration : 0.0;
   meters -= a_pos.z * u_skirt;
   float pole = a_pos.w > 0.5 ? (uv.y < 0.5 ? 1.0 : -1.0) : 0.0;
@@ -71,7 +74,16 @@ uniform vec4 u_base;
 uniform float u_cap;
 uniform float u_drape_size;
 uniform sampler2D u_pole;
+uniform vec4 u_night_sun;
+uniform vec4 u_night;
 in float v_pole;
+in highp vec2 v_world;
+vec3 nightLight(float altitude) {
+  float golden = (1.0 - smoothstep(-0.0145, 0.0873, altitude)) * smoothstep(-0.0698, -0.0145, altitude);
+  float night = 1.0 - smoothstep(-u_night.a, -0.0145, altitude);
+  vec3 day = mix(vec3(1.0), vec3(1.0, 0.85, 0.68), golden * 0.35);
+  return mix(day, u_night.rgb, night);
+}
 #endif
 ${demChunk}
 in vec2 v_uv;
@@ -90,6 +102,13 @@ void main() {
     color = texture(u_drape, st);
   }
   color += u_base * (1.0 - color.a);
+  if (u_night_sun.w > 0.5) {
+    float lat = atan(sinh(3.14159265 * (1.0 - 2.0 * clamp(v_world.y, 0.0, 1.0))));
+    if (u_cap > 0.5) lat = mix(lat, v_world.y < 0.5 ? 1.5707963 : -1.5707963, v_pole);
+    float lng = fract(v_world.x) * 6.28318531 - 3.14159265;
+    float s = sin(lat) * u_night_sun.x + cos(lat) * u_night_sun.y * cos(lng - u_night_sun.z);
+    color.rgb *= nightLight(asin(clamp(s, -1.0, 1.0)));
+  }
 #else
   vec4 color = texture(u_drape, st);
 #endif
