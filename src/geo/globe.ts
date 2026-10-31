@@ -10,6 +10,15 @@ export function globeness(zoom: number): number {
   return 1 - t * t * (3 - 2 * t);
 }
 
+export function globeFitZoom(width: number, height: number, fov: number, lat: number): number {
+  if (!(width > 0 && height > 0)) return 0;
+  const d = height / 2 / Math.tan((fov * Math.PI) / 360);
+  const r = 0.42 * Math.min(width, height);
+  const radius = (r * r + r * Math.sqrt(r * r + d * d)) / d;
+  const rad = (Math.max(-85, Math.min(85, lat)) * Math.PI) / 180;
+  return Math.log2((2 * Math.PI * radius * Math.cos(rad)) / 512);
+}
+
 export function unitFromMercator(x: number, y: number, out: number[] | Float64Array): void {
   const m = Math.PI * (1 - 2 * y);
   const cosLat = 1 / Math.cosh(m);
