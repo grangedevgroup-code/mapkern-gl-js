@@ -1604,6 +1604,7 @@ let groundCum = new Float64Array(64);
 let groundGlyphs = new Float64Array(256);
 const groundPoint = new Float64Array(2);
 const groundCorners = new Float64Array(8);
+const groundJacobian = new Float64Array(6);
 
 function layoutOnGround(
   transform: Transform,
@@ -1678,9 +1679,7 @@ function layoutOnGround(
     placed[k * 4 + 2] = (za + (zb - za) * t) * ws;
     placed[k * 4 + 3] = angle;
   }
-  const u = transform.unitMatrix;
-  const hw = transform.width / 2;
-  const hh = transform.height / 2;
+  const frame = groundJacobian;
   for (let k = 0; k < glyphs.length; k++) {
     const g = glyphs[k]!;
     const m = g.m;
@@ -1689,16 +1688,13 @@ function layoutOnGround(
     const cz = placed[k * 4 + 2]!;
     const cos = Math.cos(placed[k * 4 + 3]!);
     const sin = Math.sin(placed[k * 4 + 3]!);
-    const w = u[3]! * cx + u[7]! * cy + u[11]! * cz + u[15]!;
-    if (w <= 0) return false;
-    const xn = (u[0]! * cx + u[4]! * cy + u[8]! * cz + u[12]!) / w;
-    const yn = (u[1]! * cx + u[5]! * cy + u[9]! * cz + u[13]!) / w;
-    const sx = (xn + 1) * hw;
-    const sy = (1 - yn) * hh;
-    const jxx = (hw * (u[0]! - xn * u[3]!)) / w;
-    const jxy = (hw * (u[4]! - xn * u[7]!)) / w;
-    const jyx = (-hh * (u[1]! - yn * u[3]!)) / w;
-    const jyy = (-hh * (u[5]! - yn * u[7]!)) / w;
+    if (transform.groundFrame(cx, cy, cz, frame) <= 0) return false;
+    const sx = frame[0]!;
+    const sy = frame[1]!;
+    const jxx = frame[2]!;
+    const jxy = frame[3]!;
+    const jyx = frame[4]!;
+    const jyy = frame[5]!;
     const x0 = (m.left - m.advance / 2) * unit;
     const x1 = x0 + m.width * unit;
     const y0 = (m.top + GLYPH_SIZE * 0.32) * unit;
