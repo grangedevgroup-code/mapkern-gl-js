@@ -84,9 +84,8 @@ export function createViewer(options = {}) {
     basemap,
     terrain = TERRAIN,
     search = SEARCH,
-    view,
-    projection = "globe",
-    globeControl = true,
+    view = "globe",
+    globeControl = !terrain,
     overlay,
     page = true,
     remember = page,
@@ -96,13 +95,15 @@ export function createViewer(options = {}) {
   const stored = memory(remember);
   const remembered = stored.get("basemap");
   const selected = choose(basemaps, basemaps.some((b) => b.name === remembered) ? remembered : basemap);
-  const storedProjection = stored.get("projection");
+  const views = ["terrain", "tilted", "globe"];
+  const wanted = stored.get("view") ?? view;
+  const start = wanted === "flat" ? "terrain" : views.includes(wanted) ? wanted : "globe";
   const map = new mapkern.Map({
     container,
     hash: page,
     maxPitch: 85,
     style: basemaps[selected].style,
-    projection: storedProjection === "globe" || storedProjection === "mercator" ? storedProjection : projection,
+    projection: start === "globe" ? "globe" : "mercator",
     ...mapOptions,
     attributionControl: false,
   });
@@ -111,7 +112,7 @@ export function createViewer(options = {}) {
     map.addControl(new mapkern.AttributionControl(custom), "bottom-left");
   }
   const picker = basemaps.length > 1 ? new mapkern.BasemapControl({ basemaps, selected }) : null;
-  const terrainControl = terrain ? new mapkern.TerrainControl({ source: terrain }) : null;
+  const terrainControl = terrain ? new mapkern.TerrainControl({ source: terrain, views }) : null;
   const globe = globeControl ? new mapkern.GlobeControl() : null;
   if (picker) map.addControl(picker, "bottom-right");
   if (globe) map.addControl(globe, "bottom-right");
@@ -124,9 +125,9 @@ export function createViewer(options = {}) {
   if (searchControl) map.addControl(searchControl, "bottom-right");
   picker?.on("change", (event) => stored.set("basemap", event.basemap.name));
   terrainControl?.on("viewchange", (event) => stored.set("view", event.view));
-  map.on("projection", (event) => stored.set("projection", event.projection));
-  const start = stored.get("view") ?? view;
-  if (terrainControl && (start === "terrain" || start === "tilted")) terrainControl.setView(start);
+  if (!terrainControl)
+    map.on("projection", (event) => stored.set("view", event.projection === "globe" ? "globe" : "flat"));
+  if (terrainControl && start !== "globe") terrainControl.setView(start);
   if (overlay) {
     const run = () => overlay(map);
     map.on("styleload", run);
