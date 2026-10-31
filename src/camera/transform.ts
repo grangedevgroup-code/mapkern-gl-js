@@ -1,3 +1,5 @@
+import type { Projection } from "../geo/globe.ts";
+import { globeness, mercatorFromUnit, nearestInBox, rotateToward, unitFromMercator } from "../geo/globe.ts";
 import type { Mat4, Vec4 } from "../geo/mat4.ts";
 import * as mat4 from "../geo/mat4.ts";
 import type { LngLat } from "../geo/mercator.ts";
