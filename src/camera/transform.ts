@@ -953,7 +953,7 @@ export class Transform {
         pts.push([this.cx - 0.5, y], [this.cx + 0.5, y]);
       }
     }
-    if (missed === pts.length || (missed > 0 && pts.length > 0 && this.globeAmount >= 1 && this.globeSpan() > 0.45)) {
+    if (missed === steps * 4 || (missed > 0 && this.globeSpan() > 0.25)) {
       return [
         [this.cx - 0.5, 0],
         [this.cx + 0.5, 0],
