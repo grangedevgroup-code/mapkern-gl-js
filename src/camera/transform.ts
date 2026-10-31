@@ -802,6 +802,12 @@ export class Transform {
   }
 
   unproject(px: number, py: number, groundZ?: number): [number, number] | null {
+    this.update();
+    if (this.globeAmount > 0) return this.unprojectGlobe(px, py, groundZ, false);
+    return this.flatUnproject(px, py, groundZ);
+  }
+
+  private flatUnproject(px: number, py: number, groundZ?: number): [number, number] | null {
     const { origin, dir } = this.screenRay(px, py);
     if (dir[2] >= -1e-12) return null;
     const t = ((groundZ ?? this.elevationPx) - origin[2]) / dir[2];
@@ -812,6 +818,11 @@ export class Transform {
 
   unprojectClamped(px: number, py: number, groundZ?: number): [number, number] {
     this.update();
+    if (this.globeAmount > 0) return this.unprojectGlobe(px, py, groundZ, true) ?? [this.cx, this.cy];
+    return this.flatUnprojectClamped(px, py, groundZ);
+  }
+
+  private flatUnprojectClamped(px: number, py: number, groundZ?: number): [number, number] {
     const { origin, dir } = this.screenRay(px, py);
     const ws = this.worldSize;
     const plane = groundZ ?? this.elevationPx;
