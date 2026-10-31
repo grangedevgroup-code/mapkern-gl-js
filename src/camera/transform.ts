@@ -1,5 +1,5 @@
 import type { Projection } from "../geo/globe.ts";
-import { globeness, mercatorFromUnit, nearestInBox, rotateToward, unitFromMercator } from "../geo/globe.ts";
+import { globeness, mercatorFromUnit, nearestInBox, unitFromMercator } from "../geo/globe.ts";
 import type { Mat4, Vec4 } from "../geo/mat4.ts";
 import * as mat4 from "../geo/mat4.ts";
 import type { LngLat } from "../geo/mercator.ts";
@@ -866,34 +866,44 @@ export class Transform {
   }
 
   private rotateGlobeTo(world: readonly number[], px: number, py: number, z: number | undefined, keepSize: boolean) {
-    const target = [0, 0, 0];
-    unitFromMercator(world[0]!, world[1]!, target);
-    const now = [0, 0, 0];
-    const center = [0, 0, 0];
-    const next = [0, 0, 0];
     let zoomShift = 0;
     for (let i = 0; i < 16; i++) {
       this.update();
       const hit = this.unprojectClamped(px, py, z === undefined ? undefined : z * this.worldSize);
-      unitFromMercator(hit[0], hit[1], now);
-      const miss = Math.hypot(now[0]! - target[0]!, now[1]! - target[1]!, now[2]! - target[2]!);
-      if (miss < 1e-14) break;
-      unitFromMercator(this.cx, this.cy, center);
-      rotateToward(center, now, target, next);
-      const [nx, ny] = mercatorFromUnit(next[0]!, next[1]!, next[2]!);
+      const [tNorth, tEast] = this.northUpAngles(world[0]!, world[1]!);
+      const [hNorth, hEast] = this.northUpAngles(hit[0], hit[1]);
+      const dNorth = tNorth - hNorth;
+      const dEast = tEast - hEast;
+      if (Math.abs(dNorth) < 1e-13 && Math.abs(dEast) < 1e-13) break;
+      const latRad = (latFromMercatorY(this.cy) * Math.PI) / 180;
+      const lat = clampLatitude(latFromMercatorY(this.cy) + (dNorth * 180) / Math.PI);
+      const dx = dEast / Math.max(Math.cos(latRad), 1e-6) / (2 * Math.PI);
       const before = Math.cosh(Math.PI * (1 - 2 * this.cy));
       const g = this.globeAmount;
-      this.setCenterWorld(nx, ny);
+      const x = this.cx;
+      const y = this.cy;
+      this.setCenterWorld(this.cx + Math.max(-0.25, Math.min(0.25, dx)), mercatorY(lat));
       if (keepSize) {
         const after = Math.cosh(Math.PI * (1 - 2 * this.cy));
-        const shift = g * Math.log2(before / after);
         const zoom = this.z;
-        this.setZoom(zoom + shift);
+        this.setZoom(zoom + g * Math.log2(before / after));
         zoomShift += this.z - zoom;
       }
-      if (miss < 1e-13) break;
+      if (this.cx === x && this.cy === y) break;
     }
     return zoomShift;
+  }
+
+  private northUpAngles(x: number, y: number): [number, number] {
+    const u = scratchUnit;
+    unitFromMercator(x, y, u);
+    const c = this.axisC;
+    const e = this.axisE;
+    const n = this.axisN;
+    const up = u[0]! * c[0]! + u[1]! * c[1]! + u[2]! * c[2]!;
+    const east = u[0]! * e[0]! + u[1]! * e[1]! + u[2]! * e[2]!;
+    const north = u[0]! * n[0]! + u[1]! * n[1]! + u[2]! * n[2]!;
+    return [Math.atan2(north, up), Math.atan2(east, Math.hypot(north, up))];
   }
 
   zoomAround(zoom: number, px: number, py: number, z?: number): void {
