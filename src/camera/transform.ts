@@ -1031,7 +1031,9 @@ export class Transform {
     const camDistance = Math.hypot(gx, gy, gz);
     const camLat = Math.asin(Math.max(-1, Math.min(1, gz / camDistance)));
     const camLng = Math.atan2(gy, gx);
-    const horizon = g >= 1 ? R / camDistance : -2;
+    const rho = R / g;
+    const reach = Math.acos(Math.min(1, rho / Math.hypot(cam[0], cam[1], cam[2] + rho))) / g;
+    const horizon = g >= 1 ? R / camDistance : Math.cos(Math.min(Math.PI, reach * 1.1 + 0.002));
     const zoomOffset = Math.log2(TILE_SIZE / options.tileSize);
     const centerTileZoom = this.z + zoomOffset;
     const maxZoom = Math.min(options.maxZoom, MAX_TILE_ZOOM);
@@ -1219,6 +1221,8 @@ function frustumPlanes(m: Mat4): number[][] {
     [0, -1],
     [1, 1],
     [1, -1],
+    [2, 1],
+    [2, -1],
   ] as const) {
     const a = m[3]! + sign * m[row]!;
     const b = m[7]! + sign * m[row + 4]!;
