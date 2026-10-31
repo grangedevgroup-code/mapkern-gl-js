@@ -108,6 +108,11 @@ function spread<T>(list: readonly T[], count: number): T[] {
   return out;
 }
 
+function smoothstep(a: number, b: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
 function over(top: RGBA, bottom: RGBA): RGBA {
   const k = 1 - top[3];
   return [top[0] + bottom[0] * k, top[1] + bottom[1] * k, top[2] + bottom[2] * k, top[3] + bottom[3] * k];
@@ -704,6 +709,10 @@ export class Painter {
     const uTile = uniform(program, "u_tile");
     const uCap = uniform(program, "u_cap");
     const uTileWorld = uniform(program, "u_tile_world");
+    const eye = t.globeCamera;
+    const strength = t.globeness * (1 - 0.6 * smoothstep(4, 9, t.zoom));
+    gl.uniform4f(uniform(program, "u_atmo"), eye[0], eye[1], eye[2], strength);
+    gl.uniform1f(uniform(program, "u_atmo_radius"), t.globeRadius);
     const sun = frame.sun ?? null;
     if (sun) {
       gl.uniform4f(
@@ -855,8 +864,14 @@ export class Painter {
     gl.uniform1f(uniform(program, "u_radius"), t.globeRadius);
     const look = skyLook(frame.sky, t.zoom, background);
     gl.uniform4f(uniform(program, "u_space"), SPACE[0], SPACE[1], SPACE[2], SPACE[3]);
-    gl.uniform4f(uniform(program, "u_glow"), look.horizon[0], look.horizon[1], look.horizon[2], look.horizon[3]);
     gl.uniform4f(uniform(program, "u_sky"), look.sky[0], look.sky[1], look.sky[2], look.sky[3]);
+    const sun = frame.sun?.sun;
+    if (sun) {
+      const d = t.globeDirection(sun.subsolarLng, sun.declination);
+      gl.uniform4f(uniform(program, "u_sun"), d[0], d[1], d[2], 1);
+    } else {
+      gl.uniform4f(uniform(program, "u_sun"), 0, 0, 1, 0);
+    }
     const day = Math.min(1, Math.max(0, (t.zoom - 5) / 4));
     gl.uniform1f(uniform(program, "u_daylight"), day * day * (3 - 2 * day));
     gl.bindVertexArray(this.quadVao);
