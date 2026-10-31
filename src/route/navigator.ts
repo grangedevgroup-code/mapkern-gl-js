@@ -54,7 +54,6 @@ export class Navigator {
   private strikes = 0;
   private heard = new Set<string>();
   private arrived = false;
-  private lastHeading = 0;
 
   constructor(route: Route, options: NavigatorOptions = {}) {
     this.route = route;
@@ -65,7 +64,6 @@ export class Navigator {
     };
     this.steps = route.legs.flatMap((l) => l.steps);
     this.flat = flatten(route, this.steps);
-    this.lastHeading = this.headingAt(0);
   }
 
   get totalDistance(): number {
@@ -136,7 +134,6 @@ export class Navigator {
     const next = this.steps[step + 1] ?? null;
     const maneuverAt = f.stepStart[step + 1] ?? f.total;
     const heading = this.headingAt(this.along);
-    this.lastHeading = heading;
     return {
       position: this.pointAt(this.along),
       heading,
