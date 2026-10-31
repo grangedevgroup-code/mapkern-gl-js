@@ -65,9 +65,9 @@ uniform mat4 u_inverse;
 uniform vec3 u_camera;
 uniform float u_radius;
 uniform vec4 u_space;
-uniform vec4 u_glow;
 uniform vec4 u_sky;
 uniform float u_daylight;
+uniform vec4 u_sun;
 in vec2 v_ndc;
 out vec4 fragColor;
 void main() {
@@ -75,14 +75,22 @@ void main() {
   vec3 dir = normalize(far.xyz / far.w - u_camera);
   vec3 oc = u_camera + vec3(0.0, 0.0, u_radius);
   float b = dot(oc, dir);
-  float closest = sqrt(max(dot(oc, oc) - b * b, 0.0));
-  float above = max(closest - u_radius, 0.0) / u_radius;
-  float thin = mix(16.0, 7.0, u_daylight);
-  float glow = b < 0.0 ? exp(-above * thin) : 0.0;
+  vec3 closest = oc - dir * min(b, 0.0);
+  float r = length(closest);
+  float scale = 0.011 * u_radius;
+  float height = max(r - u_radius, 0.0);
+  float depth = b < 0.0 ? exp(-height / scale) * sqrt(r / scale) * 0.09 : 0.0;
+  float lit = 1.0;
+  vec3 tint = vec3(1.0);
+  if (u_sun.w > 0.5) {
+    float facing = dot(closest / r, u_sun.xyz);
+    lit = smoothstep(-0.32, 0.12, facing);
+    tint = mix(vec3(1.0, 0.62, 0.38), vec3(1.0), smoothstep(-0.12, 0.3, facing));
+  }
+  vec3 scatter = (1.0 - exp(-depth * vec3(0.38, 0.62, 1.0) * 2.4)) * vec3(0.62, 0.8, 1.0) * tint * lit;
   float up = clamp(dir.z * 0.5 + 0.5, 0.0, 1.0);
   vec4 space = mix(u_space, u_sky, u_daylight * smoothstep(0.35, 0.75, up));
-  vec4 rim = mix(vec4(0.45, 0.68, 1.0, 1.0), u_glow, u_daylight);
-  fragColor = mix(space, rim, clamp(glow, 0.0, 1.0) * mix(0.85, 1.0, u_daylight));
+  fragColor = vec4(min(space.rgb + scatter * (1.0 - 0.6 * u_daylight), vec3(1.0)), 1.0);
 }
 `,
 };
