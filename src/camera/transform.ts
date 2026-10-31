@@ -770,6 +770,7 @@ export class Transform {
 
   projectTo(out: Float64Array, x: number, y: number, zPixels = 0): number {
     this.update();
+    if (this.globeAmount > 0) return this.projectGlobe(x, y, zPixels, out);
     const m = this.unitMatrix;
     const cx = m[0]! * x + m[4]! * y + m[8]! * zPixels + m[12]!;
     const cy = m[1]! * x + m[5]! * y + m[9]! * zPixels + m[13]!;
