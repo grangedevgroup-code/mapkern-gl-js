@@ -4162,7 +4162,7 @@ const specs: Spec[] = [
     },
   },
   {
-    name: "controls fill each corner from its edge inward, and the logo sits faintly bottom left",
+    name: "controls fill each corner from its edge inward, the logo is opt-in, and the credits fold behind a button",
     async run({ page, base, shot }) {
       const style = JSON.stringify({
         version: 1,
@@ -4176,7 +4176,7 @@ const specs: Spec[] = [
         },
         layers: [{ id: "r", type: "raster", source: "fx" }],
       });
-      await createMap(page, style);
+      await createMap(page, style, { logoControl: true, attributionControl: { compact: false } });
       await page.evaluate(`(() => {
         const box = (name, height) => ({
           onAdd() {
@@ -4225,9 +4225,35 @@ const specs: Spec[] = [
       const opacity = await page.evaluate<string>(`getComputedStyle(document.querySelector(".mapkern-logo")).opacity`);
       if (opacity !== "0.6") fail(`the logo should be faint, got opacity ${opacity}`);
       await page.evaluate("window.map.remove()");
-      await createMap(page, style, { logoControl: false });
+      await createMap(page, style);
       const logos = await page.evaluate<number>(`document.querySelectorAll(".mapkern-logo").length`);
-      if (logos !== 0) fail(`logoControl: false should leave the logo out, found ${logos}`);
+      if (logos !== 0) fail(`the logo should be off unless logoControl is true, found ${logos}`);
+      const credits = await page.evaluate<{
+        button: boolean;
+        shown: boolean;
+        expanded: string | null;
+        text: string;
+      }>(`(() => {
+        const el = document.querySelector(".mapkern-attribution");
+        const button = el?.querySelector(".mapkern-attribution-button");
+        const inner = el?.querySelector(".mapkern-attribution-inner");
+        return { button: Boolean(button), shown: inner ? getComputedStyle(inner).display !== "none" : false, expanded: button?.getAttribute("aria-expanded") ?? null, text: inner?.textContent ?? "" };
+      })()`);
+      if (!credits.button || credits.shown || credits.expanded !== "false" || !credits.text.includes("Test data"))
+        fail(`the credits should start folded behind the info button: ${JSON.stringify(credits)}`);
+      const opened = await page.evaluate<{ shown: boolean; expanded: string | null }>(`(() => {
+        const button = document.querySelector(".mapkern-attribution-button");
+        button.click();
+        const inner = document.querySelector(".mapkern-attribution-inner");
+        return { shown: getComputedStyle(inner).display !== "none", expanded: button.getAttribute("aria-expanded") };
+      })()`);
+      if (!opened.shown || opened.expanded !== "true")
+        fail(`a tap on the info button should show the credits: ${JSON.stringify(opened)}`);
+      const closed = await page.evaluate<boolean>(`(() => {
+        document.querySelector(".mapkern-attribution-button").click();
+        return getComputedStyle(document.querySelector(".mapkern-attribution-inner")).display === "none";
+      })()`);
+      if (!closed) fail("a second tap on the info button should fold the credits away");
     },
   },
   {
@@ -4546,12 +4572,10 @@ const specs: Spec[] = [
       const scaleRight = layout.scale?.[2] ?? Number.POSITIVE_INFINITY;
       if (scaleRight > stackLeft || stackLeft - scaleRight > 24)
         fail(`the scale should sit just left of the buttons: ${JSON.stringify(layout)}`);
-      if (!layout.logo || !layout.attribution || !layout.corner?.includes("mapkern-bottom-left"))
-        fail(`the attribution should sit in the bottom-left corner: ${JSON.stringify(layout)}`);
-      const [, , attributionRight = 0, attributionBottom = 0] = layout.attribution ?? [];
-      const logoTop = layout.logo?.[1] ?? 0;
-      if (attributionBottom > logoTop + 0.5 || attributionRight > stackLeft)
-        fail(`the attribution should sit above the logo and clear of the buttons: ${JSON.stringify(layout)}`);
+      if (layout.logo || !layout.attribution || !layout.corner?.includes("mapkern-bottom-left"))
+        fail(`the credits button should sit in the bottom-left corner with no logo: ${JSON.stringify(layout)}`);
+      const [, , attributionRight = 0] = layout.attribution ?? [];
+      if (attributionRight > stackLeft) fail(`the credits should stay clear of the buttons: ${JSON.stringify(layout)}`);
       if (layout.maxPitch !== 85) fail(`the viewer should allow tilting to 85 degrees, got ${layout.maxPitch}`);
       if (!layout.pins) fail("the page's own layers should be added once the style loads");
       await page.evaluate(
