@@ -91,6 +91,7 @@ export class TileManager<D> {
   private fading = false;
   private holding = false;
   private gateSince = Number.NaN;
+  private gating = false;
   private consecutiveFailures = 0;
   private pausedUntil = 0;
   private destroyed = false;
