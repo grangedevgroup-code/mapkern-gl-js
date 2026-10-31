@@ -4681,11 +4681,11 @@ const specs: Spec[] = [
           fx: { type: "raster", tiles: [`${base}/fixture/raster/{z}/{x}/{y}.png`], tileSize: 256 },
         },
         layers: [{ id: "r", type: "raster", source: "fx", paint: { fadeDuration: 0 } }],
-        terrain: { source: "dem", exaggeration: 3 },
+        terrain: { source: "dem", exaggeration: 10 },
       });
       const rest = (ms: number) => page.evaluate(`new Promise((r) => setTimeout(r, ${ms}))`);
       for (const pitch of [70, 80, 85]) {
-        await createMap(page, style, { center: [3, 1.3], zoom: 10, pitch, bearing: 0 });
+        await createMap(page, style, { center: [3, 1.36], zoom: 10, pitch, bearing: 0 });
         await rest(600);
         await idle(page);
         await page.mouse("mouseMoved", 400, 400);
