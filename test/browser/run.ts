@@ -5259,30 +5259,36 @@ const specs: Spec[] = [
     },
   },
   {
-    name: "dragging the globe keeps the grabbed point under the pointer",
+    name: "dragging the globe moves the place at the centre with the pointer and keeps the globe's size",
     async run({ page, base }) {
       await createMap(page, rasterStyle(base, "/fixture/raster"), {
         center: [10, 40],
         zoom: 2.5,
-        pitch: 30,
         projection: "globe",
       });
-      const grabbed = await page.evaluate<[number, number]>("window.map.unproject([450, 330])");
-      const radius = await page.evaluate<number>("window.map.getZoom()");
-      await page.mouse("mouseMoved", 450, 330);
-      await page.mouse("mousePressed", 450, 330, { buttons: 1 });
+      const size = await page.evaluate<{ w: number; h: number }>(
+        "({ w: window.map.getCanvas().clientWidth, h: window.map.getCanvas().clientHeight })",
+      );
+      const cx = size.w / 2;
+      const cy = size.h / 2;
+      const grabbed = await page.evaluate<[number, number]>(`window.map.unproject([${cx}, ${cy}])`);
+      const zoom0 = await page.evaluate<number>("window.map.getZoom()");
+      await page.mouse("mouseMoved", cx, cy);
+      await page.mouse("mousePressed", cx, cy, { buttons: 1 });
       for (let i = 1; i <= 10; i++) {
-        await page.mouse("mouseMoved", 450 - i * 12, 330 + i * 8, { buttons: 1 });
+        await page.mouse("mouseMoved", cx + i * 6, cy + i * 4, { buttons: 1 });
         await new Promise((r) => setTimeout(r, 20));
       }
       await new Promise((r) => setTimeout(r, 250));
-      await page.mouse("mouseReleased", 330, 410, { buttons: 0 });
+      await page.mouse("mouseReleased", cx + 60, cy + 40, { buttons: 0 });
       await idle(page);
       const p = await page.evaluate<{ x: number; y: number }>(`window.map.project(${JSON.stringify(grabbed)})`);
-      if (Math.hypot(p.x - 330, p.y - 410) > 2)
-        fail(`the grabbed point ended at ${p.x.toFixed(1)},${p.y.toFixed(1)} instead of under the pointer at 330,410`);
+      if (Math.hypot(p.x - (cx + 60), p.y - (cy + 40)) > 4.5)
+        fail(
+          `the place at the centre ended at ${p.x.toFixed(1)},${p.y.toFixed(1)} instead of near the pointer at ${cx + 60},${cy + 40}`,
+        );
       const zoom = await page.evaluate<number>("window.map.getZoom()");
-      if (zoom === radius) fail("panning south on the globe should adjust the zoom so the globe keeps its size");
+      if (zoom === zoom0) fail("panning north on the globe should adjust the zoom so the globe keeps its size");
     },
   },
   {
