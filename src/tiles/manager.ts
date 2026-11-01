@@ -63,6 +63,20 @@ export interface TileStats {
   noData: number;
 }
 
+export interface TileCandidate {
+  lastUsed: number;
+  z: number;
+  bytes: number;
+  key: number;
+  owner: number;
+}
+
+export interface TileCache {
+  cachedBytes(): number;
+  evictionCandidates(out: TileCandidate[], owner: number): void;
+  dropTile(key: number): void;
+}
+
 export interface ManagerEvents {
   changed(): void;
   failure(failure: TileFailure, tile: TileCoord): void;
@@ -76,7 +90,7 @@ const REVEAL_WAIT_MS = 1200;
 const SWAP_WAIT_MS = 100;
 const BREAKER_THRESHOLD = 16;
 
-export class TileManager<D> {
+export class TileManager<D> implements TileCache {
   readonly id: string;
   tiling: Tiling;
   options: ManagerOptions;
@@ -86,7 +100,7 @@ export class TileManager<D> {
   private readonly events: ManagerEvents;
   private readonly tiles = new Map<number, Tile<D>>();
   private readonly jobs = new Map<number, JobHandle>();
-  private frame = 0;
+  private now = 0;
   private generation = 0;
   private fading = false;
   private holding = false;
@@ -176,13 +190,33 @@ export class TileManager<D> {
     return this.tiles.get(tileKey(z, x, y));
   }
 
+  cachedBytes(): number {
+    let bytes = 0;
+    for (const tile of this.tiles.values()) bytes += tile.bytes;
+    return bytes;
+  }
+
+  evictionCandidates(out: TileCandidate[], owner: number): void {
+    for (const tile of this.tiles.values()) {
+      if (tile.retained || tile.wanted || this.jobs.has(tile.key)) continue;
+      out.push({ lastUsed: tile.lastUsed, z: tile.z, bytes: tile.bytes, key: tile.key, owner });
+    }
+  }
+
+  dropTile(key: number): void {
+    const tile = this.tiles.get(key);
+    if (!tile || tile.retained || tile.wanted || this.jobs.has(tile.key)) return;
+    this.drop(tile);
+    this.counters.evicted++;
+  }
+
   forEachTile(fn: (tile: Tile<D>) => void): void {
     for (const tile of this.tiles.values()) fn(tile);
   }
 
   update(transform: Transform, now: number, predicted: readonly Transform[] = []): void {
     if (this.destroyed) return;
-    this.frame++;
+    this.now = now;
     for (const tile of this.tiles.values()) {
       tile.wanted = false;
       tile.retained = false;
@@ -381,7 +415,7 @@ export class TileManager<D> {
     }
     tile.wanted = true;
     if (priority < tile.priority) tile.priority = priority;
-    tile.lastUsed = this.frame;
+    tile.lastUsed = this.now;
     return tile;
   }
 
@@ -540,7 +574,7 @@ export class TileManager<D> {
 
   private piece(tile: Tile<D>, wrap: number, clip: Rect, opacity: number, slotZ: number): RenderPiece<D> {
     tile.retained = true;
-    tile.lastUsed = this.frame;
+    tile.lastUsed = this.now;
     return { tile, wrap, clip, opacity, slotZ };
   }
 
