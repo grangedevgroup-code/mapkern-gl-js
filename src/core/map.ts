@@ -40,7 +40,7 @@ import type { ResponseStore } from "../tiles/cache.ts";
 import { sharedDiskCache } from "../tiles/cache.ts";
 import type { TransformRequest } from "../tiles/fetch.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
-import type { TileManager, TileStats } from "../tiles/manager.ts";
+import type { TileCache, TileCandidate, TileManager, TileStats } from "../tiles/manager.ts";
 import { RequestScheduler } from "../tiles/scheduler.ts";
 import type { AttributionOptions, Control, ControlPosition } from "../ui/controls.ts";
 import { AttributionControl } from "../ui/controls.ts";
@@ -2503,6 +2503,34 @@ export class MapkernMap extends Emitter<MapEvents> {
     }
   }
 
+  private tileBudget(): number {
+    const size = this.options.tileCacheSize;
+    if (size !== undefined) return Math.max(16, checkNumber(size, "tileCacheSize", 192)) * 1024 * 1024;
+    const memory = (globalThis.navigator as { deviceMemory?: number } | undefined)?.deviceMemory;
+    const megabytes = memory ? Math.min(768, Math.max(128, (memory * 1024) / 12)) : 384;
+    return Math.round(megabytes) * 1024 * 1024;
+  }
+
+  private trimTiles(style: Style): void {
+    const budget = this.tileBudget();
+    const owners: TileCache[] = [];
+    let total = 0;
+    for (const source of style.sources.values()) {
+      if (!source.manager) continue;
+      owners.push(source.manager);
+      total += source.manager.cachedBytes();
+    }
+    if (total <= budget) return;
+    const candidates: TileCandidate[] = [];
+    for (let i = 0; i < owners.length; i++) owners[i]!.evictionCandidates(candidates, i);
+    candidates.sort((a, b) => a.lastUsed - b.lastUsed || b.z - a.z);
+    for (const c of candidates) {
+      if (total <= budget) break;
+      total -= c.bytes;
+      owners[c.owner]!.dropTile(c.key);
+    }
+  }
+
   private sourceContext(): SourceContext {
     const options = this.options;
     return {
@@ -2514,7 +2542,7 @@ export class MapkernMap extends Emitter<MapEvents> {
       },
       requestTimeoutMs: this.requestTimeout(),
       diskCache: this.diskCache,
-      cacheBytes: Math.max(16, checkNumber(this.options.tileCacheSize, "tileCacheSize", 192)) * 1024 * 1024,
+      cacheBytes: this.tileBudget(),
       fadeDuration: checkNumber(this.options.fadeDuration, "fadeDuration", 200),
       prefetchLimit: this.options.prefetch === false ? 0 : 48,
       pixelRatio: () => this.pixelRatioValue,
@@ -2721,6 +2749,7 @@ export class MapkernMap extends Emitter<MapEvents> {
         if (source.setLayers) source.setLayers(style.layers.filter((l) => l.source === source.id));
         source.update(this.transform, now, predicted);
       }
+      this.trimTiles(style);
       if (moreUploads) animating = true;
       for (const layer of style.layers) if (layer.settle(now)) animating = true;
       const labelsBusy = this.painter.render({
