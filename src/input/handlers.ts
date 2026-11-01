@@ -68,7 +68,7 @@ type Mode =
   | { kind: "press"; pointer: number; rotate: boolean; hold: Hold; quick: boolean }
   | { kind: "quick"; pointer: number; startY: number; zoom0: number; anchor: Point3 | null; x: number; y: number }
   | { kind: "box"; pointer: number; startX: number; startY: number; box: HTMLElement | null; hold: Hold }
-  | { kind: "pan"; pointer: number; anchor: Point3; fling: boolean }
+  | { kind: "pan"; pointer: number; anchor: Point3; fling: boolean; lastX: number; lastY: number }
   | { kind: "rotate"; pointer: number; lastX: number; lastY: number; moved: boolean }
   | {
       kind: "touch2";
@@ -100,6 +100,7 @@ interface Inertia {
   from: [number, number];
   offset: [number, number];
   anchor: Point3;
+  done: number;
 }
 
 interface WheelZoom {
@@ -178,13 +179,13 @@ export class InputHandlers {
       const i = this.inertia;
       const t = Math.min(1, (now - i.start) / i.duration);
       const k = 1 - (1 - t) * (1 - t);
-      this.host.transform.setLocationAtPoint(
-        i.anchor,
-        i.from[0] + i.offset[0] * k,
-        i.from[1] + i.offset[1] * k,
-        i.anchor[2],
-        true,
-      );
+      const transform = this.host.transform;
+      const x = i.from[0] + i.offset[0] * k;
+      const y = i.from[1] + i.offset[1] * k;
+      if (transform.globeness >= 1) transform.panGlobe(i.offset[0] * (k - i.done), i.offset[1] * (k - i.done));
+      else transform.setLocationAtPoint(i.anchor, x, y, i.anchor[2], true);
+      i.done = k;
+      if (transform.globeness > 0) i.anchor = this.host.anchor(x, y) ?? i.anchor;
       this.host.changed();
       if (t >= 1) this.inertia = null;
       else busy = true;
@@ -359,7 +360,14 @@ export class InputHandlers {
           this.cancel();
           return;
         }
-        this.mode = { kind: "pan", pointer: e.pointerId, anchor, fling: true };
+        this.mode = {
+          kind: "pan",
+          pointer: e.pointerId,
+          anchor,
+          fling: true,
+          lastX: pointer.startX,
+          lastY: pointer.startY,
+        };
         this.host.gesture(true);
         this.host.drag("start", e);
       }
@@ -376,7 +384,11 @@ export class InputHandlers {
       return;
     }
     if (current.kind === "pan" && current.pointer === e.pointerId) {
-      transform.setLocationAtPoint(current.anchor, x, y, current.anchor[2], true);
+      if (transform.globeness >= 1) transform.panGlobe(x - current.lastX, y - current.lastY);
+      else transform.setLocationAtPoint(current.anchor, x, y, current.anchor[2], true);
+      current.lastX = x;
+      current.lastY = y;
+      if (transform.globeness > 0) current.anchor = this.host.anchor(x, y) ?? current.anchor;
       this.samples.push({ t: e.timeStamp, x, y });
       while (this.samples.length > 2 && e.timeStamp - this.samples[0]!.t > 100) this.samples.shift();
       this.host.changed();
@@ -463,7 +475,7 @@ export class InputHandlers {
       if (rest && this.options.dragPan && !this.options.cooperative) {
         const anchor = this.host.anchor(rest.x, rest.y);
         if (anchor) {
-          this.mode = { kind: "pan", pointer: rest.id, anchor, fling: false };
+          this.mode = { kind: "pan", pointer: rest.id, anchor, fling: false, lastX: rest.x, lastY: rest.y };
           this.samples = [{ t: e.timeStamp, x: rest.x, y: rest.y }];
           this.host.gesture(true);
           return;
@@ -497,6 +509,7 @@ export class InputHandlers {
       from: [x, y],
       offset: [(vx / v) * distance, (vy / v) * distance],
       anchor,
+      done: 0,
     };
     this.host.changed();
   }
