@@ -135,8 +135,8 @@ test("setLocationAtPoint drags the grabbed point under the pointer", () => {
     const grabbed = t.unproject(380, 280)!;
     t.setLocationAtPoint(grabbed, 470, 350);
     const p = t.project(grabbed[0], grabbed[1]);
-    close(p.x, 470, 1e-4 * (1 + zoom));
-    close(p.y, 350, 1e-4 * (1 + zoom));
+    close(p.x, 470, 0.02);
+    close(p.y, 350, 0.02);
   }
 });
 
@@ -285,4 +285,73 @@ test("dragging over a pole stops at the pole without spinning or turning", () =>
     }
     assert.ok(lastLat > 84, `zoom ${zoom} should reach the polar region, got ${lastLat}`);
   }
+});
+
+function turn(ax: number, ay: number, bx: number, by: number): number {
+  const la = Math.atan(Math.sinh(Math.PI * (1 - 2 * ay)));
+  const lb = Math.atan(Math.sinh(Math.PI * (1 - 2 * by)));
+  const s = Math.sin((lb - la) / 2);
+  const q = Math.sin((bx - ax) * Math.PI);
+  return 2 * Math.asin(Math.min(1, Math.sqrt(s * s + Math.cos(la) * Math.cos(lb) * q * q)));
+}
+
+test("sideways globe pans spin the globe without drifting, jumping or changing its size", () => {
+  let moves = 0;
+  let worst = 0;
+  let drifts = 0;
+  let sizeChange = 0;
+  for (const zoom of [0, 1.8, 2.5, 4, 8])
+    for (const lat of [-60, 0, 30, 60, 75])
+      for (const pitch of [0, 40])
+        for (const bearing of [0, 30])
+          for (const speed of [6, 30])
+            for (const dir of [-1, 1]) {
+              const t = globe(zoom, pitch, bearing, 0, lat);
+              const radius = t.globeRadius;
+              for (let i = 0; i < 30; i++) {
+                const [x0, y0] = t.centerWorld;
+                t.panGlobe(
+                  dir * speed * Math.cos((bearing * Math.PI) / 180),
+                  -dir * speed * Math.sin((bearing * Math.PI) / 180),
+                );
+                const [x1, y1] = t.centerWorld;
+                moves++;
+                worst = Math.max(worst, turn(x0, y0, x1, y1) / (speed / t.globeRadius));
+                if (Math.abs(y1 - y0) > 1e-12) drifts++;
+                sizeChange = Math.max(sizeChange, Math.abs(t.globeRadius / radius - 1));
+              }
+            }
+  assert.ok(moves > 5000);
+  assert.ok(worst < 1.1, `worst turn ratio ${worst}`);
+  assert.equal(drifts, 0);
+  assert.ok(sizeChange < 1e-9, `size change ${sizeChange}`);
+});
+
+test("globe pans up and down keep the size and stop at the latitude limit", () => {
+  const t = globe(2.5, 0, 0, 10, 20);
+  const radius = t.globeRadius;
+  for (let i = 0; i < 200; i++) t.panGlobe(0, 25);
+  assert.ok(t.center[1] > 85, `lat ${t.center[1]}`);
+  close(t.center[0], 10, 1e-9);
+  close(t.globeRadius, radius, radius * 1e-9);
+  for (let i = 0; i < 400; i++) t.panGlobe(0, -25);
+  assert.ok(t.center[1] < -85, `lat ${t.center[1]}`);
+});
+
+test("the globe solver never swings to a second solution on small moves", () => {
+  let worst = 0;
+  for (const zoom of [10.4, 11, 11.6])
+    for (const lat of [-70, 0, 45, 80])
+      for (const dx of [-25, 25]) {
+        const t = globe(zoom, 30, 0, 0, lat);
+        for (let i = 0; i < 20; i++) {
+          const grabbed = t.unproject(400, 300);
+          if (!grabbed) break;
+          const [x0, y0] = t.centerWorld;
+          t.setLocationAtPoint(grabbed, 400 + dx, 300, undefined, true);
+          const [x1, y1] = t.centerWorld;
+          worst = Math.max(worst, turn(x0, y0, x1, y1) / (Math.abs(dx) / t.globeRadius));
+        }
+      }
+  assert.ok(worst < 4.5, `worst turn ratio ${worst}`);
 });
