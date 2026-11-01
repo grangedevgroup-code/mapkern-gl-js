@@ -231,6 +231,44 @@ test("ground frame matches finite differences of project", () => {
   close(out[2]!, (a.x - b.x) / (2 * e), Math.abs(out[2]!) * 1e-3);
 });
 
+test("leaving the globe keeps the zoom where a flat map can, else zooms in just enough to keep the centre", () => {
+  const t = new Transform();
+  t.resize(601, 928);
+  t.setPitchRange(0, 85);
+  t.setZoomRange(-2, 22);
+  t.setProjection("globe");
+  t.setZoom(1.79);
+  t.setCenter(0, 24.26);
+  assert.equal(t.flatZoom(0), 1.79);
+  assert.equal(t.flatZoom(60), 1.79);
+  t.setCenter(10, 55);
+  t.setZoom(1.12);
+  const z = t.flatZoom(0);
+  assert.ok(z > 1.12 && z < 1.7, `zoom ${z}`);
+  const flat = t.clone();
+  flat.setZoom(z);
+  flat.setProjection("mercator");
+  close(flat.center[1], 55);
+  close(flat.center[0], 10);
+  close(flat.zoom, z, 1e-9);
+  const lower = t.clone();
+  lower.setZoom(z - 0.01);
+  lower.setProjection("mercator");
+  assert.ok(Math.abs(lower.center[1] - 55) > 1e-3);
+});
+
+test("switching to the globe keeps the zoom and the centre", () => {
+  const t = new Transform();
+  t.resize(601, 928);
+  t.setZoomRange(-2, 22);
+  t.setZoom(13.5);
+  t.setCenter(-122.33, 47.61);
+  t.setProjection("globe");
+  close(t.zoom, 13.5, 1e-12);
+  close(t.center[1], 47.61, 1e-9);
+  close(t.center[0], -122.33, 1e-9);
+});
+
 test("dragging over a pole stops at the pole without spinning or turning", () => {
   for (const zoom of [1.5, 3, 6]) {
     const t = globe(zoom, 0, 0, 20, 60);
