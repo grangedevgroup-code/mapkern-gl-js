@@ -1046,6 +1046,7 @@ export class MapkernMap extends Emitter<MapEvents> {
   setProjection(projection: Projection): this {
     const next = checkProjection(projection);
     if (next === this.transform.projection) return this;
+    if (next === "mercator") this.transform.setZoom(this.transform.flatZoom(this.transform.pitch));
     this.transform.setProjection(next);
     this.cameraChanged();
     this.emit("projection", { ...this.event("projection"), projection: next });
@@ -1400,7 +1401,6 @@ export class MapkernMap extends Emitter<MapEvents> {
       if (this.terrain) {
         this.terrain = null;
         t.setGround(0);
-        if (t.elevation !== 0) t.setElevationKeepCamera(0);
         if (t.elevation !== 0) t.setElevation(0);
         this.cameraVersion++;
       }
