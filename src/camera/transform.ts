@@ -8,6 +8,7 @@ import {
   EARTH_CIRCUMFERENCE,
   latFromMercatorY,
   lngFromMercatorX,
+  MAX_LATITUDE,
   mercatorX,
   mercatorY,
   TILE_SIZE,
@@ -54,6 +55,10 @@ const NO_PADDING: Padding = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEG = Math.PI / 180;
 const DEFAULT_FOV = (2 * Math.atan(0.375)) / DEG;
 const MAX_GROUND_ANGLE = 88 * DEG;
+const GLOBE_REACH = 4;
+const GLOBE_SUB_STEP = 0.05;
+const GLOBE_SPIN_ZOOM = 7;
+const GLOBE_SPIN_LATITUDE = 60 * DEG;
 
 export class Transform {
   width = 1;
@@ -905,44 +910,120 @@ export class Transform {
   }
 
   private rotateGlobeTo(world: readonly number[], px: number, py: number, z: number | undefined, keepSize: boolean) {
-    let zoomShift = 0;
-    for (let i = 0; i < 16; i++) {
-      this.update();
-      const hit = this.unprojectClamped(px, py, z === undefined ? undefined : z * this.worldSize);
-      const [tNorth, tEast] = this.northUpAngles(world[0]!, world[1]!);
-      const [hNorth, hEast] = this.northUpAngles(hit[0], hit[1]);
-      const dNorth = tNorth - hNorth;
-      const dEast = tEast - hEast;
-      if (Math.abs(dNorth) < 1e-13 && Math.abs(dEast) < 1e-13) break;
-      const latRad = (latFromMercatorY(this.cy) * Math.PI) / 180;
-      const lat = clampLatitude(latFromMercatorY(this.cy) + (dNorth * 180) / Math.PI);
-      const dx = dEast / Math.max(Math.cos(latRad), 1e-6) / (2 * Math.PI);
-      const before = Math.cosh(Math.PI * (1 - 2 * this.cy));
-      const g = this.globeAmount;
-      const x = this.cx;
-      const y = this.cy;
-      this.setCenterWorld(this.cx + Math.max(-0.25, Math.min(0.25, dx)), mercatorY(lat));
-      if (keepSize) {
-        const after = Math.cosh(Math.PI * (1 - 2 * this.cy));
-        const zoom = this.z;
-        this.setZoom(zoom + g * Math.log2(before / after));
-        zoomShift += this.z - zoom;
+    const startZoom = this.z;
+    const startStretch = Math.cosh(Math.PI * (1 - 2 * this.cy));
+    const g = this.globeAmount;
+    const radius = Math.max(1, this.radius);
+    const lift = z === undefined ? 0 : z * this.worldSize;
+    const out = scratchProject;
+    let tx = px;
+    let ty = py;
+    const place = (x: number, y: number) => {
+      this.setCenterWorld(x, y);
+      if (keepSize) this.setZoom(startZoom + g * Math.log2(startStretch / Math.cosh(Math.PI * (1 - 2 * this.cy))));
+    };
+    const miss = (r: number[]) => {
+      this.projectTo(out, world[0]!, world[1]!, lift);
+      r[0] = out[0]! - tx;
+      r[1] = out[1]! - ty;
+      return r[0] * r[0] + r[1] * r[1];
+    };
+    const seen = this.projectTo(out, world[0]!, world[1]!, lift) > 0;
+    const fromX = out[0]!;
+    const fromY = out[1]!;
+    const span = seen ? Math.hypot(px - fromX, py - fromY) : 0;
+    const steps = Math.min(32, Math.max(1, Math.ceil(span / (GLOBE_SUB_STEP * radius))));
+    const r = [0, 0];
+    const rx = [0, 0];
+    const ry = [0, 0];
+    const rn = [0, 0];
+    for (let k = 1; k <= steps; k++) {
+      tx = k === steps ? px : fromX + ((px - fromX) * k) / steps;
+      ty = k === steps ? py : fromY + ((py - fromY) * k) / steps;
+      const ox = this.cx;
+      const oy = this.cy;
+      let err = miss(r);
+      const reach = (GLOBE_REACH * Math.sqrt(err)) / radius;
+      let lambda = 1e-3;
+      for (let iter = 0; iter < 24 && err > 1e-4; iter++) {
+        const x0 = this.cx;
+        const y0 = this.cy;
+        const h = 0.25 / this.worldSize;
+        place(x0 + h, y0);
+        miss(rx);
+        const hy = y0 + h <= 1 ? h : -h;
+        place(x0, y0 + hy);
+        miss(ry);
+        const jx0 = (rx[0]! - r[0]!) / h;
+        const jx1 = (rx[1]! - r[1]!) / h;
+        const jy0 = (ry[0]! - r[0]!) / hy;
+        const jy1 = (ry[1]! - r[1]!) / hy;
+        const a = jx0 * jx0 + jx1 * jx1;
+        const b = jx0 * jy0 + jx1 * jy1;
+        const d = jy0 * jy0 + jy1 * jy1;
+        const gx = jx0 * r[0]! + jx1 * r[1]!;
+        const gy = jy0 * r[0]! + jy1 * r[1]!;
+        let improved = false;
+        for (let attempt = 0; attempt < 8 && !improved; attempt++) {
+          const damp = lambda * (a + d);
+          const A = a + damp;
+          const D = d + damp;
+          const det = A * D - b * b;
+          if (!(Math.abs(det) > 0)) break;
+          let sx = -(D * gx - b * gy) / det;
+          let sy = -(A * gy - b * gx) / det;
+          const longest = Math.max(Math.abs(sx), Math.abs(sy));
+          if (longest > 0.05) {
+            sx *= 0.05 / longest;
+            sy *= 0.05 / longest;
+          }
+          if (globeTurn(ox, oy, x0 + sx, y0 + sy) > reach) {
+            const room = reach - globeTurn(ox, oy, x0, y0);
+            const step = globeTurn(x0, y0, x0 + sx, y0 + sy);
+            if (room <= 0 || step <= 0) break;
+            sx *= room / step;
+            sy *= room / step;
+          }
+          place(x0 + sx, y0 + sy);
+          const e = miss(rn);
+          if (e < err) {
+            err = e;
+            r[0] = rn[0]!;
+            r[1] = rn[1]!;
+            lambda = Math.max(lambda / 3, 1e-9);
+            improved = true;
+          } else {
+            lambda *= 4;
+          }
+        }
+        if (!improved) {
+          place(x0, y0);
+          break;
+        }
       }
-      if (this.cx === x && this.cy === y) break;
+      if (k < steps && err > 0.25) break;
     }
-    return zoomShift;
+    return this.z - startZoom;
   }
 
-  private northUpAngles(x: number, y: number): [number, number] {
-    const u = scratchUnit;
-    unitFromMercator(x, y, u);
-    const c = this.axisC;
-    const e = this.axisE;
-    const n = this.axisN;
-    const up = u[0]! * c[0]! + u[1]! * c[1]! + u[2]! * c[2]!;
-    const east = u[0]! * e[0]! + u[1]! * e[1]! + u[2]! * e[2]!;
-    const north = u[0]! * n[0]! + u[1]! * n[1]! + u[2]! * n[2]!;
-    return [Math.atan2(north, up), Math.atan2(east, Math.hypot(north, up))];
+  panGlobe(dx: number, dy: number): number {
+    this.update();
+    const startZoom = this.z;
+    const m0 = Math.PI * (1 - 2 * this.cy);
+    const lat = Math.atan(Math.sinh(m0));
+    const b = this.bearingDeg * DEG;
+    const east = dx * Math.cos(b) - dy * Math.sin(b);
+    const north = -dx * Math.sin(b) - dy * Math.cos(b);
+    const radius = Math.max(1, this.radius);
+    const level = this.z + Math.log2(Math.cosh(m0));
+    const t = Math.min(1, Math.max(0, (GLOBE_SPIN_ZOOM - level) / 4));
+    const spin = 1 - t + (t * Math.cos(lat)) / Math.cos(Math.min(Math.abs(lat), GLOBE_SPIN_LATITUDE));
+    const limit = MAX_LATITUDE * DEG;
+    const newLat = Math.min(limit, Math.max(-limit, lat - north / radius));
+    const x = this.cx - ((east / (radius * Math.cos(lat))) * spin) / (2 * Math.PI);
+    this.setCenterWorld(x, mercatorY(newLat / DEG));
+    this.setZoom(startZoom + this.globeAmount * Math.log2(Math.cosh(m0) / Math.cosh(Math.PI * (1 - 2 * this.cy))));
+    return this.z - startZoom;
   }
 
   zoomAround(zoom: number, px: number, py: number, z?: number): void {
@@ -1270,6 +1351,15 @@ const scratchMatrix: Mat4 = mat4.create();
 const scratchUnit = [0, 0, 0];
 const scratchLocal = [0, 0, 0];
 const scratchScreen = [0, 0];
+const scratchProject = new Float64Array(2);
+
+function globeTurn(ax: number, ay: number, bx: number, by: number): number {
+  const la = Math.atan(Math.sinh(Math.PI * (1 - 2 * ay)));
+  const lb = Math.atan(Math.sinh(Math.PI * (1 - 2 * by)));
+  const s = Math.sin((lb - la) / 2);
+  const t = Math.sin((bx - ax) * Math.PI);
+  return 2 * Math.asin(Math.min(1, Math.sqrt(s * s + Math.cos(la) * Math.cos(lb) * t * t)));
+}
 
 function frustumPlanes(m: Mat4): number[][] {
   const planes: number[][] = [];
