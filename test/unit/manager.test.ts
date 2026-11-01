@@ -259,6 +259,32 @@ test("cache evicts least recently used tiles over budget but keeps visible ones"
   assert.ok(loader.released.length > 0);
 });
 
+test("eviction candidates are only tiles off screen, oldest first, and dropping one frees its bytes", async () => {
+  const { transform, loader, manager } = setup(5);
+  manager.update(transform, 0);
+  await flush();
+  await resolveAll(loader);
+  manager.update(transform, 1);
+  const none: TileCandidate[] = [];
+  manager.evictionCandidates(none, 3);
+  assert.equal(none.length, 0);
+  transform.setCenter(100, -30);
+  manager.update(transform, 2);
+  await flush();
+  await resolveAll(loader);
+  manager.update(transform, 3);
+  const old: TileCandidate[] = [];
+  manager.evictionCandidates(old, 3);
+  assert.ok(old.length > 0);
+  assert.ok(old.every((c) => c.owner === 3 && c.bytes === 1000 && c.lastUsed <= 1));
+  const before = manager.cachedBytes();
+  manager.dropTile(old[0]!.key);
+  assert.equal(manager.cachedBytes(), before - 1000);
+  assert.equal(manager.stats.evicted, 1);
+  for (const p of manager.pieces) manager.dropTile(p.tile.key);
+  assert.equal(manager.stats.evicted, 1);
+});
+
 test("scheduler honours priority and concurrency", async () => {
   const scheduler = new RequestScheduler(2);
   const started: number[] = [];
