@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { Transform } from "../../src/camera/transform.ts";
 import type { Rect, TileCoord } from "../../src/geo/tile.ts";
 import { FetchFailure } from "../../src/tiles/fetch.ts";
-import type { ManagerOptions, RenderPiece, TileLoader } from "../../src/tiles/manager.ts";
+import type { ManagerOptions, RenderPiece, TileCandidate, TileLoader } from "../../src/tiles/manager.ts";
 import { TileManager } from "../../src/tiles/manager.ts";
 import { RequestScheduler } from "../../src/tiles/scheduler.ts";
 
