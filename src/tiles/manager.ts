@@ -198,7 +198,7 @@ export class TileManager<D> implements TileCache {
 
   evictionCandidates(out: TileCandidate[], owner: number): void {
     for (const tile of this.tiles.values()) {
-      if (tile.retained || tile.wanted || this.jobs.has(tile.key)) continue;
+      if (tile.retained || tile.wanted || this.jobs.has(tile.key) || tile.z <= this.tiling.minZoom + 1) continue;
       out.push({ lastUsed: tile.lastUsed, z: tile.z, bytes: tile.bytes, key: tile.key, owner });
     }
   }
