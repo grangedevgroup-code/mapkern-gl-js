@@ -285,6 +285,28 @@ test("eviction candidates are only tiles off screen, oldest first, and dropping 
   assert.equal(manager.stats.evicted, 1);
 });
 
+test("the two coarsest levels are never offered for eviction", async () => {
+  const { transform, loader, manager } = setup(1.2);
+  manager.update(transform, 0);
+  await flush();
+  await resolveAll(loader);
+  manager.update(transform, 1);
+  transform.setZoom(9.3);
+  manager.update(transform, 2);
+  await flush();
+  await resolveAll(loader);
+  manager.update(transform, 3);
+  transform.setCenter(-50, 10);
+  manager.update(transform, 4);
+  await flush();
+  await resolveAll(loader);
+  manager.update(transform, 5);
+  const candidates: TileCandidate[] = [];
+  manager.evictionCandidates(candidates, 0);
+  assert.ok(candidates.length > 0);
+  assert.ok(candidates.every((c) => c.z > 1));
+});
+
 test("scheduler honours priority and concurrency", async () => {
   const scheduler = new RequestScheduler(2);
   const started: number[] = [];
