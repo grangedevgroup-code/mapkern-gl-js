@@ -2,7 +2,6 @@ import { MapkernError } from "../core/errors.ts";
 import { Emitter } from "../core/events.ts";
 import type { FitBoundsOptions, MapkernMap, UiText } from "../core/map.ts";
 import type { Projection } from "../geo/globe.ts";
-import { globeFitZoom } from "../geo/globe.ts";
 import { distanceMeters, metersPerPixel } from "../geo/mercator.ts";
 import type { DemSourceSpec, StyleSpec, StyleSpecV8 } from "../style/types.ts";
 import { Marker } from "./marker.ts";
@@ -1025,17 +1024,16 @@ export class TerrainControl extends Emitter<TerrainEvents> implements Control {
     } else {
       this.apply();
     }
-    map.setProjection(view === "globe" ? "globe" : "mercator");
     const pitch = view === "tilted" ? Math.min(this.pitch, map.getMaxPitch()) : 0;
-    const container = map.getContainer();
-    const fit =
-      view === "globe"
-        ? globeFitZoom(container.clientWidth, container.clientHeight, map.transform.fov, map.getCenter()[1])
-        : Number.POSITIVE_INFINITY;
-    const zoom = Math.min(map.getZoom(), fit);
-    if (Math.abs(map.getPitch() - pitch) > 0.5 || zoom < map.getZoom() - 0.01) {
+    if (view !== "globe") {
+      map.stop();
+      const zoom = map.transform.flatZoom(pitch);
+      if (zoom > map.getZoom()) map.jumpTo({ zoom });
+    }
+    map.setProjection(view === "globe" ? "globe" : "mercator");
+    if (Math.abs(map.getPitch() - pitch) > 0.5) {
       this.target = view;
-      map.easeTo({ pitch, zoom, duration: zoom < map.getZoom() - 1 ? 1200 : 500 });
+      map.easeTo({ pitch, duration: 500 });
     } else {
       this.target = null;
     }
