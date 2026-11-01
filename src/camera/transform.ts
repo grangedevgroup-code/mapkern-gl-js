@@ -305,6 +305,28 @@ export class Transform {
     return Math.max(this.minZoom, Math.min(this.maxZoom, this.view().fit));
   }
 
+  flatZoom(pitch: number): number {
+    const probe = this.clone();
+    probe.setProjection("mercator");
+    probe.setPitch(pitch);
+    const lng = lngFromMercatorX(this.cx);
+    const lat = latFromMercatorY(this.cy);
+    const keeps = (zoom: number) => {
+      probe.setZoom(zoom);
+      probe.setCenter(lng, lat);
+      return probe.z === zoom && Math.abs(probe.cy - this.cy) < 1e-9;
+    };
+    let lo = this.z;
+    let hi = this.maxZoom;
+    if (keeps(lo) || !keeps(hi)) return lo;
+    for (let i = 0; i < 48; i++) {
+      const mid = (lo + hi) / 2;
+      if (keeps(mid)) hi = mid;
+      else lo = mid;
+    }
+    return hi;
+  }
+
   private view() {
     const limits = this.limits;
     const wraps = this.renderWorldCopies && !limits;
