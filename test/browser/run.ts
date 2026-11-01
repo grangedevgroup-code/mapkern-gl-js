@@ -4326,6 +4326,7 @@ const specs: Spec[] = [
           terrain: unknown;
           pitch: number;
           view: string;
+          zoom: number;
         }>(`(() => {
           const b = document.querySelector(".mapkern-terrain-button");
           return {
@@ -4335,6 +4336,7 @@ const specs: Spec[] = [
             terrain: window.map.getTerrain(),
             pitch: window.map.getPitch(),
             view: window.terrain.view,
+            zoom: window.map.getZoom(),
           };
         })()`);
       const press = async () => {
@@ -4351,23 +4353,27 @@ const specs: Spec[] = [
       s0 = await state();
       if (s0.label !== "3D" || s0.tilted || s0.view !== "terrain" || s0.pitch !== 0 || !s0.terrain)
         fail(`second view is terrain from above: ${JSON.stringify(s0)}`);
+      if (Math.abs(s0.zoom - 6) > 1e-6) fail(`switching to terrain changed the zoom: ${JSON.stringify(s0)}`);
       await shot("terrain");
       await press();
       s0 = await state();
       if (s0.label !== "3D" || !s0.tilted || s0.view !== "tilted" || Math.abs(s0.pitch - 60) > 0.5)
         fail(`third view is tilted terrain: ${JSON.stringify(s0)}`);
+      if (Math.abs(s0.zoom - 6) > 1e-6) fail(`tilting changed the zoom: ${JSON.stringify(s0)}`);
       await shot("tilted");
       await press();
       s0 = await state();
       const globe = await page.evaluate<string>("window.map.getProjection()");
       if (s0.view !== "globe" || globe !== "globe" || !s0.terrain || s0.pitch !== 0 || s0.name !== "3D globe")
         fail(`fourth view is the 3D globe: ${JSON.stringify(s0)} ${globe}`);
+      if (Math.abs(s0.zoom - 6) > 1e-6) fail(`switching to the globe changed the zoom: ${JSON.stringify(s0)}`);
       await shot("globe");
       await press();
       s0 = await state();
       const flat = await page.evaluate<string>("window.map.getProjection()");
       if (s0.label !== "2D" || s0.terrain !== null || s0.pitch !== 0 || flat !== "mercator")
         fail(`a fifth press goes back to the flat map: ${JSON.stringify(s0)} ${flat}`);
+      if (Math.abs(s0.zoom - 6) > 1e-6) fail(`leaving the globe changed the zoom: ${JSON.stringify(s0)}`);
       await press();
       await page.call(
         `(style) => new Promise((r) => { window.map.once("styleload", () => r(0)); window.map.setStyle(style); })`,
@@ -5178,12 +5184,16 @@ const specs: Spec[] = [
       if (!around.includes("dot")) fail(`a box around the drawn dot found ${JSON.stringify(around)}`);
       const beside = await layersAt(`[${red[0] + 60}, ${red[1]}]`);
       if (beside.includes("dot")) fail("a query 60 px beside the dot still found it");
+      const zoomBefore = await page.evaluate<number>("window.map.getZoom()");
       await page.evaluate("void window.map.setTerrain(null)");
       await idle(page);
       const flat = await page.evaluate<{ x: number; y: number }>(`window.map.project(${JSON.stringify(DOT)})`);
-      if (Math.hypot(flat.x - p.x, flat.y - p.y) < 20)
+      const zoomAfter = await page.evaluate<number>("window.map.getZoom()");
+      if (Math.abs(zoomAfter - zoomBefore) > 1e-6)
+        fail(`turning terrain off should keep the zoom, it went from ${zoomBefore} to ${zoomAfter}`);
+      if (Math.hypot(flat.x - p.x, flat.y - p.y) < 1)
         fail(
-          `turning terrain off should move the dot on screen, it moved ${Math.hypot(flat.x - p.x, flat.y - p.y)} px`,
+          `turning terrain off should move the raised dot on screen, it moved ${Math.hypot(flat.x - p.x, flat.y - p.y)} px`,
         );
       const after = await page.evaluate<{ terrain: unknown; red: number[] | null }>(
         `({ terrain: window.map.getDiagnostics().terrain, red: ${RED_CENTROID} })`,
