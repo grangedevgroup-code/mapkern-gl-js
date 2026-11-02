@@ -41,6 +41,7 @@ import { sharedDiskCache } from "../tiles/cache.ts";
 import type { TransformRequest } from "../tiles/fetch.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileCache, TileCandidate, TileManager, TileStats } from "../tiles/manager.ts";
+import { uploadBudget } from "../tiles/manager.ts";
 import { RequestScheduler } from "../tiles/scheduler.ts";
 import type { AttributionOptions, Control, ControlPosition } from "../ui/controls.ts";
 import { AttributionControl } from "../ui/controls.ts";
@@ -179,6 +180,8 @@ export type UiText =
 const NEAR_SAMPLES = 8;
 const PREFETCH_MARGIN = 1.4;
 const AROUND_REFRESH_MS = 250;
+const MOVING_UPLOAD_MS = 4;
+const RESTING_UPLOAD_MS = 6;
 
 const DEFAULT_TEXT: Record<UiText, string> = {
   zoomIn: "Zoom in",
@@ -495,6 +498,7 @@ export class MapkernMap extends Emitter<MapEvents> {
     active: () => !this.removed,
   });
   private elevationIntent: "zoom" | "camera" = "zoom";
+  private uploadTurn = 0;
   private around: Transform | null = null;
   private aroundAt = Number.NEGATIVE_INFINITY;
   private aroundRevision = -1;
@@ -2754,10 +2758,13 @@ export class MapkernMap extends Emitter<MapEvents> {
     if (this.handlers?.step(started)) animating = true;
     const style = this.style;
     if (style) {
-      const deadline = started + 6;
+      const moving = this.isMoving();
+      const budget = uploadBudget(started + (moving ? MOVING_UPLOAD_MS : RESTING_UPLOAD_MS), moving);
       let moreUploads = false;
-      for (const source of style.sources.values()) {
-        if (source.uploadPending(deadline, now)) moreUploads = true;
+      const uploaders = [...style.sources.values()];
+      const turn = this.uploadTurn++;
+      for (let i = 0; i < uploaders.length; i++) {
+        if (uploaders[(turn + i) % uploaders.length]!.uploadPending(budget, now)) moreUploads = true;
       }
       this.updateTerrain(style, progress);
       this.surface = this.globeSurface();
