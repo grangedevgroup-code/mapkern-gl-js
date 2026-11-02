@@ -451,6 +451,35 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "the README terrain example also works before the style has loaded",
+    async run({ page, base }) {
+      const readme = readFileSync(join(root, "README.md"), "utf8");
+      const code = [...readme.matchAll(/```js\n([\s\S]*?)```/g)]
+        .map((match) => match[1]!)
+        .find((block) => block.includes("TerrainControl"));
+      if (!code) fail("the README has no TerrainControl example");
+      const result = await page.call<{ terrain: boolean; pitch: number; errors: { code: string }[] }>(
+        `async (code, style) => {
+          window.errors = [];
+          if (window.map instanceof mapkern.Map) window.map.remove();
+          const map = new mapkern.Map({ container: "map", style, fadeDuration: 0, center: [-122.345, 47.615], zoom: 12 });
+          window.map = map;
+          map.on("error", (e) => window.errors.push({ code: e.error.code, message: e.error.message }));
+          new Function("map", "mapkern", code)(map, mapkern);
+          await map.once("load");
+          await Promise.race([map.once("idle"), new Promise((resolve) => setTimeout(resolve, 8000))]);
+          return { terrain: map.getTerrain() !== null, pitch: map.getPitch(), errors: window.errors };
+        }`,
+        code,
+        JSON.parse(rasterStyle(base, "/fixture/raster")),
+      );
+      if (!result.terrain) fail("terrain did not turn on when the example ran before the style loaded");
+      if (result.pitch < 30) fail(`expected a tilted view, got pitch ${result.pitch}`);
+      const bad = result.errors.filter((e) => /invalid|unsupported|style/.test(e.code));
+      if (bad.length > 0) fail(`the example failed: ${JSON.stringify(bad)}`);
+    },
+  },
+  {
     name: "parent tiles cover the view while children are slow",
     async run({ page, base, shot }) {
       await createMap(page, rasterStyle(base, "/fixture/slow/2500/5"));
