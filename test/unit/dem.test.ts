@@ -9,12 +9,14 @@ import {
   fromHalf,
   gradients,
   NEIGHBORS,
+  neighborStrip,
   removeSpikes,
   sampleElevation,
   toHalf,
   toHalfArray,
   unpackFor,
   writeFrame,
+  writeStrip,
 } from "../../src/terrain/dem.ts";
 import { imageType } from "../../src/worker/dem-task.ts";
 
@@ -300,5 +302,22 @@ test("the backfill region is exactly the cells backfill writes", () => {
         assert.ok(!changed || inside, `${dx},${dy}: cell ${x},${y} changed outside the region`);
         if (inside) assert.equal(a.elevation[y * a.stride + x], 2, `${dx},${dy}: cell ${x},${y} not written`);
       }
+  }
+});
+
+test("refreshing only the side a neighbor touched matches a full recompute", () => {
+  const size = 6;
+  const surface = (x: number, y: number) => x * x * 2 + 3 * y + ((x * y) % 7);
+  for (const [dx, dy] of NEIGHBORS) {
+    const a = decodeDem(image(size, surface), size, TERRARIUM)!;
+    const b = decodeDem(
+      image(size, (x, y) => surface(x + dx * size, y + dy * size) + 50),
+      size,
+      TERRARIUM,
+    )!;
+    const before = gradients(a);
+    backfill(a, b, dx, dy);
+    writeStrip(a, neighborStrip(a, dx, dy), before);
+    assert.deepEqual(before, gradients(a), `neighbor ${dx},${dy}`);
   }
 });
