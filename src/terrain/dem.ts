@@ -271,17 +271,30 @@ export function frameStrips(grid: DemGrid): FrameStrip[] {
   return [strip(0, 0, n, 2), strip(0, n - 2, n, 2), strip(0, 2, 2, n - 4), strip(n - 2, 2, 2, n - 4)];
 }
 
-export function writeFrame(grid: DemGrid, out: Float32Array | Uint16Array): void {
+export function neighborStrip(grid: DemGrid, dx: number, dy: number): FrameStrip {
+  const n = grid.size + 2;
+  const x = dx > 0 ? n - 2 : 0;
+  const y = dy > 0 ? n - 2 : 0;
+  const width = dx === 0 ? n : 2;
+  const height = dy === 0 ? n : 2;
+  const data = new Float32Array(width * height * 2);
+  for (let j = 0; j < height; j++) for (let i = 0; i < width; i++) horn(grid, x + i, y + j, data, (j * width + i) * 2);
+  return { x, y, width, height, data };
+}
+
+export function writeStrip(grid: DemGrid, s: FrameStrip, out: Float32Array | Uint16Array): void {
   const n = grid.size + 2;
   const half = out instanceof Uint16Array;
-  for (const s of frameStrips(grid)) {
-    for (let j = 0; j < s.height; j++) {
-      const row = s.data.subarray(j * s.width * 2, (j + 1) * s.width * 2);
-      const at = ((s.y + j) * n + s.x) * 2;
-      if (half) for (let i = 0; i < row.length; i++) out[at + i] = toHalf(row[i]!);
-      else out.set(row, at);
-    }
+  for (let j = 0; j < s.height; j++) {
+    const row = s.data.subarray(j * s.width * 2, (j + 1) * s.width * 2);
+    const at = ((s.y + j) * n + s.x) * 2;
+    if (half) for (let i = 0; i < row.length; i++) out[at + i] = toHalf(row[i]!);
+    else out.set(row, at);
   }
+}
+
+export function writeFrame(grid: DemGrid, out: Float32Array | Uint16Array): void {
+  for (const s of frameStrips(grid)) writeStrip(grid, s, out);
 }
 
 function horn(grid: DemGrid, i: number, j: number, out: Float32Array, k: number): void {
