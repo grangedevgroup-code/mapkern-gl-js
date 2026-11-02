@@ -111,6 +111,17 @@ export interface PatternImages {
   missing(id: string): void;
 }
 
+function hasBucket(
+  manager: TileManager<VectorTile>,
+  layerId: string,
+  accept: ((piece: RenderPiece<VectorTile>) => boolean) | undefined,
+): boolean {
+  for (const piece of manager.pieces) {
+    if (piece.tile.data?.buckets.get(layerId)?.main && (!accept || accept(piece))) return true;
+  }
+  return false;
+}
+
 const slotUniforms = new Map<string, string>();
 const compUniforms = new Map<string, string>();
 
@@ -162,6 +173,9 @@ export class VectorPainter {
     stats: PaintStats,
     pick?: PickPass,
   ): void {
+    const near =
+      layer.type === "circle" || layer.type === "heatmap" ? (frame.acceptNear ?? frame.accept) : frame.accept;
+    if (!hasBucket(manager, layer.id, near)) return;
     switch (layer.type) {
       case "fill":
         this.drawFill(frame, layer, manager, stats, pick);
