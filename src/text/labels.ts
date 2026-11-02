@@ -350,7 +350,7 @@ export class LabelRenderer {
     let changed = job !== null;
     const dt = Math.min(100, Math.max(0, now - (this.lastFrame ?? now)));
     this.lastFrame = now;
-    for (const [key, label] of this.labels) {
+    for (const label of this.labels.values()) {
       if (label.opacity !== label.target) {
         const step = dt / FADE_MS;
         label.opacity =
@@ -361,7 +361,7 @@ export class LabelRenderer {
         changed = true;
       }
       if (label.target === 0 && label.opacity <= 0) {
-        this.labels.delete(key);
+        this.labels.delete(label.key);
         changed = true;
       }
     }
@@ -1224,26 +1224,26 @@ export class LabelRenderer {
       this.vertexData = new ArrayBuffer(Math.max(needed, this.vertexData.byteLength * 2));
     const f32 = new Float32Array(this.vertexData);
     const u16 = new Uint16Array(this.vertexData);
-    const u8 = new Uint8Array(this.vertexData);
+    const u32 = new Uint32Array(this.vertexData);
     let v = 0;
     let visible = 0;
     const shifts = new Map<StyleLayer, [number, number]>();
+    let packedFor: Label | null = null;
+    let packedColor = 0;
+    let packedHalo = 0;
     const put = (x: number, y: number, u: number, w: number, label: Label, scale = label.scale) => {
       const o = v * STRIDE;
       f32[o / 4] = x;
       f32[o / 4 + 1] = y;
       u16[o / 2 + 4] = Math.round(u * 4);
       u16[o / 2 + 5] = Math.round(w * 4);
-      const c = label.color;
-      const h = label.halo;
-      u8[o + 12] = c[0] * c[3] * 255;
-      u8[o + 13] = c[1] * c[3] * 255;
-      u8[o + 14] = c[2] * c[3] * 255;
-      u8[o + 15] = c[3] * 255;
-      u8[o + 16] = h[0] * h[3] * 255;
-      u8[o + 17] = h[1] * h[3] * 255;
-      u8[o + 18] = h[2] * h[3] * 255;
-      u8[o + 19] = h[3] * 255;
+      if (packedFor !== label) {
+        packedFor = label;
+        packedColor = packPremultiplied(label.color);
+        packedHalo = packPremultiplied(label.halo);
+      }
+      u32[o / 4 + 3] = packedColor;
+      u32[o / 4 + 4] = packedHalo;
       f32[o / 4 + 5] = label.opacity;
       f32[o / 4 + 6] = scale;
       f32[o / 4 + 7] = label.haloWidth;
@@ -1497,6 +1497,16 @@ function describeVertices(gl: WebGL2RenderingContext): void {
   gl.vertexAttribPointer(3, 4, gl.UNSIGNED_BYTE, true, STRIDE, 16);
   gl.enableVertexAttribArray(4);
   gl.vertexAttribPointer(4, 4, gl.FLOAT, false, STRIDE, 20);
+}
+
+function packPremultiplied(c: RGBA): number {
+  const a = c[3];
+  return (
+    ((c[0] * a * 255) & 255) |
+    (((c[1] * a * 255) & 255) << 8) |
+    (((c[2] * a * 255) & 255) << 16) |
+    (((a * 255) & 255) << 24)
+  );
 }
 
 function sameNumbers(a: readonly number[], b: readonly number[]): boolean {
