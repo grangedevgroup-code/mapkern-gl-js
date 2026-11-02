@@ -151,8 +151,10 @@ function customInput(t: Transform): Float64Array & CustomLayerInput {
 const DRAPED: ReadonlySet<string> = new Set(["background", "raster", "hillshade", "fill", "line", "circle", "heatmap"]);
 const SCREEN_SIZED: ReadonlySet<string> = new Set(["hillshade", "line", "circle", "heatmap"]);
 const RESTING_ZOOM_STEP = 0.05;
-const MOVING_ZOOM_STEP = 0.25;
-const MOVING_DRAPES = 6;
+const MOVING_ZOOM_STEP = 0.5;
+const MOVING_DRAPES = 2;
+const MOVING_DRAPE_MS = 4;
+const RESTING_DRAPE_MS = 6;
 
 function drapeFollowsZoom(layer: StyleLayer): boolean {
   if (layer.usesZoom || SCREEN_SIZED.has(layer.type)) return true;
@@ -476,7 +478,7 @@ export class Painter {
     const layers = frame.layers.filter((l) => DRAPED.has(l.type) && l.isVisible(zoom));
     const turning = layers.some((l) => l.type === "hillshade" && l.fixed<string>("illuminationAnchor") !== "map");
     const bearing = turning ? Math.round(t.bearing / 4) * 4 : 0;
-    const deadline = performance.now() + 6;
+    const deadline = performance.now() + (frame.moving ? MOVING_DRAPE_MS : RESTING_DRAPE_MS);
     const zoomed = layers.some(drapeFollowsZoom);
     const tolerance = !zoomed ? Number.POSITIVE_INFINITY : frame.moving ? MOVING_ZOOM_STEP : RESTING_ZOOM_STEP;
     let redrawn = 0;
