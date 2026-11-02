@@ -2,7 +2,7 @@ import type { Transform } from "../camera/transform.ts";
 import type { TileCoord } from "../geo/tile.ts";
 import type { RasterSourceSpec } from "../style/types.ts";
 import { FetchFailure, fetchBytes, resolveRequest } from "../tiles/fetch.ts";
-import type { TileLoader, TileStats } from "../tiles/manager.ts";
+import type { TileLoader, TileStats, UploadBudget } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
 import type { MapSource, SourceContext } from "./source.ts";
 import { sourceFailure, tileEvents } from "./source.ts";
@@ -112,8 +112,8 @@ export class RasterSource implements MapSource {
     this.manager?.update(transform, now, predicted);
   }
 
-  uploadPending(deadline: number, now: number): boolean {
-    return this.manager?.uploadPending(deadline, now) ?? false;
+  uploadPending(budget: UploadBudget, now: number): boolean {
+    return this.manager?.uploadPending(budget, now) ?? false;
   }
 
   isIdle(): boolean {
