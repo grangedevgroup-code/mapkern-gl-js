@@ -88,7 +88,7 @@ export class Transform {
   private readonly axisE: number[] = [0, 1, 0];
   private readonly axisN: number[] = [0, 0, 1];
   private coverCache = new Map<string, CoveringTile[]>();
-  revision = 0;
+  private changes = 0;
   private areaCache = new Map<number, number>();
   private cx = 0.5;
   private cy = 0.5;
@@ -196,6 +196,11 @@ export class Transform {
 
   get projection(): Projection {
     return this.mode;
+  }
+
+  get revision(): number {
+    this.update();
+    return this.changes;
   }
 
   get globeness(): number {
@@ -512,7 +517,7 @@ export class Transform {
     this.forward[1] = -this.globeCam[1] / d;
     this.forward[2] = -camHeight / d;
     this.globeAmount = this.mode === "globe" ? globeness(this.z) : 0;
-    this.revision++;
+    this.changes++;
     this.coverCache.clear();
     this.areaCache.clear();
     if (this.globeAmount > 0) {
