@@ -5,7 +5,7 @@ import type { StyleLayer } from "../style/layer.ts";
 import type { SourceSpec } from "../style/types.ts";
 import type { ResponseStore } from "../tiles/cache.ts";
 import type { TransformRequest } from "../tiles/fetch.ts";
-import type { ManagerEvents, TileCache, TileStats } from "../tiles/manager.ts";
+import type { ManagerEvents, TileCache, TileStats, UploadBudget } from "../tiles/manager.ts";
 import type { RequestScheduler } from "../tiles/scheduler.ts";
 import type { WorkerPool } from "../worker/pool.ts";
 
@@ -36,7 +36,7 @@ export interface MapSource {
   spec: SourceSpec;
   load(signal: AbortSignal): Promise<void>;
   update(transform: Transform, now: number, predicted: readonly Transform[]): void;
-  uploadPending(deadline: number, now: number): boolean;
+  uploadPending(budget: UploadBudget, now: number): boolean;
   isIdle(): boolean;
   isFading(): boolean;
   stats(): TileStats | null;
