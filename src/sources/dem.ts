@@ -16,7 +16,7 @@ import {
   writeStrip,
 } from "../terrain/dem.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
-import type { TileLoader, TileStats } from "../tiles/manager.ts";
+import type { TileLoader, TileStats, UploadBudget } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
 import type { DemReply } from "../worker/dem-task.ts";
 import { isRawElevation, NO_OFFSCREEN, readPixels } from "../worker/dem-task.ts";
@@ -179,8 +179,8 @@ export class DemSource implements MapSource {
     this.manager?.update(transform, now, predicted);
   }
 
-  uploadPending(deadline: number, now: number): boolean {
-    return this.manager?.uploadPending(deadline, now) ?? false;
+  uploadPending(budget: UploadBudget, now: number): boolean {
+    return this.manager?.uploadPending(budget, now) ?? false;
   }
 
   isIdle(): boolean {
