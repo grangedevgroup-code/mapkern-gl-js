@@ -13,7 +13,6 @@ export interface SourceContext {
   readonly gl: GL;
   readonly scheduler: RequestScheduler;
   workers(): WorkerPool;
-  imageWorker(): WorkerPool;
   readonly transformRequest: TransformRequest | undefined;
   readonly requestTimeoutMs: number;
   readonly diskCache: ResponseStore | null;
