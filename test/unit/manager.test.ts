@@ -4,7 +4,7 @@ import { Transform } from "../../src/camera/transform.ts";
 import type { Rect, TileCoord } from "../../src/geo/tile.ts";
 import { FetchFailure } from "../../src/tiles/fetch.ts";
 import type { ManagerOptions, RenderPiece, TileCandidate, TileLoader } from "../../src/tiles/manager.ts";
-import { TileManager } from "../../src/tiles/manager.ts";
+import { TileManager, uploadBudget } from "../../src/tiles/manager.ts";
 import { RequestScheduler } from "../../src/tiles/scheduler.ts";
 
 interface Pending {
@@ -408,7 +408,7 @@ async function refreshedUploadingSetup() {
   await flush();
   for (const p of loader.pending.splice(0)) p.resolve({ v: "old", uploaded: false });
   await flush();
-  manager.uploadPending(Number.POSITIVE_INFINITY, 1);
+  manager.uploadPending(uploadBudget(Number.POSITIVE_INFINITY), 1);
   manager.update(transform, 1);
   assert.ok(manager.pieces.length > 0);
   manager.refresh();
@@ -427,7 +427,7 @@ test("refreshed data waits for upload before replacing what is drawn", async () 
     "nothing changes before the upload",
   );
   assert.equal(manager.hasPendingUploads, true);
-  manager.uploadPending(Number.POSITIVE_INFINITY, 4);
+  manager.uploadPending(uploadBudget(Number.POSITIVE_INFINITY), 4);
   manager.update(transform, 4);
   assert.ok(manager.pieces.every((p) => p.tile.data?.v === "new" && p.tile.data.uploaded));
   assert.ok(loader.released.includes("old"));
@@ -530,7 +530,7 @@ test("refreshed tiles are swapped in together", async () => {
   const [first, ...rest] = reloads;
   first!.resolve({ v: "new", uploaded: false });
   await flush();
-  manager.uploadPending(Number.POSITIVE_INFINITY, 3);
+  manager.uploadPending(uploadBudget(Number.POSITIVE_INFINITY), 3);
   manager.update(transform, 3);
   assert.ok(
     manager.pieces.every((p) => p.tile.data?.v === "old"),
@@ -538,7 +538,7 @@ test("refreshed tiles are swapped in together", async () => {
   );
   for (const p of rest) p.resolve({ v: "new", uploaded: false });
   await flush();
-  manager.uploadPending(Number.POSITIVE_INFINITY, 4);
+  manager.uploadPending(uploadBudget(Number.POSITIVE_INFINITY), 4);
   manager.update(transform, 4);
   assert.ok(
     manager.pieces.every((p) => p.tile.data?.v === "new"),
@@ -552,7 +552,7 @@ test("a slow tile holds back finished ones only briefly", async () => {
   first!.resolve({ v: "new", uploaded: false });
   await flush();
   await new Promise((r) => setTimeout(r, 130));
-  manager.uploadPending(Number.POSITIVE_INFINITY, 3);
+  manager.uploadPending(uploadBudget(Number.POSITIVE_INFINITY), 3);
   manager.update(transform, 3);
   const drawn = manager.pieces.map((p) => p.tile.data?.v);
   assert.ok(drawn.includes("new"), "the finished tile is shown after the wait");
@@ -661,4 +661,76 @@ test("on the flat map tiles still appear as they arrive", async () => {
   await flush();
   manager.update(transform, 2);
   assert.equal(manager.pieces.filter((p) => p.tile.z === 4).length, 2);
+});
+
+class CountingLoader extends FakeLoader {
+  uploaded: string[] = [];
+  override needsUpload(): boolean {
+    return true;
+  }
+  override upload(data?: string): void {
+    if (data) this.uploaded.push(data);
+  }
+}
+
+function uploading(zoom: number) {
+  const transform = new Transform();
+  transform.resize(800, 600);
+  transform.setCenter(10, 20);
+  transform.setZoom(zoom);
+  const loader = new CountingLoader();
+  const manager = new TileManager(
+    "test",
+    { tileSize: 512, minZoom: 0, maxZoom: 14, roundZoom: false, bounds: null },
+    loader,
+    new RequestScheduler(64),
+    { ...options, prefetchLimit: 16 },
+    { changed() {}, failure() {}, wakeAt() {} },
+  );
+  return { transform, loader, manager };
+}
+
+test("one upload budget is shared across sources: after the deadline only the first upload happens", async () => {
+  const a = uploading(5);
+  const b = uploading(5);
+  for (const m of [a, b]) {
+    m.manager.update(m.transform, 0);
+    await flush();
+    await resolveAll(m.loader);
+  }
+  const budget = uploadBudget(Number.NEGATIVE_INFINITY);
+  assert.equal(a.manager.uploadPending(budget, 1), true);
+  assert.equal(a.loader.uploaded.length, 1);
+  assert.equal(budget.used, true);
+  b.manager.uploadPending(budget, 1);
+  assert.equal(b.loader.uploaded.length, 0);
+});
+
+test("tiles fetched ahead of the view wait while the map moves, and upload once they are needed or it stops", async () => {
+  const { transform, loader, manager } = uploading(5);
+  const around = transform.clone();
+  around.resize(1600, 1200);
+  manager.update(transform, 0, [around]);
+  await flush();
+  await resolveAll(loader);
+  manager.update(transform, 1, [around]);
+  await flush();
+  await resolveAll(loader);
+  manager.update(transform, 2, [around]);
+  const visible = new Set(
+    manager.stats.visibleSlots
+      ? transform
+          .coveringTiles({ tileSize: 512, minZoom: 0, maxZoom: 14, round: false })
+          .map((t) => `${t.z}/${t.x}/${t.y}`)
+      : [],
+  );
+  manager.uploadPending(uploadBudget(Number.POSITIVE_INFINITY, true), 3);
+  const moving = [...loader.uploaded];
+  assert.ok(moving.length > 0);
+  assert.ok(
+    moving.every((id) => visible.has(id) || Number(id.split("/")[0]) < 5),
+    `uploaded ${moving.join(" ")}`,
+  );
+  manager.uploadPending(uploadBudget(Number.POSITIVE_INFINITY), 4);
+  assert.ok(loader.uploaded.length > moving.length);
 });
