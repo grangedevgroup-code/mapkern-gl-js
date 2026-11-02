@@ -68,6 +68,7 @@ export interface DrapeEntry {
 export class DrapeCache {
   private readonly gl: GL;
   private readonly entries = new Map<string, DrapeEntry>();
+  private readonly spare: DrapeEntry[] = [];
   private frame = 0;
 
   constructor(gl: GL) {
@@ -77,6 +78,7 @@ export class DrapeCache {
   get bytes(): number {
     let total = 0;
     for (const e of this.entries.values()) total += entryBytes(e);
+    for (const e of this.spare) total += entryBytes(e);
     return total;
   }
 
@@ -97,9 +99,19 @@ export class DrapeCache {
   target(key: string, size: number): DrapeEntry {
     let entry = this.entries.get(key);
     if (entry && entry.size !== size) {
-      this.release(entry);
+      this.spare.push(entry);
       this.entries.delete(key);
       entry = undefined;
+    }
+    if (!entry) {
+      const i = this.spare.findIndex((e) => e.size === size);
+      if (i >= 0) {
+        entry = this.spare[i]!;
+        this.spare.splice(i, 1);
+        entry.signature = Number.NaN;
+        entry.zoom = Number.NaN;
+        this.entries.set(key, entry);
+      }
     }
     if (!entry) {
       const g = this.gl;
@@ -127,7 +139,13 @@ export class DrapeCache {
   trim(budget: number): void {
     const old = [...this.entries].filter(([, e]) => e.used !== this.frame).sort((a, b) => a[1].used - b[1].used);
     let spare = 0;
+    for (const entry of this.spare) spare += entryBytes(entry);
     for (const [, entry] of old) spare += entryBytes(entry);
+    while (spare > budget && this.spare.length > 0) {
+      const entry = this.spare.shift()!;
+      spare -= entryBytes(entry);
+      this.release(entry);
+    }
     for (const [key, entry] of old) {
       if (spare <= budget) break;
       spare -= entryBytes(entry);
@@ -138,11 +156,14 @@ export class DrapeCache {
 
   reset(): void {
     this.entries.clear();
+    this.spare.length = 0;
   }
 
   destroy(): void {
     for (const entry of this.entries.values()) this.release(entry);
+    for (const entry of this.spare) this.release(entry);
     this.entries.clear();
+    this.spare.length = 0;
   }
 
   private release(entry: DrapeEntry): void {
