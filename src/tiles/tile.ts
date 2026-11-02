@@ -28,6 +28,8 @@ export function canTransition(from: TileState, to: TileState): boolean {
   return TRANSITIONS[from].includes(to);
 }
 
+export const tileEpoch = { value: 0 };
+
 export class Tile<D> implements TileCoord {
   readonly z: number;
   readonly x: number;
@@ -87,6 +89,7 @@ export class Tile<D> implements TileCoord {
     if (!canTransition(this.state, next)) {
       throw new Error(`Invalid tile transition ${this.state} -> ${next} for ${this.z}/${this.x}/${this.y}`);
     }
+    if (next === "ready" || this.state === "ready" || next === "evicted") tileEpoch.value++;
     this.state = next;
   }
 }
