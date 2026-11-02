@@ -1270,15 +1270,21 @@ export class Transform {
 
   coveringTiles(options: CoverOptions): CoveringTile[] {
     this.update();
-    if (this.globeAmount > 0) {
-      const key = `${options.tileSize}/${options.minZoom}/${options.maxZoom}/${options.round}/${options.maxTiles ?? 0}`;
-      let cached = this.coverCache.get(key);
-      if (!cached) {
-        cached = this.globeCovering(options);
-        this.coverCache.set(key, cached);
-      }
-      return cached.slice();
+    const centerTileZoom = this.z + Math.log2(TILE_SIZE / options.tileSize);
+    const stretch = this.globeAmount * Math.log2(Math.cosh(Math.PI * (1 - 2 * this.cy)));
+    const deepest = Math.ceil(centerTileZoom + Math.max(0, stretch)) + 1;
+    const maxZoom = Math.min(options.maxZoom, MAX_TILE_ZOOM, Math.max(options.minZoom, deepest));
+    const key = `${this.globeAmount > 0}/${options.tileSize}/${options.minZoom}/${maxZoom}/${options.round}/${options.maxTiles ?? 0}`;
+    let cached = this.coverCache.get(key);
+    if (!cached) {
+      const canonical = { ...options, maxZoom };
+      cached = this.globeAmount > 0 ? this.globeCovering(canonical) : this.flatCovering(canonical);
+      this.coverCache.set(key, cached);
     }
+    return cached.slice();
+  }
+
+  private flatCovering(options: CoverOptions): CoveringTile[] {
     const poly = this.footprint();
     if (poly.length < 3) return [];
     const ws = this.worldSize;
