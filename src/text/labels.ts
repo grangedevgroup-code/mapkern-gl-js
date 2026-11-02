@@ -814,6 +814,7 @@ export class LabelRenderer {
       }
       items.sort((a, b) => b.priority - a.priority || a.was - b.was || a.order - b.order);
       const scratch: Record<string, unknown> = {};
+      const layerFont = this.font(layer, at);
       for (const { piece, bucket, i } of items) {
         const labels = bucket.labels!;
         const tile = piece.tile;
@@ -837,7 +838,7 @@ export class LabelRenderer {
         let iconAnchor: Anchor = "center";
         let iconOffset: [number, number] = [0, 0];
         let textStyle: TextStyle = { variable, radial: null, offset: [0, 0], justify: "center" };
-        let shape: TextShape = { letterSpacing: 0, lineHeight, maxWidth: 10, font: this.font(layer, at) };
+        let shape: TextShape = { letterSpacing: 0, lineHeight, maxWidth: 10, font: layerFont };
         for (let a = 0; a < anchors.length; a += 3) {
           const tx = anchors[a]! / extent;
           const ty = anchors[a + 1]! / extent;
