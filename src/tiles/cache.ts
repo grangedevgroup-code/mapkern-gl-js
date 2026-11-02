@@ -1,5 +1,5 @@
 export interface StoredResponse {
-  data: ArrayBuffer;
+  data: Blob;
   type: string;
 }
 
@@ -8,7 +8,8 @@ export type StoredState = "fresh" | "stale" | "missing" | "unknown";
 export interface ResponseStore {
   state(url: string): StoredState;
   read(url: string): Promise<StoredResponse | null>;
-  write(url: string, data: ArrayBuffer, type: string, expires: number): void;
+  write(url: string, data: Blob, type: string, expires: number): void;
+  remove(url: string): void;
 }
 
 interface HeaderSource {
@@ -79,12 +80,12 @@ interface IndexRow {
 
 interface Pending {
   url: string;
-  data: ArrayBuffer;
+  data: Blob;
   type: string;
   expires: number;
 }
 
-const DB_NAME = "mapkern-cache";
+const DB_NAME = "mapkern-tiles";
 const DATA = "data";
 const INDEX = "index";
 const FLUSH_MS = 400;
@@ -121,7 +122,7 @@ export class DiskCache implements ResponseStore {
 
   read(url: string): Promise<StoredResponse | null> {
     const queued = this.pending.get(url);
-    if (queued) return Promise.resolve({ data: queued.data.slice(0), type: queued.type });
+    if (queued) return Promise.resolve({ data: queued.data, type: queued.type });
     if (this.broken) return Promise.resolve(null);
     return new Promise((resolve) => {
       const waiting = this.reads.get(url);
@@ -134,8 +135,26 @@ export class DiskCache implements ResponseStore {
     });
   }
 
-  write(url: string, data: ArrayBuffer, type: string, expires: number): void {
-    if (this.broken || data.byteLength > this.maxBytes / 8) return;
+  remove(url: string): void {
+    this.pending.delete(url);
+    const row = this.entries.get(url);
+    if (row) {
+      this.entries.delete(url);
+      this.total -= row.size;
+    }
+    const db = this.db;
+    if (!db) return;
+    try {
+      const tx = db.transaction([DATA, INDEX], "readwrite", { durability: "relaxed" });
+      tx.objectStore(DATA).delete(url);
+      tx.objectStore(INDEX).delete(url);
+    } catch {
+      this.broken = true;
+    }
+  }
+
+  write(url: string, data: Blob, type: string, expires: number): void {
+    if (this.broken || data.size > this.maxBytes / 8) return;
     this.pending.set(url, { url, data, type, expires });
     this.schedule();
   }
@@ -247,7 +266,7 @@ export class DiskCache implements ResponseStore {
       const request = store.get(url);
       request.onsuccess = () => {
         const value = request.result as StoredResponse | undefined;
-        done(url, value ? { data: value.data, type: value.type } : null);
+        done(url, value ?? null);
         if (value) this.touch(url);
       };
       request.onerror = () => done(url, null);
@@ -293,7 +312,7 @@ export class DiskCache implements ResponseStore {
     const data = tx.objectStore(DATA);
     const index = tx.objectStore(INDEX);
     for (const w of writes) {
-      const row: IndexRow = { url: w.url, size: w.data.byteLength, used: now, expires: w.expires };
+      const row: IndexRow = { url: w.url, size: w.data.size, used: now, expires: w.expires };
       const old = this.entries.get(w.url);
       this.total += row.size - (old?.size ?? 0);
       this.entries.set(w.url, row);
