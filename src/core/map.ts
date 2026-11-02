@@ -459,6 +459,7 @@ export class MapkernMap extends Emitter<MapEvents> {
   private readonly strings: Record<UiText, string>;
   private readonly cleanup: (() => void)[] = [];
   private workers: WorkerPool | null = null;
+  private imageWorkers: WorkerPool | null = null;
   private style: Style | null = null;
   private styleRequest: AbortController | null = null;
   private spriteRequest: AbortController | null = null;
@@ -2272,6 +2273,8 @@ export class MapkernMap extends Emitter<MapEvents> {
     this.scheduler.destroy();
     this.workers?.destroy();
     this.workers = null;
+    this.imageWorkers?.destroy();
+    this.imageWorkers = null;
     this.painter.destroy();
     this.glContext.destroy();
     for (const fn of this.cleanup) fn();
@@ -2548,6 +2551,7 @@ export class MapkernMap extends Emitter<MapEvents> {
       gl: this.glContext,
       scheduler: this.scheduler,
       workers: () => this.workerPool(),
+      imageWorker: () => this.imagePool(),
       get transformRequest() {
         return options.transformRequest;
       },
@@ -2576,6 +2580,11 @@ export class MapkernMap extends Emitter<MapEvents> {
       this.workers = new WorkerPool(count, workerFactory(this.options.workerUrl));
     }
     return this.workers;
+  }
+
+  private imagePool(): WorkerPool {
+    this.imageWorkers ??= new WorkerPool(1, workerFactory(this.options.workerUrl));
+    return this.imageWorkers;
   }
 
   private requestTimeout(): number {
