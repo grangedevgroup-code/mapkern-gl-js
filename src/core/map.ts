@@ -180,6 +180,7 @@ export type UiText =
 const NEAR_SAMPLES = 8;
 const PREFETCH_MARGIN = 1.4;
 const AROUND_REFRESH_MS = 250;
+const MOVING_RING_FRAME_MS = 5;
 const MOVING_UPLOAD_MS = 4;
 const RESTING_UPLOAD_MS = 6;
 
@@ -499,6 +500,7 @@ export class MapkernMap extends Emitter<MapEvents> {
   });
   private elevationIntent: "zoom" | "camera" = "zoom";
   private uploadTurn = 0;
+  private frameCost = 0;
   private around: Transform | null = null;
   private aroundAt = Number.NEGATIVE_INFINITY;
   private aroundRevision = -1;
@@ -2736,7 +2738,7 @@ export class MapkernMap extends Emitter<MapEvents> {
       future.zoomAround(wheelTarget.zoom, wheelTarget.point[0], wheelTarget.point[1]);
       out.push(future);
     }
-    out.push(this.aroundView());
+    if (!this.isMoving() || this.frameCost < MOVING_RING_FRAME_MS) out.push(this.aroundView());
     return out;
   }
 
@@ -2817,6 +2819,7 @@ export class MapkernMap extends Emitter<MapEvents> {
     const elapsed = performance.now() - started;
     this.frameCount++;
     if (elapsed > 50) this.longFrames++;
+    this.frameCost += (elapsed - this.frameCost) * 0.05;
     this.frameTimes.push(elapsed);
     if (this.frameTimes.length > FRAME_SAMPLES) this.frameTimes.shift();
     if (animating || this.moving || this.gestureDepth > 0) {
