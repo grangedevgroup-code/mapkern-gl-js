@@ -82,6 +82,7 @@ export interface PaintStats {
   drawCalls: number;
   pieces: number;
   drapes: number;
+  drapeFallbacks: number;
 }
 
 interface TerrainGeometry {
@@ -155,6 +156,7 @@ const MOVING_ZOOM_STEP = 0.5;
 const MOVING_DRAPES = 2;
 const MOVING_DRAPE_MS = 4;
 const RESTING_DRAPE_MS = 6;
+const MOVING_NEW_DRAPES = 6;
 
 function drapeFollowsZoom(layer: StyleLayer): boolean {
   if (layer.usesZoom || SCREEN_SIZED.has(layer.type)) return true;
@@ -162,6 +164,13 @@ function drapeFollowsZoom(layer: StyleLayer): boolean {
   return Boolean((layer.spec as { paint?: { pattern?: unknown } }).paint?.pattern);
 }
 const DRAPE_CACHE_BYTES = 32 * 1024 * 1024;
+
+interface DrapeJob {
+  slot: TerrainSlot;
+  size: number;
+  view: SlotView;
+  signature: number;
+}
 
 interface PickSetup {
   width: number;
@@ -209,7 +218,7 @@ function drapeSize(t: Transform, slot: TerrainSlot, pixelRatio: number): number 
 
 export class Painter {
   readonly gl: GL;
-  stats: PaintStats = { drawCalls: 0, pieces: 0, drapes: 0 };
+  stats: PaintStats = { drawCalls: 0, pieces: 0, drapes: 0, drapeFallbacks: 0 };
   private quadVao: WebGLVertexArrayObject | null = null;
   private quadBuffer: WebGLBuffer | null = null;
   private openMask: WebGLTexture | null = null;
@@ -295,7 +304,7 @@ export class Painter {
   render(frame: FrameInput): boolean {
     const g = this.gl;
     const gl = g.gl;
-    this.stats = { drawCalls: 0, pieces: 0, drapes: 0 };
+    this.stats = { drawCalls: 0, pieces: 0, drapes: 0, drapeFallbacks: 0 };
     this.vector.budget.deadline = performance.now() + 4;
     this.vector.budget.behind = false;
     const terrain = frame.terrain ?? null;
@@ -482,10 +491,8 @@ export class Painter {
     const layers = frame.layers.filter((l) => DRAPED.has(l.type) && l.isVisible(zoom));
     const turning = layers.some((l) => l.type === "hillshade" && l.fixed<string>("illuminationAnchor") !== "map");
     const bearing = turning ? Math.round(t.bearing / 4) * 4 : 0;
-    const deadline = performance.now() + (frame.moving ? this.movingDrapeMs : RESTING_DRAPE_MS);
     const zoomed = layers.some(drapeFollowsZoom);
     const tolerance = !zoomed ? Number.POSITIVE_INFINITY : frame.moving ? this.movingZoomStep : RESTING_ZOOM_STEP;
-    let redrawn = 0;
     this.drapes.begin();
     this.drapesBehind = false;
     const common = this.hash.reset().add(bearing).add(frame.pixelRatio);
@@ -505,6 +512,8 @@ export class Painter {
       if (pieces && (layer.type === "circle" || layer.type === "heatmap")) pointSources.add(pieces);
     }
     const shared = common.value;
+    const fresh: DrapeJob[] = [];
+    const stale: DrapeJob[] = [];
     for (const slot of terrain.slots) {
       const size = drapeSize(t, slot, frame.pixelRatio);
       const view = new SlotView(slot, zoom, bearing, 512 * 2 ** (zoom - slot.z));
@@ -516,38 +525,61 @@ export class Painter {
         if (drift >= RESTING_ZOOM_STEP && tolerance !== Number.POSITIVE_INFINITY) this.drapesBehind = true;
         continue;
       }
-      const busy = performance.now() > deadline || (frame.moving === true && redrawn >= this.movingDrapes);
-      if (busy && (drawn || this.drapeFallback(slot))) {
+      (drawn ? stale : fresh).push({ slot, size, view, signature });
+    }
+    const started = performance.now();
+    let count = 0;
+    for (const job of fresh) {
+      const busy =
+        performance.now() > started + RESTING_DRAPE_MS || (frame.moving === true && count >= MOVING_NEW_DRAPES);
+      if (busy && this.drapeFallback(job.slot)) {
         this.drapesBehind = true;
         continue;
       }
-      redrawn++;
-      const entry = this.drapes.target(slot.key, size);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, entry.framebuffer);
-      g.setViewport(0, 0, size, size);
-      g.setDepth(false, false);
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      const sub: FrameInput = {
-        ...frame,
-        view,
-        pixelRatio: size / view.width,
-        target: [size, size],
-        framebuffer: entry.framebuffer,
-        terrain: null,
-        accept: (piece) => view.overlaps(piece.tile.z, piece.tile.x, piece.tile.y, piece.wrap),
-        acceptNear: (piece) => view.overlaps(piece.tile.z, piece.tile.x, piece.tile.y, piece.wrap, POINT_MARGIN),
-        region: view.rect,
-      };
-      for (const layer of layers) this.drawLayer(sub, layer);
-      gl.bindTexture(gl.TEXTURE_2D, entry.texture);
-      gl.generateMipmap(gl.TEXTURE_2D);
-      entry.signature = signature;
-      entry.zoom = zoom;
-      this.stats.drapes++;
+      count++;
+      this.drawDrape(frame, job, layers, zoom);
+    }
+    const deadline = started + (frame.moving ? this.movingDrapeMs : RESTING_DRAPE_MS);
+    count = 0;
+    for (const job of stale) {
+      if (performance.now() > deadline || (frame.moving === true && count >= this.movingDrapes)) {
+        this.drapesBehind = true;
+        continue;
+      }
+      count++;
+      this.drawDrape(frame, job, layers, zoom);
     }
     this.drapes.trim(DRAPE_CACHE_BYTES);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  private drawDrape(frame: FrameInput, job: DrapeJob, layers: readonly StyleLayer[], zoom: number): void {
+    const g = this.gl;
+    const gl = g.gl;
+    const { slot, size, view, signature } = job;
+    const entry = this.drapes.target(slot.key, size);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, entry.framebuffer);
+    g.setViewport(0, 0, size, size);
+    g.setDepth(false, false);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const sub: FrameInput = {
+      ...frame,
+      view,
+      pixelRatio: size / view.width,
+      target: [size, size],
+      framebuffer: entry.framebuffer,
+      terrain: null,
+      accept: (piece) => view.overlaps(piece.tile.z, piece.tile.x, piece.tile.y, piece.wrap),
+      acceptNear: (piece) => view.overlaps(piece.tile.z, piece.tile.x, piece.tile.y, piece.wrap, POINT_MARGIN),
+      region: view.rect,
+    };
+    for (const layer of layers) this.drawLayer(sub, layer);
+    gl.bindTexture(gl.TEXTURE_2D, entry.texture);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    entry.signature = signature;
+    entry.zoom = zoom;
+    this.stats.drapes++;
   }
 
   private drapeFallback(slot: TerrainSlot): { entry: DrapeEntry; rect: [number, number, number, number] } | null {
@@ -639,6 +671,7 @@ export class Painter {
       if (!entry || Number.isNaN(entry.signature)) {
         const fallback = this.drapeFallback(slot);
         if (!fallback) continue;
+        this.stats.drapeFallbacks++;
         entry = fallback.entry;
         rect = fallback.rect;
       }
@@ -1012,7 +1045,7 @@ export class Painter {
     const zoom = frame.transform.zoom;
     const main = pickSetup(frame, box);
     const flat = ground ? pickSetup(ground.frame, ground.box) : main;
-    const stats: PaintStats = { drawCalls: 0, pieces: 0, drapes: 0 };
+    const stats: PaintStats = { drawCalls: 0, pieces: 0, drapes: 0, drapeFallbacks: 0 };
     const reads: PickRead[] = [];
     let bound: PickSetup | null = null;
     try {
