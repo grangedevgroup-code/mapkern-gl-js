@@ -421,7 +421,7 @@ const specs: Spec[] = [
     name: "raster tiles decode on a worker, and on the page when workers cannot start",
     async run({ page, base }) {
       await createMap(page, rasterStyle(base, "/fixture/raster"));
-      const started = await page.evaluate<number>("window.map.workers.workers.filter(Boolean).length");
+      const started = await page.evaluate<number>("window.map.imageWorkers.workers.filter(Boolean).length");
       if (started === 0) fail("no worker ran for a raster map");
       await createMap(page, rasterStyle(base, "/fixture/raster"), { workerUrl: `${base}/fixture/no-such-worker.js` });
       const inside = await pixel(page, 464, 364);
