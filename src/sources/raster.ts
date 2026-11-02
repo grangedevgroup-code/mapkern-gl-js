@@ -1,7 +1,7 @@
 import type { Transform } from "../camera/transform.ts";
 import type { TileCoord } from "../geo/tile.ts";
 import type { RasterSourceSpec } from "../style/types.ts";
-import { bodyBytes, FetchFailure, fetchBody, fetchBytes, resolveRequest, savedCopyFailed } from "../tiles/fetch.ts";
+import { FetchFailure, fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileLoader, TileStats, UploadBudget } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
 import type { MapSource, SourceContext } from "./source.ts";
@@ -144,43 +144,33 @@ export class RasterSource implements MapSource {
     return {
       async load(tile: TileCoord, signal: AbortSignal, onDecoding: () => void): Promise<RasterTile | null> {
         const url = tileUrl(set, tile.z, tile.x, tile.y);
-        const params = resolveRequest(url, "tile", ctx.transformRequest);
-        const result = await fetchBody(params, signal, ctx.requestTimeoutMs, "tile", ctx.diskCache);
+        const result = await fetchBytes(
+          resolveRequest(url, "tile", ctx.transformRequest),
+          signal,
+          ctx.requestTimeoutMs,
+          "tile",
+          ctx.diskCache,
+        );
         if (result.kind === "empty") return null;
-        const { body } = result;
-        let fingerprint: number | null = null;
-        const peers = placeholders.peers(tile, body instanceof Blob ? body.size : body.byteLength);
-        if (peers) {
-          for (const peer of peers) {
-            const copy = await fetchBytes(
-              resolveRequest(tileUrl(set, peer.z, peer.x, peer.y), "tile", ctx.transformRequest),
-              signal,
-              ctx.requestTimeoutMs,
-              "tile",
-              ctx.diskCache,
-            ).catch(() => null);
-            if (copy?.kind === "data") placeholders.note(peer, copy.data);
-          }
-          fingerprint = placeholders.note(tile, await bodyBytes(body));
-          if (fingerprint === null) return null;
-        }
+        const fingerprint = placeholders.note(tile, result.data);
+        if (fingerprint === null) return null;
         onDecoding();
         let image: ImageBitmap;
         try {
-          image = await createImageBitmap(imageBlob(body, result.contentType), {
+          const type = result.contentType.split(";")[0]?.trim() || "image/png";
+          image = await createImageBitmap(new Blob([result.data], { type }), {
             premultiplyAlpha: "premultiply",
             colorSpaceConversion: "none",
           });
         } catch (error) {
           if (signal.aborted) throw error;
-          if (result.saved) throw savedCopyFailed(params.url, ctx.diskCache);
           throw new FetchFailure({ kind: "decode", message: "Tile image could not be decoded", retryable: false });
         }
         if (signal.aborted) {
           image.close();
           throw new DOMException("Aborted", "AbortError");
         }
-        if (fingerprint !== null && placeholders.suspect(tile, fingerprint) && !isFlat(image)) {
+        if (placeholders.suspect(tile, fingerprint) && !isFlat(image)) {
           placeholders.confirm(fingerprint, tile);
           image.close();
           return null;
@@ -211,48 +201,23 @@ export class RasterSource implements MapSource {
   }
 }
 
-function imageBlob(body: ArrayBuffer | Blob, contentType: string): Blob {
-  const type = contentType.split(";")[0]?.trim() || "image/png";
-  if (!(body instanceof Blob)) return new Blob([body], { type });
-  return body.type ? body : body.slice(0, body.size, type);
-}
-
 export class Placeholders {
   private readonly keys = new Map<string, number>();
   private readonly twins = new Map<number, Map<string, number>>();
   private readonly known = new Set<number>();
-  private readonly sizes = new Map<number, TileCoord[]>();
-  private readonly knownSizes = new Set<number>();
-  private readonly sizeOf = new Map<number, number>();
   private readonly forget: (z: number, x: number, y: number) => void;
 
   constructor(forget: (z: number, x: number, y: number) => void) {
     this.forget = forget;
   }
 
-  peers(tile: TileCoord, size: number): TileCoord[] | null {
-    let list = this.sizes.get(size);
-    if (!list) {
-      list = [];
-      this.sizes.set(size, list);
-      if (this.sizes.size > 8192) this.sizes.delete(this.sizes.keys().next().value!);
-    }
-    const others = list.filter((t) => t.z !== tile.z || t.x !== tile.x || t.y !== tile.y);
-    const check = this.knownSizes.has(size) || others.some((t) => t.z !== tile.z);
-    if (others.length === list.length && list.length < 16) list.push({ z: tile.z, x: tile.x, y: tile.y });
-    if (!check) return null;
-    return others.filter((t) => !this.keys.has(`${t.z}/${t.x}/${t.y}`));
-  }
-
   note(tile: TileCoord, data: ArrayBuffer): number | null {
     const hash = fingerprint(new Uint8Array(data));
-    this.sizeOf.set(hash, data.byteLength);
-    if (this.sizeOf.size > 8192) this.sizeOf.delete(this.sizeOf.keys().next().value!);
+    if (this.known.has(hash)) return null;
     const key = `${tile.z}/${tile.x}/${tile.y}`;
     this.keys.delete(key);
     this.keys.set(key, hash);
     if (this.keys.size > 8192) this.keys.delete(this.keys.keys().next().value!);
-    if (this.known.has(hash)) return null;
     let twins = this.twins.get(hash);
     if (!twins) {
       twins = new Map();
@@ -272,8 +237,6 @@ export class Placeholders {
 
   confirm(hash: number, tile: TileCoord): void {
     this.known.add(hash);
-    const size = this.sizeOf.get(hash);
-    if (size !== undefined) this.knownSizes.add(size);
     const current = `${tile.z}/${tile.x}/${tile.y}`;
     for (const key of this.twins.get(hash)?.keys() ?? []) {
       if (key === current) continue;
