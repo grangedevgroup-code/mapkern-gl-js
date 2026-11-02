@@ -6,7 +6,7 @@ import type { StyleLayer } from "../style/layer.ts";
 import { LAYOUT, PAINT } from "../style/layer.ts";
 import type { VectorSourceSpec } from "../style/types.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
-import type { TileLoader, TileStats } from "../tiles/manager.ts";
+import type { TileLoader, TileStats, UploadBudget } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
 import type { TileFeatureEntry } from "../worker/geojson-task.ts";
 import type { PackedLabels } from "../worker/packed.ts";
@@ -320,8 +320,8 @@ export class VectorSource implements MapSource, VectorTileSource {
     this.manager?.update(transform, now, predicted);
   }
 
-  uploadPending(deadline: number, now: number): boolean {
-    return this.manager?.uploadPending(deadline, now) ?? false;
+  uploadPending(budget: UploadBudget, now: number): boolean {
+    return this.manager?.uploadPending(budget, now) ?? false;
   }
 
   isIdle(): boolean {
