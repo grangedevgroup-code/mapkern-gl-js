@@ -355,3 +355,55 @@ test("the globe solver never swings to a second solution on small moves", () => 
       }
   assert.ok(worst < 4.5, `worst turn ratio ${worst}`);
 });
+
+test("the shared covering matches a direct computation for every source's zoom range", () => {
+  const direct = (t: Transform, o: object): unknown =>
+    t.globeness > 0
+      ? (t as unknown as { globeCovering(o: object): unknown }).globeCovering(o)
+      : (t as unknown as { flatCovering(o: object): unknown }).flatCovering(o);
+  let compared = 0;
+  for (const projection of ["globe", "mercator"] as const)
+    for (const zoom of [0.5, 2.5, 4, 6.2, 9, 10.7, 13.4, 16])
+      for (const pitch of [0, 40, 70])
+        for (const [lng, lat] of [
+          [-122.3, 47.6],
+          [10, 0],
+          [140, 78],
+          [20, -60],
+        ] as const)
+          for (const tileSize of [256, 512])
+            for (const round of [false, true])
+              for (const maxZoom of [6, 12, 14, 22]) {
+                const t = globe(zoom, pitch, 25, lng, lat);
+                t.setProjection(projection);
+                const options = { tileSize, minZoom: 0, maxZoom, round };
+                assert.deepEqual(t.coveringTiles(options), direct(t, options));
+                compared++;
+              }
+  assert.ok(compared > 3000);
+});
+
+test("the shared covering follows the camera and hands out arrays callers may reorder", () => {
+  const options = { tileSize: 512, minZoom: 0, maxZoom: 14, round: false };
+  for (const projection of ["globe", "mercator"] as const) {
+    const t = globe(5.5, 20, 0, 10, 40);
+    t.setProjection(projection);
+    const first = t.coveringTiles(options);
+    const again = t.coveringTiles(options);
+    assert.deepEqual(again, first);
+    again.reverse();
+    assert.deepEqual(t.coveringTiles(options), first);
+    t.setCenter(60, -20);
+    assert.notDeepEqual(t.coveringTiles(options), first);
+    t.setCenter(10, 40);
+    assert.deepEqual(t.coveringTiles(options), first);
+    t.setPeak(5000);
+    const raised = t.coveringTiles(options);
+    assert.deepEqual(
+      raised,
+      (t as unknown as { [k: string]: (o: object) => unknown })[
+        projection === "globe" ? "globeCovering" : "flatCovering"
+      ]!(options),
+    );
+  }
+});
