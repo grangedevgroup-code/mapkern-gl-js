@@ -3,6 +3,7 @@ import { EARTH_CIRCUMFERENCE } from "../geo/mercator.ts";
 import type { Rect } from "../geo/tile.ts";
 import type { DemSource, DemTile } from "../sources/dem.ts";
 import type { Tile } from "../tiles/tile.ts";
+import { tileEpoch } from "../tiles/tile.ts";
 import { sampleElevation } from "./dem.ts";
 
 export interface TerrainSlot {
@@ -48,6 +49,15 @@ export class Terrain {
   relief = 0;
   slots: TerrainSlot[] = [];
   private lowest = 0;
+  private readonly memo: {
+    epoch: number;
+    cell: number;
+    manager: unknown;
+    tile: Tile<DemTile> | null;
+    z: number;
+    x: number;
+    y: number;
+  } = { epoch: -1, cell: -1, manager: null, tile: null, z: 0, x: 0, y: 0 };
 
   constructor(source: DemSource, exaggeration: number) {
     this.source = source;
@@ -83,17 +93,34 @@ export class Terrain {
     if (y < 0 || y > 1) return null;
     const manager = this.source.manager;
     if (!manager) return null;
-    for (let z = manager.tiling.maxZoom; z >= manager.tiling.minZoom; z--) {
-      const n = 2 ** z;
-      const tx = Math.min(n - 1, Math.floor(wx * n));
-      const ty = Math.min(n - 1, Math.floor(y * n));
-      const tile = manager.getTile(z, tx, ty);
-      if (tile?.isReady && tile.data) {
-        const meters = sampleElevation(tile.data.grid, wx * n - tx, y * n - ty);
-        return meters === null ? null : meters * this.exaggeration;
+    const top = 2 ** manager.tiling.maxZoom;
+    const cell = Math.min(top - 1, Math.floor(y * top)) * top + Math.min(top - 1, Math.floor(wx * top));
+    const memo = this.memo;
+    if (memo.epoch !== tileEpoch.value || memo.cell !== cell || memo.manager !== manager) {
+      memo.epoch = tileEpoch.value;
+      memo.cell = cell;
+      memo.manager = manager;
+      memo.tile = null;
+      for (let z = manager.tiling.maxZoom; z >= manager.tiling.minZoom; z--) {
+        const n = 2 ** z;
+        const tx = Math.min(n - 1, Math.floor(wx * n));
+        const ty = Math.min(n - 1, Math.floor(y * n));
+        const tile = manager.getTile(z, tx, ty);
+        if (tile?.isReady && tile.data) {
+          memo.tile = tile;
+          memo.z = z;
+          memo.x = tx;
+          memo.y = ty;
+          break;
+        }
       }
     }
-    return null;
+    const tile = memo.tile;
+    const data = tile?.data;
+    if (!tile || !data) return null;
+    const n = 2 ** memo.z;
+    const meters = sampleElevation(data.grid, wx * n - memo.x, y * n - memo.y);
+    return meters === null ? null : meters * this.exaggeration;
   }
 
   surfaceAt(x: number, y: number): number {
