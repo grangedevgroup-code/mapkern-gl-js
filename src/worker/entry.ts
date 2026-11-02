@@ -14,6 +14,8 @@ import {
   loadGeoJSON,
   removeGeoJSON,
 } from "./geojson-task.ts";
+import type { RasterRequest } from "./raster-task.ts";
+import { decodeRasterTile } from "./raster-task.ts";
 import type { RouteRequest } from "./route-task.ts";
 import { routeLoadTask, routeTask } from "./route-task.ts";
 import type { VectorTileRequest } from "./vector-task.ts";
@@ -23,6 +25,7 @@ import { startWorker } from "./worker.ts";
 startWorker({
   vector: (payload, signal) => buildVectorTile(payload as VectorTileRequest, signal),
   dem: (payload, signal) => decodeDemTile(payload as DemRequest, signal),
+  raster: (payload, signal) => decodeRasterTile(payload as RasterRequest, signal),
   "geojson-load": (payload) => loadGeoJSON(payload as GeoJSONLoadRequest),
   "geojson-tile": (payload) => buildGeoJSONTile(payload as GeoJSONTileRequest),
   "geojson-remove": (payload) => removeGeoJSON(payload as { source: string }),
