@@ -111,10 +111,9 @@ export class TileManager<D> implements TileCache {
   private destroyed = false;
   private visibleCount = 0;
   private fallbackCount = 0;
-  private blankPendingArea = 0;
-  private blankFailedArea = 0;
-  private noDataArea = 0;
-  private viewArea = 0;
+  private areaView: Transform | null = null;
+  private areaSlots: readonly CoveringTile[] = [];
+  private readonly blankSlots: { slot: CoveringTile; kind: "pending" | "failed" | "none" }[] = [];
   private counters = { requested: 0, completed: 0, aborted: 0, retried: 0, failures: 0, evicted: 0 };
 
   constructor(
@@ -167,7 +166,20 @@ export class TileManager<D> implements TileCache {
       if (this.isOutdated(tile) || tile.next !== null) refreshing++;
       bytes += tile.bytes;
     }
-    const area = this.viewArea > 0 ? this.viewArea : 1;
+    let viewArea = 0;
+    let blankPending = 0;
+    let blankFailed = 0;
+    let noData = 0;
+    if (this.areaView) {
+      for (const slot of this.areaSlots) viewArea += slotArea(this.areaView, slot.z, slot.x, slot.y, slot.wrap);
+      for (const { slot, kind } of this.blankSlots) {
+        const area = slotArea(this.areaView, slot.z, slot.x, slot.y, slot.wrap);
+        if (kind === "pending") blankPending += area;
+        else if (kind === "failed") blankFailed += area;
+        else noData += area;
+      }
+    }
+    const area = viewArea > 0 ? viewArea : 1;
     return {
       tiles: this.tiles.size,
       ready,
@@ -180,9 +192,9 @@ export class TileManager<D> implements TileCache {
       pieces: this.pieces.length,
       fallbackPieces: this.fallbackCount,
       ...this.counters,
-      blankPending: this.blankPendingArea / area,
-      blankFailed: this.blankFailedArea / area,
-      noData: this.noDataArea / area,
+      blankPending: blankPending / area,
+      blankFailed: blankFailed / area,
+      noData: noData / area,
     };
   }
 
@@ -476,15 +488,12 @@ export class TileManager<D> implements TileCache {
     const pieces: RenderPiece<D>[] = [];
     this.fading = false;
     this.fallbackCount = 0;
-    this.blankPendingArea = 0;
-    this.blankFailedArea = 0;
-    this.noDataArea = 0;
-    this.viewArea = 0;
+    this.areaView = transform;
+    this.areaSlots = ideal;
+    this.blankSlots.length = 0;
     for (const slot of ideal) {
-      const area = slotArea(transform, slot.z, slot.x, slot.y, slot.wrap);
-      this.viewArea += area;
       if (!this.withinBounds(slot)) {
-        this.noDataArea += area;
+        this.blankSlots.push({ slot, kind: "none" });
         continue;
       }
       const tile = this.tiles.get(tileKey(slot.z, slot.x, slot.y));
@@ -500,7 +509,7 @@ export class TileManager<D> implements TileCache {
         continue;
       }
       if (tile?.state === "empty" && this.loader.emptyIsFinal) {
-        this.noDataArea += area;
+        this.blankSlots.push({ slot, kind: "none" });
         continue;
       }
       const start = pieces.length;
@@ -520,9 +529,10 @@ export class TileManager<D> implements TileCache {
         covered = true;
       }
       if (!covered) {
-        if (tile?.state === "empty") this.noDataArea += area;
-        else if (tile?.state === "failed") this.blankFailedArea += area;
-        else this.blankPendingArea += area;
+        this.blankSlots.push({
+          slot,
+          kind: tile?.state === "empty" ? "none" : tile?.state === "failed" ? "failed" : "pending",
+        });
       }
     }
     this.pieces = pieces;
