@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Placeholders } from "../../src/sources/raster.ts";
+import { fingerprint } from "../../src/worker/raster-task.ts";
 
-const bytes = (...values: number[]) => new Uint8Array(values).buffer;
+const bytes = (...values: number[]) => fingerprint(new Uint8Array(values));
 
 test("the same picture at two zoom levels is a placeholder, and the earlier copy is dropped", () => {
   const forgotten: string[] = [];
