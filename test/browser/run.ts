@@ -418,6 +418,19 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "raster tiles decode on a worker, and on the page when workers cannot start",
+    async run({ page, base }) {
+      await createMap(page, rasterStyle(base, "/fixture/raster"));
+      const started = await page.evaluate<number>("window.map.workers.workers.filter(Boolean).length");
+      if (started === 0) fail("no worker ran for a raster map");
+      await createMap(page, rasterStyle(base, "/fixture/raster"), { workerUrl: `${base}/fixture/no-such-worker.js` });
+      const inside = await pixel(page, 464, 364);
+      if (!isZoomColor(inside, 4)) fail(`expected z4 colour without workers, got ${inside}`);
+      const errors = await page.evaluate<unknown[]>("window.errors");
+      if (errors.length > 0) fail(`map reported errors without workers: ${JSON.stringify(errors)}`);
+    },
+  },
+  {
     name: "parent tiles cover the view while children are slow",
     async run({ page, base, shot }) {
       await createMap(page, rasterStyle(base, "/fixture/slow/2500/5"));
