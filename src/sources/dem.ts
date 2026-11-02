@@ -7,12 +7,13 @@ import type { DemGrid, Region, Unpack } from "../terrain/dem.ts";
 import {
   backfill,
   backfillRegion,
-  frameStrips,
   NEIGHBORS,
+  neighborStrip,
   sampleElevation,
   toHalfArray,
   unpackFor,
   writeFrame,
+  writeStrip,
 } from "../terrain/dem.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileLoader, TileStats } from "../tiles/manager.ts";
@@ -214,26 +215,26 @@ export class DemSource implements MapSource {
       const other = manager.getTile(data.z, x, y)?.data ?? null;
       if (!other || !backfill(data.grid, other.grid, dx, dy) || other === data) continue;
       backfill(other.grid, data.grid, -dx, -dy);
-      this.refreshFrame(other, backfillRegion(other.grid, -dx, -dy));
+      this.refreshFrame(other, -dx, -dy);
     }
   }
 
-  private refreshFrame(data: DemTile, changed: Region): void {
-    if (data.elevationTexture) data.dirtyRegions.push(changed);
+  private refreshFrame(data: DemTile, dx: number, dy: number): void {
+    if (data.elevationTexture) data.dirtyRegions.push(backfillRegion(data.grid, dx, dy));
     const texture = data.gradientTexture;
-    if (data.gradient) writeFrame(data.grid, data.gradient);
+    if (!data.gradient && !texture) return;
+    const strip = neighborStrip(data.grid, dx, dy);
+    if (data.gradient) writeStrip(data.grid, strip, data.gradient);
     if (!texture) return;
-    for (const strip of frameStrips(data.grid)) {
-      this.ctx.gl.updateDataTexture(
-        texture,
-        strip.x,
-        strip.y,
-        strip.width,
-        strip.height,
-        "rg16f",
-        toHalfArray(strip.data),
-      );
-    }
+    this.ctx.gl.updateDataTexture(
+      texture,
+      strip.x,
+      strip.y,
+      strip.width,
+      strip.height,
+      "rg16f",
+      toHalfArray(strip.data),
+    );
   }
 
   private loader(set: TileSet): TileLoader<DemTile> {
