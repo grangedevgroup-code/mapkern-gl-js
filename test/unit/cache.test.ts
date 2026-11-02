@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import type { ResponseStore, StoredState } from "../../src/tiles/cache.ts";
 import { cacheable, freshUntil, markServer } from "../../src/tiles/cache.ts";
-import { FetchFailure, fetchBody, fetchBytes, savedCopyFailed } from "../../src/tiles/fetch.ts";
+import { FetchFailure, fetchBytes } from "../../src/tiles/fetch.ts";
 
 const realFetch = globalThis.fetch;
 
@@ -14,7 +14,7 @@ afterEach(() => {
 const headers = (h: Record<string, string>) => new Headers(h);
 
 class MemoryStore implements ResponseStore {
-  readonly rows = new Map<string, { data: Blob; type: string; expires: number }>();
+  readonly rows = new Map<string, { data: ArrayBuffer; type: string; expires: number }>();
   state(url: string): StoredState {
     const row = this.rows.get(url);
     if (!row) return "missing";
@@ -24,11 +24,8 @@ class MemoryStore implements ResponseStore {
     const row = this.rows.get(url);
     return Promise.resolve(row ? { data: row.data, type: row.type } : null);
   }
-  write(url: string, data: Blob, type: string, expires: number) {
+  write(url: string, data: ArrayBuffer, type: string, expires: number) {
     this.rows.set(url, { data, type, expires });
-  }
-  remove(url: string) {
-    this.rows.delete(url);
   }
 }
 
@@ -44,7 +41,6 @@ function serve(responses: (() => Response | Promise<Response>)[]) {
 
 const URL_A = "https://tiles.example.com/1/2/3.pbf";
 const bytes = (...v: number[]) => new Uint8Array(v).buffer;
-const blob = (...v: number[]) => new Blob([new Uint8Array(v)]);
 const signal = () => new AbortController().signal;
 
 test("freshness follows the server's cache headers", () => {
@@ -70,7 +66,7 @@ test("only remote http and https addresses are kept", () => {
 
 test("a fresh copy is used without asking the server", async () => {
   const store = new MemoryStore();
-  store.write(URL_A, blob(1, 2), "application/x-protobuf", Date.now() + 60_000);
+  store.write(URL_A, bytes(1, 2), "application/x-protobuf", Date.now() + 60_000);
   const calls = serve([() => new Response(bytes(9))]);
   const result = await fetchBytes({ url: URL_A }, signal(), 1000, "tile", store);
   assert.equal(calls(), 0);
@@ -79,7 +75,7 @@ test("a fresh copy is used without asking the server", async () => {
 
 test("a stale copy is refreshed from the network and saved", async () => {
   const store = new MemoryStore();
-  store.write(URL_A, blob(1), "image/png", Date.now() - 1);
+  store.write(URL_A, bytes(1), "image/png", Date.now() - 1);
   const calls = serve([
     () => new Response(bytes(7, 7), { headers: { "cache-control": "max-age=3600", "content-type": "image/png" } }),
   ]);
@@ -96,7 +92,7 @@ test("when the network or server fails, the saved copy is used", async () => {
   ]) {
     markServer(URL_A, true);
     const store = new MemoryStore();
-    store.write(URL_A, blob(4, 5), "image/png", Date.now() - 1);
+    store.write(URL_A, bytes(4, 5), "image/png", Date.now() - 1);
     serve([failure]);
     const result = await fetchBytes({ url: URL_A }, signal(), 1000, "tile", store);
     assert.deepEqual(result.kind === "data" ? [...new Uint8Array(result.data)] : null, [4, 5]);
@@ -105,7 +101,7 @@ test("when the network or server fails, the saved copy is used", async () => {
 
 test("after a failure the server is skipped for a while, so tiles come from the cache at once", async () => {
   const store = new MemoryStore();
-  store.write(URL_A, blob(4), "image/png", Date.now() - 1);
+  store.write(URL_A, bytes(4), "image/png", Date.now() - 1);
   const calls = serve([() => Promise.reject(new TypeError("Failed to fetch"))]);
   await fetchBytes({ url: URL_A }, signal(), 1000, "tile", store);
   await fetchBytes({ url: URL_A }, signal(), 1000, "tile", store);
@@ -114,7 +110,7 @@ test("after a failure the server is skipped for a while, so tiles come from the 
 
 test("refused access is not papered over with an old copy", async () => {
   const store = new MemoryStore();
-  store.write(URL_A, blob(4), "image/png", Date.now() - 1);
+  store.write(URL_A, bytes(4), "image/png", Date.now() - 1);
   serve([() => new Response("", { status: 403 })]);
   await assert.rejects(fetchBytes({ url: URL_A }, signal(), 1000, "tile", store), FetchFailure);
 });
@@ -130,23 +126,4 @@ test("no-store answers are not saved", async () => {
   serve([() => new Response(bytes(1), { headers: { "cache-control": "no-store" } })]);
   await fetchBytes({ url: URL_A }, signal(), 1000, "tile", store);
   assert.equal(store.state(URL_A), "missing");
-});
-
-test("a saved copy that can't be read is dropped and fetched again", () => {
-  const store = new MemoryStore();
-  store.write(URL_A, blob(1), "image/png", Date.now() + 60_000);
-  const failure = savedCopyFailed(URL_A, store);
-  assert.equal(failure.failure.retryable, true);
-  assert.equal(store.state(URL_A), "missing");
-});
-
-test("tiles come back from the store as blobs, so nothing is copied", async () => {
-  const store = new MemoryStore();
-  const saved = blob(1, 2, 3);
-  store.write(URL_A, saved, "application/x-protobuf", Date.now() + 60_000);
-  const calls = serve([() => new Response(bytes(9))]);
-  const result = await fetchBody({ url: URL_A }, signal(), 1000, "tile", store);
-  assert.equal(calls(), 0);
-  assert.equal(result.kind === "data" ? result.body : null, saved);
-  assert.equal(result.kind === "data" ? result.saved : null, true);
 });
