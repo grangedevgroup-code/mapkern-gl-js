@@ -63,6 +63,16 @@ export interface TileStats {
   noData: number;
 }
 
+export interface UploadBudget {
+  deadline: number;
+  used: boolean;
+  holdSpeculative: boolean;
+}
+
+export function uploadBudget(deadline: number, holdSpeculative = false): UploadBudget {
+  return { deadline, used: false, holdSpeculative };
+}
+
 export interface TileCandidate {
   lastUsed: number;
   z: number;
@@ -309,7 +319,7 @@ export class TileManager<D> implements TileCache {
     this.evict();
   }
 
-  uploadPending(deadline: number, now: number): boolean {
+  uploadPending(budget: UploadBudget, now: number): boolean {
     const pending: Tile<D>[] = [];
     let swaps = 0;
     for (const tile of this.tiles.values()) {
@@ -322,18 +332,18 @@ export class TileManager<D> implements TileCache {
     }
     if (pending.length === 0 && swaps === 0) return false;
     pending.sort((a, b) => (a.wanted ? a.priority : 1e12) - (b.wanted ? b.priority : 1e12));
-    let uploaded = false;
     let more = false;
     for (let i = 0; i < pending.length; i++) {
       const tile = pending[i]!;
-      if (uploaded && performance.now() > deadline) {
+      const next = tile.next;
+      if (next === null && budget.holdSpeculative && speculative(tile)) continue;
+      if (budget.used && performance.now() > budget.deadline) {
         more = pending.slice(i).some((t) => t.next !== null || !speculative(t));
         break;
       }
-      const next = tile.next;
       if (next !== null) {
         this.loader.upload(next);
-        uploaded = true;
+        budget.used = true;
         continue;
       }
       const data = tile.data;
@@ -342,7 +352,7 @@ export class TileManager<D> implements TileCache {
       tile.bytes = this.loader.byteSize(data);
       tile.transition("ready");
       tile.readyAt = now;
-      uploaded = true;
+      budget.used = true;
     }
     if (swaps > 0) {
       if (!more && this.swapDue()) this.swapAll();
