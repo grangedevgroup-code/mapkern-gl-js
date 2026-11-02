@@ -126,10 +126,7 @@ export class WorkerPool {
 
   private reply(message: WorkerReply): void {
     const entry = this.pending.get(message.id);
-    if (!entry) {
-      (message.result as { image?: ImageBitmap } | undefined)?.image?.close();
-      return;
-    }
+    if (!entry) return;
     this.finish(message.id);
     if (message.error) {
       const error = new MapkernError("worker", message.error.message);
