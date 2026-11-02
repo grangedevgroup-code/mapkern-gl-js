@@ -25,7 +25,7 @@ export interface LayerProgram {
 }
 
 export interface VectorTileRequest {
-  bytes: ArrayBuffer;
+  bytes: ArrayBuffer | Blob;
   z: number;
   x: number;
   y: number;
@@ -139,13 +139,14 @@ export async function buildVectorTile(
 ): Promise<{ result: VectorTileResult; transfer: Transferable[] }> {
   const started = performance.now();
   const programs = request.layers ?? (request.layersKey ? setting<LayerProgram[]>(request.layersKey) : undefined) ?? [];
-  const data = await inflate(request.bytes);
+  const bytes = request.bytes instanceof Blob ? await request.bytes.arrayBuffer() : request.bytes;
+  const data = await inflate(bytes);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const layers = decodeTile(data);
   const source = request.promoteId === null ? layers : promoteIds(layers, request.promoteId);
   const built = buildBuckets(source, request.z, programs, request.overzoom, started, { x: request.x, y: request.y });
-  built.result.raw = request.bytes;
-  built.transfer.push(request.bytes);
+  built.result.raw = bytes;
+  built.transfer.push(bytes);
   return built;
 }
 
