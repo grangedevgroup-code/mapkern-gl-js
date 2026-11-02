@@ -218,6 +218,8 @@ export interface ScaleOptions {
   unit?: ScaleUnit;
 }
 
+const SCALE_REFRESH_MS = 250;
+
 export class ScaleControl implements Control {
   readonly defaultPosition: ControlPosition = "bottom-left";
   private readonly maxWidth: number;
@@ -229,7 +231,10 @@ export class ScaleControl implements Control {
   private lastVisibility = "";
   private lastWidth = "";
   private lastLabel = "";
-  private readonly update = () => this.refresh();
+  private lastRefresh = Number.NEGATIVE_INFINITY;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private readonly update = () => this.schedule();
+  private readonly settle = () => this.refresh();
 
   constructor(options: ScaleOptions = {}) {
     this.maxWidth = options.maxWidth ?? 100;
@@ -249,12 +254,16 @@ export class ScaleControl implements Control {
     this.mapRef = map;
     this.build();
     map.on("move", this.update);
+    map.on("moveend", this.settle);
     this.refresh();
     return el;
   }
 
   onRemove(map: MapkernMap): void {
     map.off("move", this.update);
+    map.off("moveend", this.settle);
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
     this.element?.remove();
     this.element = null;
     this.label = null;
@@ -284,7 +293,24 @@ export class ScaleControl implements Control {
     this.lastLabel = "";
   }
 
+  private schedule(): void {
+    const wait = SCALE_REFRESH_MS - (performance.now() - this.lastRefresh);
+    if (wait <= 0) {
+      this.refresh();
+      return;
+    }
+    if (this.timer === null) {
+      this.timer = setTimeout(() => {
+        this.timer = null;
+        this.refresh();
+      }, wait);
+    }
+  }
+
   private refresh(): void {
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    this.lastRefresh = performance.now();
     const el = this.element;
     const map = this.mapRef;
     if (!el || !map) return;
