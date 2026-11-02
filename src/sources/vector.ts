@@ -238,6 +238,7 @@ export class VectorSource implements MapSource, VectorTileSource {
   tileSet: TileSet | null = null;
   private readonly ctx: SourceContext;
   private readonly layers = new LayerPrograms();
+  private sentPrograms: LayerProgram[] | null = null;
 
   constructor(id: string, spec: VectorSourceSpec, ctx: SourceContext) {
     this.id = id;
@@ -362,20 +363,23 @@ export class VectorSource implements MapSource, VectorTileSource {
     if (result.kind === "empty") return null;
     onDecoding();
     const { programs, signature } = this.layers;
-    const raw = result.data.slice(0);
+    const pool = ctx.workers();
+    const layersKey = `vector-layers:${this.id}`;
+    if (this.sentPrograms !== programs) {
+      pool.broadcast(layersKey, programs);
+      this.sentPrograms = programs;
+    }
     const request: VectorTileRequest = {
       bytes: result.data,
       z: tile.z,
       x: tile.x,
       y: tile.y,
-      layers: programs,
+      layersKey,
       overzoom: tile.z >= set.maxZoom,
       promoteId: this.spec.promoteId ?? null,
     };
-    const decoded = await ctx
-      .workers()
-      .send<VectorTileResult>("vector", request, [result.data], signal, tile.x + tile.y);
-    return vectorTile(decoded, signature, raw);
+    const decoded = await pool.send<VectorTileResult>("vector", request, [result.data], signal, tile.x + tile.y);
+    return vectorTile(decoded, signature, decoded.raw ?? null);
   }
 }
 
