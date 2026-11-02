@@ -417,7 +417,7 @@ export interface Diagnostics {
   sources: Record<string, TileStats | null>;
   blankRatio: number;
   canvas: { width: number; height: number; pixelRatio: number };
-  terrain: { tiles: number; textureBytes: number; redrawn: number } | null;
+  terrain: { tiles: number; textureBytes: number; redrawn: number; fallbacks: number } | null;
   contextLost: boolean;
 }
 
@@ -2234,6 +2234,7 @@ export class MapkernMap extends Emitter<MapEvents> {
               tiles: (this.terrain ?? this.surface)?.slots.length ?? 0,
               textureBytes: this.painter.drapeBytes,
               redrawn: this.painter.stats.drapes,
+              fallbacks: this.painter.stats.drapeFallbacks,
             }
           : null,
       contextLost: this.contextLost,
