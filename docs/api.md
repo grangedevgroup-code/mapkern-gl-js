@@ -580,7 +580,7 @@ For a map that must work with no connection at all, ship the area as a PMTiles o
 
 ## Diagnostics
 
-`map.getDiagnostics()` returns numbers for tracking down slow maps: frame times (`p50`, `p95`, `p99` and `max` over the last 240 frames), draw calls, requests in flight, worker queue length, `blankRatio` (how much of the screen is still waiting for data) and per-source tile counts with retries, cancellations and cache size. With terrain on, `terrain` says how many ground tiles are drawn, how much GPU memory their textures take and how many were redrawn in the last frame.
+`map.getDiagnostics()` returns numbers for tracking down slow maps: frame times (`p50`, `p95`, `p99` and `max` over the last 240 frames), draw calls, requests in flight, worker queue length, `blankRatio` (how much of the screen is still waiting for data) and per-source tile counts with retries, cancellations and cache size. With terrain on, `terrain` says how many ground tiles are drawn, how much GPU memory their textures take, how many were redrawn in the last frame and how many were drawn from a coarser texture because theirs wasn't ready.
 
 For a closer look at what the map is doing, set `map.showTileBoundaries = true` to outline the tiles of the first source with their `z/x/y` names, `map.showCollisionBoxes = true` to outline the space each label and icon claims, and `map.showPadding = true` to show the [padding](#moving-the-camera) and the center it leaves. They're drawn on a separate layer over the map, so turning them off leaves the map exactly as it was.
 
