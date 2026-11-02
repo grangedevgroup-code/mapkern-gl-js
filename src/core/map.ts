@@ -178,6 +178,7 @@ export type UiText =
 
 const NEAR_SAMPLES = 8;
 const PREFETCH_MARGIN = 1.4;
+const AROUND_REFRESH_MS = 250;
 
 const DEFAULT_TEXT: Record<UiText, string> = {
   zoomIn: "Zoom in",
@@ -494,6 +495,9 @@ export class MapkernMap extends Emitter<MapEvents> {
     active: () => !this.removed,
   });
   private elevationIntent: "zoom" | "camera" = "zoom";
+  private around: Transform | null = null;
+  private aroundAt = Number.NEGATIVE_INFINITY;
+  private aroundRevision = -1;
   private elevationFrom = 0;
   private elevationTo: number | null = null;
   private removed = false;
@@ -2691,6 +2695,20 @@ export class MapkernMap extends Emitter<MapEvents> {
     return this.style.loaded;
   }
 
+  private aroundView(): Transform {
+    const t = this.transform;
+    const now = performance.now();
+    const refresh = this.around === null || t.revision !== this.aroundRevision;
+    if (refresh && (this.around === null || !this.isMoving() || now - this.aroundAt >= AROUND_REFRESH_MS)) {
+      const around = t.clone();
+      around.resize(t.width * PREFETCH_MARGIN, t.height * PREFETCH_MARGIN);
+      this.around = around;
+      this.aroundAt = now;
+      this.aroundRevision = t.revision;
+    }
+    return this.around!;
+  }
+
   private predicted(): Transform[] {
     const out: Transform[] = [];
     if (this.motion) {
@@ -2713,11 +2731,7 @@ export class MapkernMap extends Emitter<MapEvents> {
       future.zoomAround(wheelTarget.zoom, wheelTarget.point[0], wheelTarget.point[1]);
       out.push(future);
     }
-    if (!this.isMoving()) {
-      const around = this.transform.clone();
-      around.resize(this.transform.width * PREFETCH_MARGIN, this.transform.height * PREFETCH_MARGIN);
-      out.push(around);
-    }
+    out.push(this.aroundView());
     return out;
   }
 
