@@ -470,6 +470,10 @@ export class Painter {
     else g.setViewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
   }
 
+  movingDrapes = MOVING_DRAPES;
+  movingZoomStep = MOVING_ZOOM_STEP;
+  movingDrapeMs = MOVING_DRAPE_MS;
+
   private renderDrapes(frame: FrameInput, terrain: Surface): void {
     const g = this.gl;
     const gl = g.gl;
@@ -478,9 +482,9 @@ export class Painter {
     const layers = frame.layers.filter((l) => DRAPED.has(l.type) && l.isVisible(zoom));
     const turning = layers.some((l) => l.type === "hillshade" && l.fixed<string>("illuminationAnchor") !== "map");
     const bearing = turning ? Math.round(t.bearing / 4) * 4 : 0;
-    const deadline = performance.now() + (frame.moving ? MOVING_DRAPE_MS : RESTING_DRAPE_MS);
+    const deadline = performance.now() + (frame.moving ? this.movingDrapeMs : RESTING_DRAPE_MS);
     const zoomed = layers.some(drapeFollowsZoom);
-    const tolerance = !zoomed ? Number.POSITIVE_INFINITY : frame.moving ? MOVING_ZOOM_STEP : RESTING_ZOOM_STEP;
+    const tolerance = !zoomed ? Number.POSITIVE_INFINITY : frame.moving ? this.movingZoomStep : RESTING_ZOOM_STEP;
     let redrawn = 0;
     this.drapes.begin();
     this.drapesBehind = false;
@@ -512,7 +516,7 @@ export class Painter {
         if (drift >= RESTING_ZOOM_STEP && tolerance !== Number.POSITIVE_INFINITY) this.drapesBehind = true;
         continue;
       }
-      const busy = performance.now() > deadline || (frame.moving === true && redrawn >= MOVING_DRAPES);
+      const busy = performance.now() > deadline || (frame.moving === true && redrawn >= this.movingDrapes);
       if (busy && (drawn || this.drapeFallback(slot))) {
         this.drapesBehind = true;
         continue;
