@@ -181,3 +181,44 @@ test("partial array uploads always go through and invalidate the location", () =
   gl.uniform4fv(a, data);
   assert.equal(calls.length, 3);
 });
+
+test("scalar uniforms keep their full arity and only skip exact repeats", () => {
+  const { gl, calls } = fakeGL();
+  installStateCache(gl);
+  const a = {} as WebGLUniformLocation;
+  const b = {} as WebGLUniformLocation;
+  gl.uniform4f(a, 1, 2, 3, 4);
+  gl.uniform4f(a, 1, 2, 3, 4);
+  gl.uniform4f(a, 1, 2, 3, 5);
+  gl.uniform2i(b, 7, 8);
+  gl.uniform2i(b, 7, 8);
+  gl.uniform2i(b, 7, 9);
+  gl.uniform1f(b, 7);
+  gl.uniform1f(b, 7);
+  gl.uniform1f(a, Number.NaN);
+  gl.uniform1f(a, Number.NaN);
+  assert.deepEqual(calls, [
+    "uniform4f([object Object],1,2,3,4)",
+    "uniform4f([object Object],1,2,3,5)",
+    "uniform2i([object Object],7,8)",
+    "uniform2i([object Object],7,9)",
+    "uniform1f([object Object],7)",
+    "uniform1f([object Object],NaN)",
+    "uniform1f([object Object],NaN)",
+  ]);
+});
+
+test("matrix uniforms compare values, not the array they arrive in", () => {
+  const { gl, calls } = fakeGL();
+  installStateCache(gl);
+  const a = {} as WebGLUniformLocation;
+  const m = new Float32Array(16);
+  m[0] = 1;
+  gl.uniformMatrix4fv(a, false, m);
+  gl.uniformMatrix4fv(a, false, m);
+  m[5] = 2;
+  gl.uniformMatrix4fv(a, false, m);
+  gl.uniformMatrix4fv(a, true, m);
+  gl.uniformMatrix4fv(a, true, m);
+  assert.equal(calls.length, 3);
+});
