@@ -49,3 +49,14 @@ test("vector tiles keep their own feature ids", async () => {
 test("promoteId takes feature ids from a property", async () => {
   assert.deepEqual(await ids("osm"), [501, 502, undefined]);
 });
+
+test("the tile's raw bytes come back from the worker with the result", async () => {
+  const bytes = tile();
+  const { result, transfer } = await buildVectorTile(
+    { bytes, z: 10, x: 0, y: 0, layers: [circles], overzoom: false, promoteId: null },
+    new AbortController().signal,
+  );
+  assert.equal(result.raw, bytes);
+  assert.ok(transfer.includes(bytes));
+  assert.equal(new Set(transfer).size, transfer.length);
+});
