@@ -7,9 +7,36 @@
 
 Mapkern GL JS is a map library for the web. It draws vector tiles, raster tiles and GeoJSON with WebGL2, and it doesn't depend on any other package. You can try it on the [website](https://grangedevgroup-code.github.io/mapkern-gl-js/).
 
-![Seattle, tilted 50 degrees](assets/screenshot-seattle.webp)
+<p>
+  <img src="assets/screenshot-city.webp" alt="Downtown Seattle with 3D buildings, tilted 55 degrees" width="49%">
+  <img src="assets/screenshot-globe.webp" alt="The world as a globe" width="49%">
+</p>
 
-<sub>Map data © OpenStreetMap contributors</sub>
+<sub>Map data © OpenStreetMap contributors, OpenFreeMap and OpenMapTiles</sub>
+
+## A map in one file
+
+Save this as `map.html` and open it in a browser. There's nothing to install, no tile server to run and no API key to get:
+
+```html
+<!doctype html>
+<meta charset="utf-8" />
+<title>My map</title>
+<style>
+  html, body, #map { height: 100%; margin: 0 }
+</style>
+<div id="map"></div>
+<script type="module">
+  import * as mapkern from "https://grangedevgroup-code.github.io/mapkern-gl-js/dist/mapkern.js";
+
+  const map = new mapkern.Map({ container: "map", center: [-122.33, 47.61], zoom: 11 });
+  map.addControl(new mapkern.NavigationControl());
+</script>
+```
+
+The map comes from the free [OpenFreeMap](https://openfreemap.org/) Liberty style. The credit for OpenFreeMap, OpenMapTiles and OpenStreetMap sits behind the (i) button in the corner, and their licenses ask you to leave it there.
+
+This page loads the newest build from the project website, which is handy for trying things out. For a real app, install it.
 
 ## Install
 
@@ -17,21 +44,26 @@ Mapkern GL JS is a map library for the web. It draws vector tiles, raster tiles 
 npm install github:grangedevgroup-code/mapkern-gl-js
 ```
 
-The built files end up in `node_modules/mapkern-gl/dist`. If you don't use a bundler, copy `dist/mapkern.js` next to your page and import it from there.
+```js
+import * as mapkern from "mapkern-gl";
 
-## A first map
-
-```html
-<div id="map" style="position: absolute; inset: 0"></div>
-<script type="module">
-  import * as mapkern from "mapkern-gl";
-
-  const map = new mapkern.Map({ container: "map" });
-  map.addControl(new mapkern.NavigationControl());
-</script>
+const map = new mapkern.Map({ container: "map", center: [-122.33, 47.61], zoom: 11 });
 ```
 
-That's the whole world, drawn with the free [OpenFreeMap](https://openfreemap.org/) Liberty style, so there's no tile server to run and no API key to get. Open the page through a local web server, because browsers won't load modules from a `file://` address. The credit for OpenFreeMap, OpenMapTiles and OpenStreetMap shows in the corner, and their licenses ask you to leave it there.
+TypeScript types come with it, and Vite, webpack and esbuild need no setup. The container needs a height, or you won't see anything. Without a bundler, copy `node_modules/mapkern-gl/dist/mapkern.js` next to your page, import it from there and open the page through a local web server, because browsers won't load module files from a `file://` address.
+
+In React, create the map in an effect and remove it when the component goes away:
+
+```jsx
+function MapView({ center, zoom }) {
+  const container = useRef(null);
+  useEffect(() => {
+    const map = new mapkern.Map({ container: container.current, center, zoom });
+    return () => map.remove();
+  }, []);
+  return <div ref={container} style={{ width: "100%", height: "100%" }} />;
+}
+```
 
 ## Your own data
 
