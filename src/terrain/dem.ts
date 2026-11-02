@@ -23,6 +23,71 @@ export interface FrameStrip {
   data: Float32Array;
 }
 
+export interface Region {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+const halfFloat = new Float32Array(1);
+const halfBits = new Uint32Array(halfFloat.buffer);
+
+export function toHalf(value: number): number {
+  halfFloat[0] = value;
+  const x = halfBits[0]!;
+  const sign = (x >>> 16) & 0x8000;
+  const exponent = (x >>> 23) & 0xff;
+  let mantissa = x & 0x7fffff;
+  if (exponent === 0xff) return sign | (mantissa ? 0x7e00 : 0x7c00);
+  const e = exponent - 112;
+  if (e >= 31) return sign | 0x7c00;
+  if (e <= 0) {
+    if (e < -10) return sign;
+    mantissa |= 0x800000;
+    const shift = 14 - e;
+    let half = mantissa >>> shift;
+    const rest = mantissa & ((1 << shift) - 1);
+    const middle = 1 << (shift - 1);
+    if (rest > middle || (rest === middle && half & 1)) half++;
+    return sign | half;
+  }
+  let half = sign | (e << 10) | (mantissa >>> 13);
+  const rest = mantissa & 0x1fff;
+  if (rest > 0x1000 || (rest === 0x1000 && half & 1)) half++;
+  return half;
+}
+
+export function fromHalf(half: number): number {
+  const sign = half & 0x8000 ? -1 : 1;
+  const exponent = (half >>> 10) & 0x1f;
+  const mantissa = half & 0x3ff;
+  if (exponent === 0) return sign * mantissa * 2 ** -24;
+  if (exponent === 31) return mantissa ? Number.NaN : sign * Number.POSITIVE_INFINITY;
+  return sign * (1 + mantissa / 1024) * 2 ** (exponent - 15);
+}
+
+const Float16 = (globalThis as { Float16Array?: new (values: Float32Array) => ArrayBufferView }).Float16Array;
+
+export function toHalfArray(values: Float32Array): Uint16Array {
+  if (Float16) {
+    const halves = new Float16(values);
+    return new Uint16Array(halves.buffer, halves.byteOffset, values.length);
+  }
+  const out = new Uint16Array(values.length);
+  for (let i = 0; i < values.length; i++) out[i] = toHalf(values[i]!);
+  return out;
+}
+
+export function backfillRegion(grid: DemGrid, dx: number, dy: number): Region {
+  const { size, stride } = grid;
+  const x0 = dx < 0 ? 0 : dx > 0 ? DEM_BORDER + size : DEM_BORDER;
+  const x1 = dx < 0 ? DEM_BORDER : dx > 0 ? stride : DEM_BORDER + size;
+  const y0 = dy < 0 ? 0 : dy > 0 ? DEM_BORDER + size : DEM_BORDER;
+  const y1 = dy < 0 ? DEM_BORDER : dy > 0 ? stride : DEM_BORDER + size;
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}
+
 export const NEIGHBORS: readonly (readonly [number, number])[] = [
   [-1, -1],
   [0, -1],
@@ -206,11 +271,15 @@ export function frameStrips(grid: DemGrid): FrameStrip[] {
   return [strip(0, 0, n, 2), strip(0, n - 2, n, 2), strip(0, 2, 2, n - 4), strip(n - 2, 2, 2, n - 4)];
 }
 
-export function writeFrame(grid: DemGrid, out: Float32Array): void {
+export function writeFrame(grid: DemGrid, out: Float32Array | Uint16Array): void {
   const n = grid.size + 2;
+  const half = out instanceof Uint16Array;
   for (const s of frameStrips(grid)) {
     for (let j = 0; j < s.height; j++) {
-      out.set(s.data.subarray(j * s.width * 2, (j + 1) * s.width * 2), ((s.y + j) * n + s.x) * 2);
+      const row = s.data.subarray(j * s.width * 2, (j + 1) * s.width * 2);
+      const at = ((s.y + j) * n + s.x) * 2;
+      if (half) for (let i = 0; i < row.length; i++) out[at + i] = toHalf(row[i]!);
+      else out.set(row, at);
     }
   }
 }
