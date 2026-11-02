@@ -11,6 +11,7 @@ import type { RenderPiece, TileManager } from "../tiles/manager.ts";
 import type { Tile } from "../tiles/tile.ts";
 import type { Anchor } from "../ui/anchor.ts";
 import { anchorOffsets, anchorShift, isAnchor } from "../ui/anchor.ts";
+import type { PackedLabels } from "../worker/packed.ts";
 import type { GlyphLoader } from "./glyph-server.ts";
 import { fromServer, GlyphServer } from "./glyph-server.ts";
 import type { FontSpec, GlyphMetrics } from "./glyphs.ts";
@@ -151,6 +152,8 @@ export interface LabelHit {
 const FADE_MS = 180;
 const PLACE_INTERVAL = 120;
 const PLACE_BUDGET = 3;
+const PLACE_REST = 3;
+const PLACE_CLOCK_STEPS = 8;
 const STRIDE = 36;
 const GEOMETRY: Record<number, GeometryType> = { 0: "Unknown", 1: "Point", 2: "LineString", 3: "Polygon" };
 
@@ -200,14 +203,19 @@ export class LabelRenderer {
   private readonly gl: GL;
   private labels = new Map<string, Label>();
   private lastPlacement = Number.NEGATIVE_INFINITY;
-  private placedStructure = "";
+  private placeAfter = Number.NEGATIVE_INFINITY;
+  private readonly structure: number[] = [];
+  private placedStructure: number[] = [];
   private placedCamera = -1;
   private seenCamera = -1;
+  private builtRevision = -1;
+  private builtRatio = 0;
   private job: {
     steps: Generator<undefined, void, undefined>;
-    structure: string;
+    structure: number[];
     camera: number;
     layers: StyleLayer[];
+    spent: number;
   } | null = null;
   private texture: WebGLTexture | null = null;
   private vao: WebGLVertexArrayObject | null = null;
@@ -284,15 +292,15 @@ export class LabelRenderer {
     pixelRatio: number,
     terrain: LabelTerrain | null = null,
   ): boolean {
-    const parts: string[] = [`images:${this.images.version}`];
+    const structure = this.structure;
+    structure.length = 0;
+    structure.push(this.images.version);
     for (const { layer, manager, states } of inputs) {
-      parts.push(`${layer.id}:${layer.revision}:${layer.motion}:${states?.version ?? 0}`);
+      structure.push(-1, layer.uid, layer.revision, layer.motion, states?.version ?? 0);
       for (const piece of manager.pieces) {
-        if (piece.tile.data?.buckets.has(layer.id))
-          parts.push(`${piece.tile.key}/${piece.tile.revision}/${piece.wrap}`);
+        if (piece.tile.data?.buckets.has(layer.id)) structure.push(piece.tile.key, piece.tile.revision, piece.wrap);
       }
     }
-    const structure = parts.join(",");
     const moving = cameraVersion !== this.seenCamera;
     this.seenCamera = cameraVersion;
     if (
@@ -302,7 +310,8 @@ export class LabelRenderer {
       this.job = null;
     if (
       !this.job &&
-      (structure !== this.placedStructure ||
+      (!moving || now >= this.placeAfter) &&
+      (!sameNumbers(structure, this.placedStructure) ||
         this.pendingGlyphs ||
         this.reflow ||
         (cameraVersion !== this.placedCamera && now - this.lastPlacement >= PLACE_INTERVAL))
@@ -310,30 +319,35 @@ export class LabelRenderer {
       this.reflow = false;
       this.job = {
         steps: this.placement(transform.clone(), inputs, now, terrain),
-        structure,
+        structure: structure.slice(),
         camera: cameraVersion,
         layers: inputs.map((input) => input.layer),
+        spent: 0,
       };
       this.lastPlacement = now;
     }
     const job = this.job;
     if (job) {
-      const stop = moving ? performance.now() + PLACE_BUDGET : Number.POSITIVE_INFINITY;
+      const started = performance.now();
+      const stop = moving ? started + PLACE_BUDGET : Number.POSITIVE_INFINITY;
       let done = false;
-      for (;;) {
+      for (let step = 1; ; step++) {
         if (job.steps.next().done) {
           done = true;
           break;
         }
-        if (performance.now() >= stop) break;
+        if (moving && step % PLACE_CLOCK_STEPS === 0 && performance.now() >= stop) break;
       }
+      job.spent += performance.now() - started;
       if (done) {
         this.job = null;
         this.placedStructure = job.structure;
         this.placedCamera = job.camera;
+        this.placeAfter = now + job.spent * PLACE_REST;
       }
     }
     let animating = cameraVersion !== this.placedCamera || this.pendingGlyphs || this.job !== null;
+    let changed = job !== null;
     const dt = Math.min(100, Math.max(0, now - (this.lastFrame ?? now)));
     this.lastFrame = now;
     for (const [key, label] of this.labels) {
@@ -344,10 +358,18 @@ export class LabelRenderer {
             ? Math.min(label.target, label.opacity + step)
             : Math.max(label.target, label.opacity - step);
         animating = true;
+        changed = true;
       }
-      if (label.target === 0 && label.opacity <= 0) this.labels.delete(key);
+      if (label.target === 0 && label.opacity <= 0) {
+        this.labels.delete(key);
+        changed = true;
+      }
     }
-    this.build(transform, pixelRatio);
+    if (changed || !this.vao || transform.revision !== this.builtRevision || pixelRatio !== this.builtRatio) {
+      this.builtRevision = transform.revision;
+      this.builtRatio = pixelRatio;
+      this.build(transform, pixelRatio);
+    }
     return animating;
   }
 
@@ -575,8 +597,22 @@ export class LabelRenderer {
     return { family: cssFamily(derived.families), weight: bold ? "700" : "400", italic, stack: names.join(",") };
   }
 
-  private layoutCache = new Map<string, Laid>();
+  private layoutCache = new Map<string, Map<string, Laid>>();
+  private layoutCount = 0;
   private layoutGeneration = -1;
+  private layoutShape: {
+    layer: StyleLayer;
+    revision: number;
+    line: boolean;
+    letterSpacing: number;
+    lineHeight: number;
+    maxWidth: number;
+    family: string;
+    weight: string;
+    italic: boolean;
+    stack: string | undefined;
+    texts: Map<string, Laid>;
+  } | null = null;
 
   private layout(
     layer: StyleLayer,
@@ -585,16 +621,55 @@ export class LabelRenderer {
     budget: { left: number },
     shape: TextShape,
   ): Laid | null {
-    if (this.layoutGeneration !== this.atlas.generation || this.layoutCache.size > 6000) {
+    if (this.layoutGeneration !== this.atlas.generation || this.layoutCount > 6000) {
       this.layoutCache.clear();
+      this.layoutCount = 0;
+      this.layoutShape = null;
       this.layoutGeneration = this.atlas.generation;
     }
     const { font } = shape;
-    const cacheKey = `${layer.id}#${layer.revision}#${line ? 1 : 0}#${shape.letterSpacing}#${shape.lineHeight}#${shape.maxWidth}#${font.family}#${font.weight}#${font.italic}#${font.stack ?? ""}#${text}`;
-    const cached = this.layoutCache.get(cacheKey);
+    let known = this.layoutShape;
+    if (
+      !known ||
+      known.layer !== layer ||
+      known.revision !== layer.revision ||
+      known.line !== line ||
+      known.letterSpacing !== shape.letterSpacing ||
+      known.lineHeight !== shape.lineHeight ||
+      known.maxWidth !== shape.maxWidth ||
+      known.family !== font.family ||
+      known.weight !== font.weight ||
+      known.italic !== font.italic ||
+      known.stack !== font.stack
+    ) {
+      const key = `${layer.id}#${layer.revision}#${line ? 1 : 0}#${shape.letterSpacing}#${shape.lineHeight}#${shape.maxWidth}#${font.family}#${font.weight}#${font.italic}#${font.stack ?? ""}`;
+      let texts = this.layoutCache.get(key);
+      if (!texts) {
+        texts = new Map();
+        this.layoutCache.set(key, texts);
+      }
+      known = {
+        layer,
+        revision: layer.revision,
+        line,
+        letterSpacing: shape.letterSpacing,
+        lineHeight: shape.lineHeight,
+        maxWidth: shape.maxWidth,
+        family: font.family,
+        weight: font.weight,
+        italic: font.italic,
+        stack: font.stack,
+        texts,
+      };
+      this.layoutShape = known;
+    }
+    const cached = known.texts.get(text);
     if (cached) return cached;
     const laid = this.computeLayout(line ? text.replace(/\n/g, " ") : text, line, budget, shape);
-    if (laid) this.layoutCache.set(cacheKey, laid);
+    if (laid) {
+      known.texts.set(text, laid);
+      this.layoutCount++;
+    }
     return laid;
   }
 
@@ -807,8 +882,9 @@ export class LabelRenderer {
         const bucket = piece.tile.data?.buckets.get(layer.id);
         const labels = bucket?.labels;
         if (!bucket || !labels) continue;
+        const keys = dedupeKeys(labels, layer.id);
         for (let i = 0; i < labels.count; i++) {
-          const was = shown.has(`${layer.id}|${labels.texts[i]}|${labels.icons?.[i] ?? ""}`) ? 0 : 1;
+          const was = shown.has(keys[i]!) ? 0 : 1;
           items.push({ piece, bucket, i, priority: labels.priority[i]!, was, order: order++ });
         }
       }
@@ -827,7 +903,7 @@ export class LabelRenderer {
         const pathData = labels.paths.subarray(labels.pathStart[i]!, labels.pathStart[i + 1]!);
         const fi = labels.feature[i]!;
         const featureId = bucket.features.id(fi);
-        const dedupeKey = `${layer.id}|${text}|${labels.icons?.[i] ?? ""}`;
+        const dedupeKey = dedupeKeys(labels, layer.id)[i]!;
         const alignMap = alignment === "map" || (alignment !== "viewport" && isLine);
         const followLine = isLine && textAlignment !== "viewport";
         const ground = followLine && pitchAlignment !== "viewport";
@@ -1151,6 +1227,7 @@ export class LabelRenderer {
     const u8 = new Uint8Array(this.vertexData);
     let v = 0;
     let visible = 0;
+    const shifts = new Map<StyleLayer, [number, number]>();
     const put = (x: number, y: number, u: number, w: number, label: Label, scale = label.scale) => {
       const o = v * STRIDE;
       f32[o / 4] = x;
@@ -1226,11 +1303,16 @@ export class LabelRenderer {
       if (p.w <= 0) continue;
       visible++;
       const layer = label.layer;
-      const [shiftX, shiftY] = screenShift(
-        pairOr(layer.paintValue<unknown>("translate", { zoom: transform.zoom })),
-        layer.fixed<string>("translateAnchor"),
-        transform.bearing,
-      );
+      let shift = shifts.get(layer);
+      if (!shift) {
+        shift = screenShift(
+          pairOr(layer.paintValue<unknown>("translate", { zoom: transform.zoom })),
+          layer.fixed<string>("translateAnchor"),
+          transform.bearing,
+        );
+        shifts.set(layer, shift);
+      }
+      const [shiftX, shiftY] = shift;
       const laid = label.laid;
       const originX = p.x + shiftX;
       const originY = p.y + shiftY;
@@ -1415,6 +1497,21 @@ function describeVertices(gl: WebGL2RenderingContext): void {
   gl.vertexAttribPointer(3, 4, gl.UNSIGNED_BYTE, true, STRIDE, 16);
   gl.enableVertexAttribArray(4);
   gl.vertexAttribPointer(4, 4, gl.FLOAT, false, STRIDE, 20);
+}
+
+function sameNumbers(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function dedupeKeys(labels: PackedLabels, layerId: string): string[] {
+  if (labels.dedupe?.layer !== layerId) {
+    const keys = new Array<string>(labels.count);
+    for (let i = 0; i < labels.count; i++) keys[i] = `${layerId}|${labels.texts[i]}|${labels.icons?.[i] ?? ""}`;
+    labels.dedupe = { layer: layerId, keys };
+  }
+  return labels.dedupe!.keys;
 }
 
 function preferred(anchors: readonly Anchor[], previous: Anchor | undefined): Anchor[] {
