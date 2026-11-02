@@ -481,9 +481,6 @@ export class Painter {
   }
 
   private drapeTurn = 0;
-  movingDrapes = MOVING_DRAPES;
-  movingZoomStep = MOVING_ZOOM_STEP;
-  movingDrapeMs = MOVING_DRAPE_MS;
 
   private renderDrapes(frame: FrameInput, terrain: Surface): void {
     const g = this.gl;
@@ -494,7 +491,7 @@ export class Painter {
     const turning = layers.some((l) => l.type === "hillshade" && l.fixed<string>("illuminationAnchor") !== "map");
     const bearing = turning ? Math.round(t.bearing / 4) * 4 : 0;
     const zoomed = layers.some(drapeFollowsZoom);
-    const tolerance = !zoomed ? Number.POSITIVE_INFINITY : frame.moving ? this.movingZoomStep : RESTING_ZOOM_STEP;
+    const tolerance = !zoomed ? Number.POSITIVE_INFINITY : frame.moving ? MOVING_ZOOM_STEP : RESTING_ZOOM_STEP;
     this.drapes.begin();
     this.drapesBehind = false;
     const common = this.hash.reset().add(bearing).add(frame.pixelRatio);
@@ -544,10 +541,10 @@ export class Painter {
       count++;
       this.drawDrape(frame, job, layers, zoom);
     }
-    const deadline = started + (frame.moving ? this.movingDrapeMs : RESTING_DRAPE_MS);
+    const deadline = started + (frame.moving ? MOVING_DRAPE_MS : RESTING_DRAPE_MS);
     count = 0;
     for (const job of stale) {
-      if (performance.now() > deadline || (frame.moving === true && count >= this.movingDrapes)) {
+      if (performance.now() > deadline || (frame.moving === true && count >= MOVING_DRAPES)) {
         this.drapesBehind = true;
         continue;
       }
