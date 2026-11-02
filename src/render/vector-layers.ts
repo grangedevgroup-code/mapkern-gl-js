@@ -111,6 +111,27 @@ export interface PatternImages {
   missing(id: string): void;
 }
 
+const slotUniforms = new Map<string, string>();
+const compUniforms = new Map<string, string>();
+
+function slotUniform(name: string): string {
+  let full = slotUniforms.get(name);
+  if (full === undefined) {
+    full = `${name}_slot`;
+    slotUniforms.set(name, full);
+  }
+  return full;
+}
+
+function compUniform(name: string): string {
+  let full = compUniforms.get(name);
+  if (full === undefined) {
+    full = `${name}_comp`;
+    compUniforms.set(name, full);
+  }
+  return full;
+}
+
 export class VectorPainter {
   readonly budget: PaintBudget = { deadline: Number.POSITIVE_INFINITY, behind: false };
   private readonly gl: GL;
@@ -260,8 +281,8 @@ export class VectorPainter {
     gl.uniform1i(program.uniforms.get("u_paint_stride") ?? null, stride);
     for (const p of paint) {
       const slot = bucket.paint.slot(p.name);
-      gl.uniform1i(program.uniforms.get(`${p.uniform}_slot`) ?? null, slot.slot);
-      gl.uniform1i(program.uniforms.get(`${p.uniform}_comp`) ?? null, slot.composite ? 1 : 0);
+      gl.uniform1i(program.uniforms.get(slotUniform(p.uniform)) ?? null, slot.slot);
+      gl.uniform1i(program.uniforms.get(compUniform(p.uniform)) ?? null, slot.composite ? 1 : 0);
     }
   }
 
