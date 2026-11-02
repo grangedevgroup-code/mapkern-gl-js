@@ -26,10 +26,6 @@ export class FetchFailure extends Error {
 
 export type FetchResult = { kind: "data"; data: ArrayBuffer; contentType: string } | { kind: "empty" };
 
-export type FetchedBody =
-  | { kind: "data"; body: ArrayBuffer | Blob; contentType: string; saved: boolean }
-  | { kind: "empty" };
-
 export function resolveRequest(
   url: string,
   kind: ResourceKind,
@@ -46,27 +42,6 @@ export async function fetchBytes(
   kind: ResourceKind = "tile",
   store: ResponseStore | null = null,
 ): Promise<FetchResult> {
-  const result = await fetchBody(params, signal, timeoutMs, kind, store);
-  if (result.kind === "empty") return result;
-  return { kind: "data", data: await bodyBytes(result.body), contentType: result.contentType };
-}
-
-export function bodyBytes(body: ArrayBuffer | Blob): ArrayBuffer | Promise<ArrayBuffer> {
-  return body instanceof Blob ? body.arrayBuffer() : body;
-}
-
-export function savedCopyFailed(url: string, store: ResponseStore | null): FetchFailure {
-  store?.remove(url);
-  return new FetchFailure({ kind: "network", message: "The saved copy could not be read", retryable: true });
-}
-
-export async function fetchBody(
-  params: RequestParameters,
-  signal: AbortSignal,
-  timeoutMs: number,
-  kind: ResourceKind = "tile",
-  store: ResponseStore | null = null,
-): Promise<FetchedBody> {
   const handler = protocolFor(params.url);
   if (handler) return fetchWithProtocol(handler, { ...params, kind }, signal);
   const cache = store && cacheable(params.url) ? store : null;
@@ -75,7 +50,7 @@ export async function fetchBody(
   if (state === "fresh" || (state !== "missing" && (offline() || serverDown(params.url)))) {
     const hit = await cache.read(params.url);
     if (signal.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
-    if (hit) return { kind: "data", body: hit.data, contentType: hit.type, saved: true };
+    if (hit) return { kind: "data", data: hit.data, contentType: hit.type };
   }
   try {
     const result = await fetchNetwork(params, signal, timeoutMs, cache);
@@ -87,7 +62,7 @@ export async function fetchBody(
     if (cache.state(params.url) === "missing") throw error;
     const hit = await cache.read(params.url);
     if (!hit) throw error;
-    return { kind: "data", body: hit.data, contentType: hit.type, saved: true };
+    return { kind: "data", data: hit.data, contentType: hit.type };
   }
 }
 
@@ -102,7 +77,7 @@ async function fetchNetwork(
   signal: AbortSignal,
   timeoutMs: number,
   cache: ResponseStore | null,
-): Promise<FetchedBody> {
+): Promise<FetchResult> {
   const timeout = new AbortController();
   const onAbort = () => timeout.abort(signal.reason);
   if (signal.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
@@ -142,9 +117,9 @@ async function fetchNetwork(
       await response.body?.cancel().catch(() => undefined);
       throw new FetchFailure(classifyStatus(status, response.headers.get("retry-after")));
     }
-    let data: Blob;
+    let data: ArrayBuffer;
     try {
-      data = await response.blob();
+      data = await response.arrayBuffer();
     } catch (error) {
       if (signal.aborted) throw error;
       if (timedOut) {
@@ -156,13 +131,13 @@ async function fetchNetwork(
       }
       throw new FetchFailure({ kind: "network", message: "Response body could not be read", retryable: true });
     }
-    if (data.size === 0) return { kind: "empty" };
+    if (data.byteLength === 0) return { kind: "empty" };
     const contentType = response.headers.get("content-type") ?? "";
     if (cache) {
       const expires = freshUntil(response.headers, Date.now());
-      if (expires !== null) cache.write(params.url, data, contentType, expires);
+      if (expires !== null) cache.write(params.url, data.slice(0), contentType, expires);
     }
-    return { kind: "data", body: data, contentType, saved: false };
+    return { kind: "data", data, contentType };
   } finally {
     if (timer !== undefined) clearTimeout(timer);
     signal.removeEventListener("abort", onAbort);
@@ -173,7 +148,7 @@ async function fetchWithProtocol(
   handler: ProtocolHandler,
   request: ProtocolRequest,
   signal: AbortSignal,
-): Promise<FetchedBody> {
+): Promise<FetchResult> {
   let result: Awaited<ReturnType<ProtocolHandler>>;
   try {
     result = await handler(request, signal);
@@ -199,7 +174,7 @@ async function fetchWithProtocol(
         ? bytes.buffer
         : bytes.slice().buffer;
   if (data.byteLength === 0) return { kind: "empty" };
-  return { kind: "data", body: data, contentType, saved: false };
+  return { kind: "data", data, contentType };
 }
 
 export function classifyStatus(status: number, retryAfter: string | null): TileFailure {
