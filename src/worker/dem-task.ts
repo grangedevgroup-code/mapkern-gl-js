@@ -8,7 +8,7 @@ export interface DemPixels {
 }
 
 export interface DemRequest {
-  bytes?: ArrayBuffer;
+  bytes?: ArrayBuffer | Blob;
   pixels?: DemPixels;
   raw?: ArrayBuffer;
   unpack: Unpack;
@@ -48,16 +48,18 @@ export async function decodeDemTile(
   request: DemRequest,
   signal: AbortSignal,
 ): Promise<{ result: DemReply | null; transfer?: Transferable[] }> {
-  if (request.raw) {
-    const size = new DataView(request.raw).getUint32(4, true);
-    if (request.raw.byteLength < 8 + size * size * 4) throw new Error("Elevation tile is shorter than its size says");
-    return finish(decodeElevations(new Float32Array(request.raw, 8, size * size), size));
+  const bytes = request.bytes instanceof Blob ? await request.bytes.arrayBuffer() : request.bytes;
+  const raw = request.raw ?? (bytes && isRawElevation(bytes) ? bytes : undefined);
+  if (raw) {
+    const size = new DataView(raw).getUint32(4, true);
+    if (raw.byteLength < 8 + size * size * 4) throw new Error("Elevation tile is shorter than its size says");
+    return finish(decodeElevations(new Float32Array(raw, 8, size * size), size));
   }
   let pixels = request.pixels;
-  if (!pixels && request.bytes) pixels = (await exactPixels(request.bytes)) ?? undefined;
+  if (!pixels && bytes) pixels = (await exactPixels(bytes)) ?? undefined;
   if (!pixels) {
-    if (typeof OffscreenCanvas === "undefined" || !request.bytes) throw new Error(NO_OFFSCREEN);
-    pixels = await canvasPixels(request.bytes, signal, (size) => new OffscreenCanvas(size, size));
+    if (typeof OffscreenCanvas === "undefined" || !bytes) throw new Error(NO_OFFSCREEN);
+    pixels = await canvasPixels(bytes, signal, (size) => new OffscreenCanvas(size, size));
   }
   return finish(decodeDem(pixels.data, pixels.size, request.unpack, pixels.altered));
 }
