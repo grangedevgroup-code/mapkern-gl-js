@@ -216,3 +216,17 @@ test("CSS colors with a slash before the alpha, and long junk parses quickly", a
   assert.equal(parseColor(`rgb(1${" ".repeat(200000)}x)`), null);
   assert.ok(performance.now() - started < 200, "parsing stays linear in the length of the text");
 });
+
+test("zoom expressions reuse the last result only for the same zoom and inputs", () => {
+  const z = compile<number>(["interpolate", ["linear"], ["zoom"], 0, 0, 10, 100], "number", 0);
+  assert.equal(z.evaluate({ zoom: 5 }), 50);
+  assert.equal(z.evaluate({ zoom: 5 }), 50);
+  assert.equal(z.evaluate({ zoom: 7 }), 70);
+  assert.equal(z.evaluate({ zoom: 5 }), 50);
+  const picked = compile<string | null>(["image", ["step", ["zoom"], "a", 5, "b"]], "any", null);
+  assert.equal(picked.evaluate({ zoom: 6, images: () => false }), null);
+  assert.equal(picked.evaluate({ zoom: 6, images: () => true }), "b");
+  const feature = compile<number>(["*", ["zoom"], ["get", "x"]], "number", 0);
+  assert.equal(feature.evaluate({ zoom: 2, feature: { properties: { x: 3 } } }), 6);
+  assert.equal(feature.evaluate({ zoom: 2, feature: { properties: { x: 4 } } }), 8);
+});
