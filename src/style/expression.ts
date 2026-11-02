@@ -62,6 +62,7 @@ interface Scope {
   allowState: boolean;
   allowGeometry: boolean;
   vars: Map<string, Node>;
+  readsImages: boolean;
 }
 
 const EMPTY_PROPS: Readonly<Record<string, unknown>> = Object.freeze({});
@@ -84,6 +85,7 @@ export function compile<T>(
     allowState: options.state === true,
     allowGeometry: options.geometry === true,
     vars: new Map(),
+    readsImages: false,
   };
   const node = build(value, scope);
   const coerce = coercer(kind);
@@ -109,8 +111,17 @@ export function compile<T>(
       properties: scope.properties,
     };
   }
+  let lastZoom = Number.NaN;
+  let lastValue: T = fallback;
+  const zoomOnly = (ctx: EvalContext): T => {
+    if (ctx.zoom !== lastZoom) {
+      lastValue = evaluate(ctx);
+      lastZoom = ctx.zoom;
+    }
+    return lastValue;
+  };
   return {
-    evaluate,
+    evaluate: node.feature || node.state === true || scope.readsImages ? evaluate : zoomOnly,
     zoomDependent: node.zoom,
     featureDependent: node.feature,
     stateDependent: node.state === true,
@@ -638,6 +649,7 @@ function build(value: unknown, scope: Scope): Node {
       return { fn: (ctx) => ctx.accumulated ?? null, zoom: false, feature: true };
     case "image": {
       need(1, 1);
+      scope.readsImages = true;
       const name = sub(args[0]);
       return combine([name], (ctx) => {
         const id = name.fn(ctx);
