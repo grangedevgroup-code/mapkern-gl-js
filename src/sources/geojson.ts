@@ -5,7 +5,7 @@ import { changedKeys } from "../style/diff.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import type { GeoJSONData, GeoJSONSourceSpec, SourceSpec } from "../style/types.ts";
 import { FetchFailure, fetchBytes, resolveRequest, retryDelay } from "../tiles/fetch.ts";
-import type { TileStats, Tiling } from "../tiles/manager.ts";
+import type { TileStats, Tiling, UploadBudget } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
 import type { GeoJSONOptions, GeoJSONSummary, QueriedSourceFeature, SourceGeoJSONFeature } from "../worker/geojson.ts";
 import type {
@@ -214,8 +214,8 @@ export class GeoJSONSource implements MapSource, VectorTileSource {
     this.manager?.update(transform, now, predicted);
   }
 
-  uploadPending(deadline: number, now: number): boolean {
-    return this.manager?.uploadPending(deadline, now) ?? false;
+  uploadPending(budget: UploadBudget, now: number): boolean {
+    return this.manager?.uploadPending(budget, now) ?? false;
   }
 
   isIdle(): boolean {
