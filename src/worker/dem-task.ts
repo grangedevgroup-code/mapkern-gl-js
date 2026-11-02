@@ -1,5 +1,5 @@
 import type { DemGrid, Unpack } from "../terrain/dem.ts";
-import { decodeDem, decodeElevations, gradients } from "../terrain/dem.ts";
+import { decodeDem, decodeElevations, gradients, toHalfArray } from "../terrain/dem.ts";
 
 export interface DemPixels {
   data: Uint8ClampedArray;
@@ -41,7 +41,7 @@ interface Canvas2D {
 
 export interface DemReply {
   grid: DemGrid;
-  gradient: Float32Array;
+  gradient: Uint16Array;
 }
 
 export async function decodeDemTile(
@@ -64,7 +64,7 @@ export async function decodeDemTile(
 
 function finish(grid: ReturnType<typeof decodeDem>): { result: DemReply | null; transfer?: Transferable[] } {
   if (!grid) return { result: null };
-  const gradient = gradients(grid);
+  const gradient = toHalfArray(gradients(grid));
   const transfer: Transferable[] = [grid.elevation.buffer, gradient.buffer];
   if (grid.mask) transfer.push(grid.mask.buffer);
   return { result: { grid, gradient }, transfer };
