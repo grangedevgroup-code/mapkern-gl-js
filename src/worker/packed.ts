@@ -142,6 +142,7 @@ export interface PackedLabels {
   count: number;
   texts: string[];
   icons: string[];
+  dedupe?: { layer: string; keys: string[] };
   feature: Uint32Array;
   size: Float32Array;
   priority: Float32Array;
