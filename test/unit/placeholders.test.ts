@@ -38,3 +38,28 @@ test("different pictures are never suspected and the world tile is left alone", 
   const world = found.note({ z: 0, x: 0, y: 0 }, bytes(1, 2, 3));
   assert.equal(found.suspect({ z: 0, x: 0, y: 0 }, world!), false);
 });
+
+test("tiles are only read for a closer look when another zoom level has the same byte size", () => {
+  const found = new Placeholders(() => {});
+  assert.equal(found.peers({ z: 5, x: 1, y: 1 }, 1000), null);
+  assert.equal(found.peers({ z: 5, x: 2, y: 1 }, 1000), null);
+  assert.equal(found.peers({ z: 5, x: 1, y: 1 }, 1000), null);
+  assert.equal(found.peers({ z: 6, x: 3, y: 1 }, 2000), null);
+  assert.deepEqual(found.peers({ z: 6, x: 4, y: 2 }, 1000), [
+    { z: 5, x: 1, y: 1 },
+    { z: 5, x: 2, y: 1 },
+  ]);
+});
+
+test("a confirmed placeholder's size is checked at every zoom level from then on", () => {
+  const found = new Placeholders(() => {});
+  found.peers({ z: 5, x: 1, y: 1 }, 2);
+  found.note({ z: 5, x: 1, y: 1 }, bytes(9, 9));
+  found.peers({ z: 6, x: 2, y: 2 }, 2);
+  const hash = found.note({ z: 6, x: 2, y: 2 }, bytes(9, 9));
+  found.confirm(hash!, { z: 6, x: 2, y: 2 });
+  assert.deepEqual(found.peers({ z: 6, x: 3, y: 3 }, 2), []);
+  assert.equal(found.note({ z: 6, x: 3, y: 3 }, bytes(9, 9)), null);
+  assert.deepEqual(found.peers({ z: 6, x: 4, y: 4 }, 2), []);
+  assert.notEqual(found.note({ z: 6, x: 4, y: 4 }, bytes(9, 8)), null);
+});
