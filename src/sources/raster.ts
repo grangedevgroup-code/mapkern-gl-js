@@ -4,9 +4,6 @@ import type { RasterSourceSpec } from "../style/types.ts";
 import { FetchFailure, fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileLoader, TileStats, UploadBudget } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
-import type { WorkerPool } from "../worker/pool.ts";
-import type { RasterReply } from "../worker/raster-task.ts";
-import { decodeRaster, NOT_AN_IMAGE } from "../worker/raster-task.ts";
 import type { MapSource, SourceContext } from "./source.ts";
 import { sourceFailure, tileEvents } from "./source.ts";
 import type { TileSet } from "./tilejson.ts";
@@ -155,25 +152,26 @@ export class RasterSource implements MapSource {
           ctx.diskCache,
         );
         if (result.kind === "empty") return null;
+        const fingerprint = placeholders.note(tile, result.data);
+        if (fingerprint === null) return null;
         onDecoding();
-        let decoded: RasterReply;
+        let image: ImageBitmap;
         try {
-          decoded = await decodeImage(ctx, result.data, result.contentType, signal);
+          const type = result.contentType.split(";")[0]?.trim() || "image/png";
+          image = await createImageBitmap(new Blob([result.data], { type }), {
+            premultiplyAlpha: "premultiply",
+            colorSpaceConversion: "none",
+          });
         } catch (error) {
-          if (signal.aborted || error instanceof FetchFailure) throw error;
-          throw new FetchFailure({ kind: "decode", message: NOT_AN_IMAGE, retryable: false });
+          if (signal.aborted) throw error;
+          throw new FetchFailure({ kind: "decode", message: "Tile image could not be decoded", retryable: false });
         }
-        const { image, hash } = decoded;
         if (signal.aborted) {
           image.close();
           throw new DOMException("Aborted", "AbortError");
         }
-        if (placeholders.note(tile, hash) === null) {
-          image.close();
-          return null;
-        }
-        if (placeholders.suspect(tile, hash) && !isFlat(image)) {
-          placeholders.confirm(hash, tile);
+        if (placeholders.suspect(tile, fingerprint) && !isFlat(image)) {
+          placeholders.confirm(fingerprint, tile);
           image.close();
           return null;
         }
@@ -213,7 +211,8 @@ export class Placeholders {
     this.forget = forget;
   }
 
-  note(tile: TileCoord, hash: number): number | null {
+  note(tile: TileCoord, data: ArrayBuffer): number | null {
+    const hash = fingerprint(new Uint8Array(data));
     if (this.known.has(hash)) return null;
     const key = `${tile.z}/${tile.x}/${tile.y}`;
     this.keys.delete(key);
@@ -247,34 +246,13 @@ export class Placeholders {
   }
 }
 
-const workerDecodes = new WeakMap<WorkerPool, boolean>();
-
-async function decodeImage(
-  ctx: SourceContext,
-  bytes: ArrayBuffer,
-  contentType: string,
-  signal: AbortSignal,
-): Promise<RasterReply> {
-  const type = contentType.split(";")[0]?.trim() || "image/png";
-  const pool = ctx.imageWorker();
-  const works = workerDecodes.get(pool);
-  if (works === false || !pool.available) return decodeRaster({ bytes, type }, signal);
-  const spare = works === undefined ? bytes.slice(0) : null;
-  try {
-    const reply = await pool.send<RasterReply>("raster", { bytes, type }, [bytes], signal);
-    workerDecodes.set(pool, true);
-    return reply;
-  } catch (error) {
-    if (signal.aborted) throw error;
-    if (spare) {
-      const reply = await decodeRaster({ bytes: spare, type }, signal);
-      workerDecodes.set(pool, false);
-      return reply;
-    }
-    if (error instanceof Error && error.message === NOT_AN_IMAGE) throw error;
-    workerDecodes.set(pool, false);
-    throw new FetchFailure({ kind: "network", message: "The map worker stopped", retryable: true });
+function fingerprint(bytes: Uint8Array): number {
+  let h = 0x811c9dc5 ^ bytes.length;
+  for (let i = 0; i < bytes.length; i++) {
+    h ^= bytes[i]!;
+    h = Math.imul(h, 0x01000193);
   }
+  return h >>> 0;
 }
 
 function isFlat(image: ImageBitmap): boolean {
