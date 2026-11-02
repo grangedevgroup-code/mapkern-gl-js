@@ -3,8 +3,17 @@ import type { LngLatLike } from "../geo/mercator.ts";
 import { clampLatitude, mercatorX, mercatorY, toLngLat } from "../geo/mercator.ts";
 import type { TileCoord } from "../geo/tile.ts";
 import type { DemSourceSpec } from "../style/types.ts";
-import type { DemGrid, Unpack } from "../terrain/dem.ts";
-import { backfill, frameStrips, NEIGHBORS, sampleElevation, unpackFor, writeFrame } from "../terrain/dem.ts";
+import type { DemGrid, Region, Unpack } from "../terrain/dem.ts";
+import {
+  backfill,
+  backfillRegion,
+  frameStrips,
+  NEIGHBORS,
+  sampleElevation,
+  toHalfArray,
+  unpackFor,
+  writeFrame,
+} from "../terrain/dem.ts";
 import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileLoader, TileStats } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
@@ -20,11 +29,12 @@ export interface DemTile {
   readonly x: number;
   readonly y: number;
   readonly grid: DemGrid;
-  gradient: Float32Array | null;
+  gradient: Uint16Array | null;
   gradientTexture: WebGLTexture | null;
   maskTexture: WebGLTexture | null;
   elevationTexture: WebGLTexture | null;
   elevationDirty: boolean;
+  dirtyRegions: Region[];
 }
 
 function demBytes(data: DemTile): number {
@@ -138,6 +148,11 @@ export class DemSource implements MapSource {
     } else if (data.elevationDirty) {
       gl.updateDataTexture(data.elevationTexture, 0, 0, stride, stride, "r32f", elevation);
       data.elevationDirty = false;
+      data.dirtyRegions.length = 0;
+    } else if (data.dirtyRegions.length > 0) {
+      for (const region of data.dirtyRegions)
+        gl.updateDataRegion(data.elevationTexture, region, stride, "r32f", elevation);
+      data.dirtyRegions.length = 0;
     }
     return data.elevationTexture;
   }
@@ -199,17 +214,25 @@ export class DemSource implements MapSource {
       const other = manager.getTile(data.z, x, y)?.data ?? null;
       if (!other || !backfill(data.grid, other.grid, dx, dy) || other === data) continue;
       backfill(other.grid, data.grid, -dx, -dy);
-      this.refreshFrame(other);
+      this.refreshFrame(other, backfillRegion(other.grid, -dx, -dy));
     }
   }
 
-  private refreshFrame(data: DemTile): void {
-    data.elevationDirty = true;
+  private refreshFrame(data: DemTile, changed: Region): void {
+    if (data.elevationTexture) data.dirtyRegions.push(changed);
     const texture = data.gradientTexture;
     if (data.gradient) writeFrame(data.grid, data.gradient);
     if (!texture) return;
     for (const strip of frameStrips(data.grid)) {
-      this.ctx.gl.updateDataTexture(texture, strip.x, strip.y, strip.width, strip.height, "rg16f", strip.data);
+      this.ctx.gl.updateDataTexture(
+        texture,
+        strip.x,
+        strip.y,
+        strip.width,
+        strip.height,
+        "rg16f",
+        toHalfArray(strip.data),
+      );
     }
   }
 
@@ -241,6 +264,7 @@ export class DemSource implements MapSource {
           maskTexture: null,
           elevationTexture: null,
           elevationDirty: false,
+          dirtyRegions: [],
         };
       },
       needsUpload: (data: DemTile): boolean => data.gradient !== null,
