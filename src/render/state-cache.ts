@@ -49,18 +49,56 @@ export function installStateCache(gl: WebGL2RenderingContext): StateCache {
   let vao: WebGLVertexArrayObject | null = null;
   let vaoKnown = false;
 
-  const remember = (location: WebGLUniformLocation, values: Values): boolean => {
-    const previous = uniforms.get(location);
-    if (previous && sameValues(previous, values, 0)) return false;
-    uniforms.set(location, values);
-    return true;
+  const store = (
+    location: WebGLUniformLocation,
+    previous: Values | undefined,
+    data: ArrayLike<number>,
+    offset: number,
+  ) => {
+    const size = data.length + offset;
+    let values = previous;
+    if (!values || values.length !== size) {
+      values = new Array<number>(size);
+      uniforms.set(location, values);
+    }
+    for (let i = 0; i < data.length; i++) values[i + offset] = data[i]!;
+    return values;
   };
 
   for (const name of SCALAR_UNIFORMS) {
-    const raw = gl[name].bind(gl) as unknown as (location: WebGLUniformLocation | null, ...values: number[]) => void;
-    target[name] = ((location: WebGLUniformLocation | null, ...values: number[]) => {
+    const raw = gl[name].bind(gl) as unknown as (
+      location: WebGLUniformLocation | null,
+      a: number,
+      b?: number,
+      c?: number,
+      d?: number,
+    ) => void;
+    const size = Number(name[7]);
+    target[name] = ((location: WebGLUniformLocation | null, a: number, b: number, c: number, d: number) => {
       if (location === null) return;
-      if (remember(location, values)) raw(location, ...values);
+      const previous = uniforms.get(location);
+      if (
+        previous &&
+        previous.length === size &&
+        previous[0] === a &&
+        (size < 2 || previous[1] === b) &&
+        (size < 3 || previous[2] === c) &&
+        (size < 4 || previous[3] === d)
+      )
+        return;
+      let values = previous;
+      if (!values || values.length !== size) {
+        values = new Array<number>(size);
+        uniforms.set(location, values);
+      }
+      values[0] = a;
+      if (size > 1) values[1] = b;
+      if (size > 2) values[2] = c;
+      if (size > 3) values[3] = d;
+      if (size === 1) raw(location, a);
+      else if (size === 2) raw(location, a, b);
+      else if (size === 3) raw(location, a, b, c);
+      else raw(location, a, b, c, d);
     }) as never;
   }
 
@@ -77,7 +115,10 @@ export function installStateCache(gl: WebGL2RenderingContext): StateCache {
         raw(location, data, ...rest);
         return;
       }
-      if (remember(location, Array.from(data))) raw(location, data);
+      const previous = uniforms.get(location);
+      if (previous && sameValues(previous, data, 0)) return;
+      store(location, previous, data, 0);
+      raw(location, data);
     }) as never;
   }
 
@@ -103,9 +144,7 @@ export function installStateCache(gl: WebGL2RenderingContext): StateCache {
       const previous = uniforms.get(location);
       const flag = transpose ? 1 : 0;
       if (previous && previous[0] === flag && sameValues(previous, data, 1)) return;
-      const values = [flag];
-      for (let i = 0; i < data.length; i++) values.push(data[i]!);
-      uniforms.set(location, values);
+      store(location, previous, data, 1)[0] = flag;
       raw(location, transpose, data);
     }) as never;
   }
