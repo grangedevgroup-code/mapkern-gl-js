@@ -157,6 +157,7 @@ const MOVING_DRAPES = 2;
 const MOVING_DRAPE_MS = 4;
 const RESTING_DRAPE_MS = 6;
 const MOVING_NEW_DRAPES = 6;
+const DRAPE_SIZE_TURNS = 4;
 
 function drapeFollowsZoom(layer: StyleLayer): boolean {
   if (layer.usesZoom || SCREEN_SIZED.has(layer.type)) return true;
@@ -479,6 +480,7 @@ export class Painter {
     else g.setViewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
   }
 
+  private drapeTurn = 0;
   movingDrapes = MOVING_DRAPES;
   movingZoomStep = MOVING_ZOOM_STEP;
   movingDrapeMs = MOVING_DRAPE_MS;
@@ -514,12 +516,15 @@ export class Painter {
     const shared = common.value;
     const fresh: DrapeJob[] = [];
     const stale: DrapeJob[] = [];
-    for (const slot of terrain.slots) {
-      const size = drapeSize(t, slot, frame.pixelRatio);
-      const view = new SlotView(slot, zoom, bearing, 512 * 2 ** (zoom - slot.z));
-      const signature = this.drapeSignature(shared, sources, pointSources, overlays, view, size);
+    this.drapeTurn++;
+    for (let i = 0; i < terrain.slots.length; i++) {
+      const slot = terrain.slots[i]!;
       const current = this.drapes.lookup(slot.key);
       const drawn = current !== undefined && !Number.isNaN(current.signature);
+      const exact = !drawn || !frame.moving || (i + this.drapeTurn) % DRAPE_SIZE_TURNS === 0;
+      const size = exact ? drapeSize(t, slot, frame.pixelRatio) : current.size;
+      const view = new SlotView(slot, zoom, bearing, 512 * 2 ** (zoom - slot.z));
+      const signature = this.drapeSignature(shared, sources, pointSources, overlays, view, size);
       const drift = drawn ? Math.abs(current.zoom - zoom) : 0;
       if (drawn && current.size === size && current.signature === signature && drift < tolerance) {
         if (drift >= RESTING_ZOOM_STEP && tolerance !== Number.POSITIVE_INFINITY) this.drapesBehind = true;
