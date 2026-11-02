@@ -5,7 +5,7 @@ import { PaintTable } from "../render/paint-table.ts";
 import type { StyleLayer } from "../style/layer.ts";
 import { LAYOUT, PAINT } from "../style/layer.ts";
 import type { VectorSourceSpec } from "../style/types.ts";
-import { fetchBody, resolveRequest, savedCopyFailed } from "../tiles/fetch.ts";
+import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileLoader, TileStats, UploadBudget } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
 import type { TileFeatureEntry } from "../worker/geojson-task.ts";
@@ -353,8 +353,13 @@ export class VectorSource implements MapSource, VectorTileSource {
   ): Promise<VectorTile | null> {
     const ctx = this.ctx;
     const url = tileUrl(set, tile.z, tile.x, tile.y);
-    const params = resolveRequest(url, "tile", ctx.transformRequest);
-    const result = await fetchBody(params, signal, ctx.requestTimeoutMs, "tile", ctx.diskCache);
+    const result = await fetchBytes(
+      resolveRequest(url, "tile", ctx.transformRequest),
+      signal,
+      ctx.requestTimeoutMs,
+      "tile",
+      ctx.diskCache,
+    );
     if (result.kind === "empty") return null;
     onDecoding();
     const { programs, signature } = this.layers;
@@ -365,7 +370,7 @@ export class VectorSource implements MapSource, VectorTileSource {
       this.sentPrograms = programs;
     }
     const request: VectorTileRequest = {
-      bytes: result.body,
+      bytes: result.data,
       z: tile.z,
       x: tile.x,
       y: tile.y,
@@ -373,14 +378,8 @@ export class VectorSource implements MapSource, VectorTileSource {
       overzoom: tile.z >= set.maxZoom,
       promoteId: this.spec.promoteId ?? null,
     };
-    const transfer = result.body instanceof ArrayBuffer ? [result.body] : [];
-    try {
-      const decoded = await pool.send<VectorTileResult>("vector", request, transfer, signal, tile.x + tile.y);
-      return vectorTile(decoded, signature, decoded.raw ?? null);
-    } catch (error) {
-      if (signal.aborted || !result.saved) throw error;
-      throw savedCopyFailed(params.url, ctx.diskCache);
-    }
+    const decoded = await pool.send<VectorTileResult>("vector", request, [result.data], signal, tile.x + tile.y);
+    return vectorTile(decoded, signature, decoded.raw ?? null);
   }
 }
 
