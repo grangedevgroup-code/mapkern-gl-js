@@ -15,7 +15,7 @@ import {
   writeFrame,
   writeStrip,
 } from "../terrain/dem.ts";
-import { bodyBytes, fetchBody, resolveRequest, savedCopyFailed } from "../tiles/fetch.ts";
+import { fetchBytes, resolveRequest } from "../tiles/fetch.ts";
 import type { TileLoader, TileStats, UploadBudget } from "../tiles/manager.ts";
 import { TileManager } from "../tiles/manager.ts";
 import type { DemReply } from "../worker/dem-task.ts";
@@ -244,17 +244,16 @@ export class DemSource implements MapSource {
     return {
       load: async (tile: TileCoord, signal: AbortSignal, onDecoding: () => void): Promise<DemTile | null> => {
         const url = tileUrl(set, tile.z, tile.x, tile.y);
-        const params = resolveRequest(url, "tile", ctx.transformRequest);
-        const result = await fetchBody(params, signal, ctx.requestTimeoutMs, "tile", ctx.diskCache);
+        const result = await fetchBytes(
+          resolveRequest(url, "tile", ctx.transformRequest),
+          signal,
+          ctx.requestTimeoutMs,
+          "tile",
+          ctx.diskCache,
+        );
         if (result.kind === "empty") return null;
         onDecoding();
-        let reply: DemReply | null;
-        try {
-          reply = await decodeElevation(ctx, result.body, unpack, signal, tile.x + tile.y);
-        } catch (error) {
-          if (signal.aborted || !result.saved) throw error;
-          throw savedCopyFailed(params.url, ctx.diskCache);
-        }
+        const reply = await decodeElevation(ctx, result.data, unpack, signal, tile.x + tile.y);
         if (!reply) return null;
         return {
           z: tile.z,
@@ -300,20 +299,19 @@ let workerDecodes: boolean | undefined;
 
 async function decodeElevation(
   ctx: SourceContext,
-  body: ArrayBuffer | Blob,
+  bytes: ArrayBuffer,
   unpack: Unpack,
   signal: AbortSignal,
   key: number,
 ): Promise<DemReply | null> {
-  if (body instanceof ArrayBuffer && isRawElevation(body)) {
-    return ctx.workers().send<DemReply | null>("dem", { raw: body, unpack }, [body], signal, key);
+  if (isRawElevation(bytes)) {
+    return ctx.workers().send<DemReply | null>("dem", { raw: bytes, unpack }, [bytes], signal, key);
   }
-  let source = body;
+  let source = bytes;
   if (workerDecodes !== false) {
-    const spare = body instanceof Blob ? body : workerDecodes === undefined ? body.slice(0) : null;
+    const spare = workerDecodes === undefined ? bytes.slice(0) : null;
     try {
-      const transfer = body instanceof ArrayBuffer ? [body] : [];
-      const reply = await ctx.workers().send<DemReply | null>("dem", { bytes: body, unpack }, transfer, signal, key);
+      const reply = await ctx.workers().send<DemReply | null>("dem", { bytes, unpack }, [bytes], signal, key);
       workerDecodes = true;
       return reply;
     } catch (error) {
@@ -322,11 +320,7 @@ async function decodeElevation(
       source = spare;
     }
   }
-  const bytes = await bodyBytes(source);
-  if (isRawElevation(bytes)) {
-    return ctx.workers().send<DemReply | null>("dem", { raw: bytes, unpack }, [bytes], signal, key);
-  }
-  const pixels = await readPixels(bytes, signal, pageCanvas);
+  const pixels = await readPixels(source, signal, pageCanvas);
   return ctx.workers().send<DemReply | null>("dem", { pixels, unpack }, [pixels.data.buffer], signal, key);
 }
 
