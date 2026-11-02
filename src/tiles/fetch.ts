@@ -167,7 +167,12 @@ async function fetchWithProtocol(
     bytes = result.data;
     contentType = result.contentType ?? "";
   }
-  const data = bytes instanceof ArrayBuffer ? bytes.slice(0) : bytes.slice().buffer;
+  const data =
+    bytes instanceof ArrayBuffer
+      ? bytes
+      : bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength && bytes.buffer instanceof ArrayBuffer
+        ? bytes.buffer
+        : bytes.slice().buffer;
   if (data.byteLength === 0) return { kind: "empty" };
   return { kind: "data", data, contentType };
 }
