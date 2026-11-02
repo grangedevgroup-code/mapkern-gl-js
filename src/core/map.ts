@@ -2713,9 +2713,11 @@ export class MapkernMap extends Emitter<MapEvents> {
       future.zoomAround(wheelTarget.zoom, wheelTarget.point[0], wheelTarget.point[1]);
       out.push(future);
     }
-    const around = this.transform.clone();
-    around.resize(this.transform.width * PREFETCH_MARGIN, this.transform.height * PREFETCH_MARGIN);
-    out.push(around);
+    if (!this.isMoving()) {
+      const around = this.transform.clone();
+      around.resize(this.transform.width * PREFETCH_MARGIN, this.transform.height * PREFETCH_MARGIN);
+      out.push(around);
+    }
     return out;
   }
 
