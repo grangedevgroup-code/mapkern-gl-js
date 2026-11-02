@@ -256,7 +256,7 @@ async function decodeImage(
   signal: AbortSignal,
 ): Promise<RasterReply> {
   const type = contentType.split(";")[0]?.trim() || "image/png";
-  const pool = ctx.workers();
+  const pool = ctx.imageWorker();
   const works = workerDecodes.get(pool);
   if (works === false || !pool.available) return decodeRaster({ bytes, type }, signal);
   const spare = works === undefined ? bytes.slice(0) : null;
