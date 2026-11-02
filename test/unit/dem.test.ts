@@ -3,12 +3,16 @@ import { test } from "node:test";
 import type { DemGrid } from "../../src/terrain/dem.ts";
 import {
   backfill,
+  backfillRegion,
   DEM_BORDER,
   decodeDem,
+  fromHalf,
   gradients,
   NEIGHBORS,
   removeSpikes,
   sampleElevation,
+  toHalf,
+  toHalfArray,
   unpackFor,
   writeFrame,
 } from "../../src/terrain/dem.ts";
@@ -239,4 +243,62 @@ test("lone points knocked off by a whole red step are put back and real peaks st
   assert.equal(values[6 * size + 2], 1000);
   assert.equal(values[0], 1000);
   assert.equal(values[11 * size + 11], peak);
+});
+
+test("half floats round trip and round to nearest even", () => {
+  for (const v of [0, 1, -1, 0.5, 2048, -65504, 2 ** -14, 2 ** -24]) assert.equal(fromHalf(toHalf(v)), v);
+  assert.equal(toHalf(65520), 0x7c00);
+  assert.equal(toHalf(Number.POSITIVE_INFINITY), 0x7c00);
+  assert.ok(Number.isNaN(fromHalf(toHalf(Number.NaN))));
+  assert.equal(toHalf(1 + 2 ** -11), toHalf(1));
+  assert.equal(toHalf(1 + 3 * 2 ** -11), toHalf(1 + 2 ** -9));
+  for (let i = 0; i < 2000; i++) {
+    const v = (Math.sin(i) * 3000) / (1 + (i % 7));
+    const back = fromHalf(toHalf(v));
+    assert.ok(Math.abs(back - v) <= Math.abs(v) * 2 ** -11 + 2 ** -24, `${v} -> ${back}`);
+  }
+});
+
+test("the half float frame rewrite matches a full recompute", () => {
+  const size = 6;
+  const a = decodeDem(
+    image(size, (x, y) => x * x + 3 * y),
+    size,
+    TERRARIUM,
+  )!;
+  const b = decodeDem(
+    image(size, (x, y) => (x + size) * (x + size) + 3 * y),
+    size,
+    TERRARIUM,
+  )!;
+  const before = toHalfArray(gradients(a));
+  backfill(a, b, 1, 0);
+  writeFrame(a, before);
+  assert.deepEqual(before, toHalfArray(gradients(a)));
+});
+
+test("the backfill region is exactly the cells backfill writes", () => {
+  const size = 5;
+  for (const [dx, dy] of NEIGHBORS) {
+    const a = decodeDem(
+      image(size, () => 1),
+      size,
+      TERRARIUM,
+    )!;
+    const b = decodeDem(
+      image(size, () => 2),
+      size,
+      TERRARIUM,
+    )!;
+    const before = Float32Array.from(a.elevation);
+    backfill(a, b, dx, dy);
+    const r = backfillRegion(a, dx, dy);
+    for (let y = 0; y < a.stride; y++)
+      for (let x = 0; x < a.stride; x++) {
+        const inside = x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height;
+        const changed = a.elevation[y * a.stride + x] !== before[y * a.stride + x];
+        assert.ok(!changed || inside, `${dx},${dy}: cell ${x},${y} changed outside the region`);
+        if (inside) assert.equal(a.elevation[y * a.stride + x], 2, `${dx},${dy}: cell ${x},${y} not written`);
+      }
+  }
 });
