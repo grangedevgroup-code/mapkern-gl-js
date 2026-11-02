@@ -418,6 +418,39 @@ const specs: Spec[] = [
     },
   },
   {
+    name: "the examples in the README run",
+    async run({ page, base }) {
+      const readme = readFileSync(join(root, "README.md"), "utf8");
+      const blocks = [...readme.matchAll(/```js\n([\s\S]*?)```/g)]
+        .map((match) => match[1]!)
+        .filter((code) => !code.includes("import ") && !code.includes("new mapkern.Map("));
+      if (blocks.length < 4) fail(`expected at least 4 README examples, found ${blocks.length}`);
+      await page.call(
+        `async (blocks, style) => {
+          window.errors = [];
+          const map = new mapkern.Map({ container: "map", style, fadeDuration: 0, center: [-122.345, 47.615], zoom: 12 });
+          window.map = map;
+          map.on("error", (e) => window.errors.push({ code: e.error.code, message: e.error.message }));
+          const latestPlaces = { type: "FeatureCollection", features: [] };
+          const run = (code) => new Function("map", "mapkern", "latestPlaces", code)(map, mapkern, latestPlaces);
+          for (const code of blocks) if (code.includes('"load"')) run(code);
+          await map.once("load");
+          for (const code of blocks) if (!code.includes('"load"')) run(code);
+          await Promise.race([map.once("idle"), new Promise((resolve) => setTimeout(resolve, 8000))]);
+        }`,
+        blocks,
+        JSON.parse(rasterStyle(base, "/fixture/raster")),
+      );
+      const errors = await page.evaluate<{ code: string; message: string }[]>("window.errors");
+      const bad = errors.filter((e) => /invalid|unsupported|style/.test(e.code));
+      if (bad.length > 0) fail(`a README example failed: ${JSON.stringify(bad)}`);
+      const shown = await page.evaluate<boolean>(
+        'Boolean(window.map.getLayer("dots") && window.map.getSource("places") && window.map.getTerrain())',
+      );
+      if (!shown) fail("the README examples did not add their source, layer and terrain");
+    },
+  },
+  {
     name: "parent tiles cover the view while children are slow",
     async run({ page, base, shot }) {
       await createMap(page, rasterStyle(base, "/fixture/slow/2500/5"));

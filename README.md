@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-Mapkern GL JS is a map library for the web. It draws vector tiles, raster tiles and GeoJSON with WebGL2, and it doesn't depend on any other package. You can try it on the [website](https://grangedevgroup-code.github.io/mapkern-gl-js/).
+Mapkern GL JS is a map library for the web. It draws vector tiles, raster tiles and GeoJSON with WebGL2, as a flat map, in 3D over real terrain or as a globe, and it doesn't depend on any other package. You can try it on the [website](https://grangedevgroup-code.github.io/mapkern-gl-js/).
 
 <p>
   <img src="assets/screenshot-city.webp" alt="Downtown Seattle with 3D buildings, tilted 55 degrees" width="49%">
@@ -41,7 +41,7 @@ This page loads the newest build from the project website, which is handy for tr
 ## Install
 
 ```sh
-npm install github:grangedevgroup-code/mapkern-gl-js
+npm install https://github.com/grangedevgroup-code/mapkern-gl-js/releases/download/v0.1.0/mapkern-gl-0.1.0.tgz
 ```
 
 ```js
@@ -84,6 +84,43 @@ map.on("load", () => {
   map.flyTo({ center: [-122.345, 47.615], zoom: 13 });
 });
 ```
+
+Clicks on a layer tell you which feature was hit, and popups and markers take a line each:
+
+```js
+map.on("click", "dots", (event) => {
+  new mapkern.Popup().setLngLat(event.lngLat).setText(event.features[0].properties.name).addTo(map);
+});
+
+new mapkern.Marker().setLngLat([-122.3321, 47.6062]).addTo(map);
+```
+
+To change the data while the map runs, give the source the new GeoJSON. What's on screen stays until the new tiles are ready:
+
+```js
+map.getSource("places").setData(latestPlaces);
+```
+
+## 3D terrain and the globe
+
+`TerrainControl` adds one button that steps through a flat map, 3D terrain from above, tilted 3D and the globe. It needs elevation data, and [Mapterhorn](https://mapterhorn.com/) has it for free:
+
+```js
+const terrain = new mapkern.TerrainControl({
+  source: {
+    type: "dem",
+    tiles: ["https://tiles.mapterhorn.com/{z}/{x}/{y}.webp"],
+    tileSize: 512,
+    maxZoom: 12,
+    encoding: "terrarium",
+    attribution: '<a href="https://mapterhorn.com/attribution">© Mapterhorn</a>',
+  },
+});
+map.addControl(terrain);
+terrain.setView("tilted");
+```
+
+If you only want the globe, pass `projection: "globe"` when you create the map.
 
 ## Other styles
 
@@ -141,7 +178,7 @@ Vector and raster sources read PMTiles and MBTiles files, from a web server or f
 
 To try it on an Android phone or tablet, `npm run android -- --install` builds a small app from `android/` that shows the map full screen and installs it on the connected device. It needs the Android SDK and a JDK, and `--run` starts it too. Reinstalling keeps the app's saved tiles and settings; add `--clear` to start fresh. The app also carries this site and its examples.
 
-While you pan and zoom, Mapkern fills gaps with tiles it already has from other zoom levels, so the map doesn't flash empty, and it loads a ring of tiles just outside the view so a pan shows them at once. Imagery that runs out of detail, or answers with a "no data" picture, falls back to the nearest real tile above it. Tiles are decoded in Web Workers, and the whole library, worker included, is about 160 KB gzipped.
+While you pan and zoom, Mapkern fills gaps with tiles it already has from other zoom levels, so the map doesn't flash empty, and when it has time to spare it loads a ring of tiles just outside the view, so a pan shows them at once. Imagery that runs out of detail, or answers with a "no data" picture, falls back to the nearest real tile above it. Tiles are decoded in Web Workers, and the whole library, worker included, is about 160 KB gzipped.
 
 Mapkern needs WebGL 2. It runs in Chrome, Edge and other Chromium browsers from version 96, which includes the Android WebView and the one on Amazon Fire tablets, in Safari from 16.4 on iPhone, iPad and Mac, and in Firefox from 115.
 
