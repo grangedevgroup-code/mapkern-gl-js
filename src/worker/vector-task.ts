@@ -8,6 +8,7 @@ import type { PackedFeatures, PackedLabels } from "./packed.ts";
 import { FeatureTableBuilder, featureTransfers, LabelBuilder, labelTransfers } from "./packed.ts";
 import type { LabelInfo, SymbolLayout } from "./symbols.ts";
 import { labelCandidates, labelInfo, lineLabels, mergeParts } from "./symbols.ts";
+import { setting } from "./worker.ts";
 
 export type BucketType = "fill" | "line" | "circle" | "heatmap" | "symbol" | "extrusion";
 
@@ -28,7 +29,8 @@ export interface VectorTileRequest {
   z: number;
   x: number;
   y: number;
-  layers: LayerProgram[];
+  layers?: LayerProgram[];
+  layersKey?: string;
   overzoom: boolean;
   promoteId: string | Readonly<Record<string, string>> | null;
 }
@@ -55,6 +57,7 @@ export interface VectorTileResult {
   layers: string[];
   featureCount: number;
   decodeMs: number;
+  raw?: ArrayBuffer;
 }
 
 const GEOMETRY_NAMES: Record<number, GeometryType> = { 0: "Unknown", 1: "Point", 2: "LineString", 3: "Polygon" };
@@ -135,11 +138,15 @@ export async function buildVectorTile(
   signal: AbortSignal,
 ): Promise<{ result: VectorTileResult; transfer: Transferable[] }> {
   const started = performance.now();
+  const programs = request.layers ?? (request.layersKey ? setting<LayerProgram[]>(request.layersKey) : undefined) ?? [];
   const data = await inflate(request.bytes);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const layers = decodeTile(data);
   const source = request.promoteId === null ? layers : promoteIds(layers, request.promoteId);
-  return buildBuckets(source, request.z, request.layers, request.overzoom, started, { x: request.x, y: request.y });
+  const built = buildBuckets(source, request.z, programs, request.overzoom, started, { x: request.x, y: request.y });
+  built.result.raw = request.bytes;
+  built.transfer.push(request.bytes);
+  return built;
 }
 
 function promoteIds(
