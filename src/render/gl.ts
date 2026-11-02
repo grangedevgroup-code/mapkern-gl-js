@@ -207,7 +207,8 @@ export class GL {
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.texImage2D(gl.TEXTURE_2D, 0, internal, width, height, 0, layout, type, data);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, internal, width, height);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, layout, type, data);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     const filter = linear ? gl.LINEAR : gl.NEAREST;
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -235,11 +236,33 @@ export class GL {
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
   }
 
+  updateDataRegion(
+    texture: WebGLTexture,
+    region: { x: number; y: number; width: number; height: number },
+    rowLength: number,
+    format: DataFormat,
+    data: ArrayBufferView,
+  ): void {
+    if (this.isLost) return;
+    const gl = this.gl;
+    const [, layout, type] = this.dataLayout(format);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, rowLength);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, region.x);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, region.y);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, region.x, region.y, region.width, region.height, layout, type, data);
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+  }
+
   private dataLayout(format: DataFormat): [GLenum, GLenum, GLenum] {
     const gl = this.gl;
     switch (format) {
       case "rg16f":
-        return [gl.RG16F, gl.RG, gl.FLOAT];
+        return [gl.RG16F, gl.RG, gl.HALF_FLOAT];
       case "r32f":
         return [gl.R32F, gl.RED, gl.FLOAT];
       case "r8":
