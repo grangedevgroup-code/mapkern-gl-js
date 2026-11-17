@@ -34,6 +34,8 @@ public class MainActivity extends Activity {
         web.setBackgroundColor(BACKGROUND);
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
+        settings.setAllowContentAccess(false);
+        settings.setAllowFileAccess(false);
         settings.setDomStorageEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
