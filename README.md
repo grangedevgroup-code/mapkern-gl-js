@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-Mapkern GL JS is a map library for the web. It draws vector tiles, raster tiles and GeoJSON with WebGL2, as a flat map, in 3D over real terrain or as a globe, and it doesn't depend on any other package. You can try it on the [website](https://grangedevgroup-code.github.io/mapkern-gl-js/).
+Mapkern GL JS is a map library for the web. It draws vector tiles, raster tiles and GeoJSON with WebGL2, as a flat map, in 3D over real terrain or as a globe, and it doesn't depend on any other package. You can try it on the [website](https://mapkern.github.io/mapkern-gl-js/).
 
 <p>
   <img src="assets/screenshot-city.webp" alt="Downtown Seattle with 3D buildings, tilted 55 degrees" width="49%">
@@ -27,7 +27,7 @@ Save this as `map.html` and open it in a browser. There's nothing to install, no
 </style>
 <div id="map"></div>
 <script type="module">
-  import * as mapkern from "https://grangedevgroup-code.github.io/mapkern-gl-js/dist/mapkern.js";
+  import * as mapkern from "https://mapkern.github.io/mapkern-gl-js/dist/mapkern.js";
 
   const map = new mapkern.Map({ container: "map", center: [-122.33, 47.61], zoom: 11 });
   map.addControl(new mapkern.NavigationControl());
@@ -41,7 +41,7 @@ This page loads the newest build from the project website, which is handy for tr
 ## Install
 
 ```sh
-npm install https://github.com/grangedevgroup-code/mapkern-gl-js/releases/download/v0.1.0/mapkern-gl-0.1.0.tgz
+npm install https://github.com/Mapkern/mapkern-gl-js/releases/download/v0.1.0/mapkern-gl-0.1.0.tgz
 ```
 
 ```js

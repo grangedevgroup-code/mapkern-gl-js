@@ -6,10 +6,10 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/grangedevgroup-code/mapkern-gl-js.git"
+    "url": "git+https://github.com/Mapkern/mapkern-gl-js.git"
   },
-  "homepage": "https://github.com/grangedevgroup-code/mapkern-gl-js",
-  "bugs": "https://github.com/grangedevgroup-code/mapkern-gl-js/issues",
+  "homepage": "https://github.com/Mapkern/mapkern-gl-js",
+  "bugs": "https://github.com/Mapkern/mapkern-gl-js/issues",
   "keywords": [
     "map",
     "maps",
